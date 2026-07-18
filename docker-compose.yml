@@ -16,8 +16,8 @@ services:
       - traefik.http.routers.brisa.rule=Host(`brisa.codexaurora.com.br`)
       - traefik.http.routers.brisa.entrypoints=websecure
       - traefik.http.routers.brisa.tls=true
-      # AJUSTAR: nome do certresolver do seu Traefik (veja DEPLOY.md)
-      - traefik.http.routers.brisa.tls.certresolver=letsencrypt
+      # certresolver do Traefik deste servidor (confirmado nos outros stacks)
+      - traefik.http.routers.brisa.tls.certresolver=le
       - traefik.http.services.brisa.loadbalancer.server.port=3000
       # a proteção de acesso agora é o login do próprio app (/login);
       # o basic auth do Traefik foi aposentado
