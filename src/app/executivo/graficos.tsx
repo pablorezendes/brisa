@@ -1,16 +1,17 @@
 /**
  * Gráficos SVG server-side do dashboard executivo. Sem libs.
- * Paleta categórica validada (ordem fixa): 1 azul #2a78d6 · 2 água #1baf7a ·
- * 3 amarelo #eda100. Texto sempre em tons de slate (nunca na cor da série).
- * Cada gráfico traz tooltips nativos (<title>) e a página oferece a tabela.
+ * Paleta categórica da marca A.Camargo, validada p/ CVD (ΔE adjacente 102,9):
+ * 1 azul #015CA9 · 2 laranja #F08F11 · 3 azul-claro #0CAFEB.
+ * Texto sempre em tons neutros (nunca na cor da série). Cada gráfico traz
+ * tooltips nativos (<title>) e a página oferece a tabela ("Ver dados").
  */
 import { formatarBRL } from "@/lib/dominio/dinheiro";
 import { NOME_MES_ABREV } from "@/lib/dominio/normalizacao";
 
-export const COR_1 = "#2a78d6"; // azul — série principal
-export const COR_1_FORTE = "#184f95"; // passo escuro do mesmo matiz (destaque)
-export const COR_2 = "#1baf7a"; // água
-export const COR_3 = "#eda100"; // amarelo
+export const COR_1 = "#015ca9"; // azul institucional — série principal
+export const COR_1_FORTE = "#002546"; // passo noite do mesmo matiz (destaque)
+export const COR_2 = "#f08f11"; // laranja da marca
+export const COR_3 = "#0cafeb"; // azul-claro da marca
 
 const GRADE = "#e2e8f0"; // slate-200 — recessiva
 const EIXO = "#94a3b8"; // slate-400

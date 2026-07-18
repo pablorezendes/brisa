@@ -32,13 +32,16 @@ export function PageHeader({
 export function Card({
   children,
   className = "",
+  style,
 }: {
   children: React.ReactNode;
   className?: string;
+  style?: React.CSSProperties;
 }) {
   return (
     <div
       className={`rounded-xl border border-slate-200 bg-white shadow-sm ${className}`}
+      style={style}
     >
       {children}
     </div>
@@ -93,21 +96,67 @@ export function Kpi({
   rotulo,
   valor,
   detalhe,
+  variacao,
 }: {
   rotulo: string;
   valor: React.ReactNode;
   detalhe?: string;
+  variacao?: React.ReactNode;
 }) {
   return (
-    <Card className="px-5 py-4">
+    <Card className="border-t-2 px-5 py-4" >
       <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
         {rotulo}
       </div>
       <div className="mt-1 text-2xl font-bold tabular-nums">{valor}</div>
+      {variacao ? <div className="mt-1">{variacao}</div> : null}
       {detalhe ? (
         <div className="mt-1 text-xs text-slate-500">{detalhe}</div>
       ) : null}
     </Card>
+  );
+}
+
+/**
+ * Variação vs mês anterior, legível por qualquer pessoa:
+ * "▲ 12,3% vs mês anterior" — verde/vermelho conforme o que é bom para a
+ * métrica (bomQuandoSobe: comissão sim, inadimplência não).
+ */
+export function Variacao({
+  atual,
+  anterior,
+  bomQuandoSobe = true,
+}: {
+  atual: number;
+  anterior: number | null | undefined;
+  bomQuandoSobe?: boolean;
+}) {
+  if (
+    anterior === null ||
+    anterior === undefined ||
+    anterior === 0 ||
+    atual === anterior
+  ) {
+    return (
+      <span className="text-xs text-slate-400">
+        {anterior === 0 || anterior === null || anterior === undefined
+          ? "sem base de comparação"
+          : "estável vs mês anterior"}
+      </span>
+    );
+  }
+  const pct = ((atual - anterior) / Math.abs(anterior)) * 100;
+  const subiu = pct > 0;
+  const positivo = subiu === bomQuandoSobe;
+  return (
+    <span
+      className={`text-xs font-semibold ${
+        positivo ? "text-emerald-700" : "text-red-600"
+      }`}
+    >
+      {subiu ? "▲" : "▼"} {Math.abs(pct).toFixed(1).replace(".", ",")}% vs mês
+      anterior
+    </span>
   );
 }
 
@@ -143,8 +192,8 @@ export function SeletorMes({ base, mes }: { base: string; mes: string }) {
 }
 
 export const btnPrimario =
-  "inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50";
+  "inline-flex items-center gap-1.5 rounded-md bg-marca px-3 py-1.5 text-sm font-medium text-white hover:bg-marca-escura disabled:opacity-50";
 export const btnSecundario =
   "inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-50 disabled:opacity-50";
 export const inputBase =
-  "rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400";
+  "rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-marca-clara";

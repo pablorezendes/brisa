@@ -6,6 +6,7 @@ import {
   Kpi,
   PageHeader,
   SeletorMes,
+  Variacao,
 } from "@/components/ui";
 import { formatarBRL } from "@/lib/dominio/dinheiro";
 import {
@@ -42,6 +43,10 @@ export default async function PaginaExecutivo({
   const d = await dadosExecutivos(mes);
   const { mes: mesNum } = parseCompetencia(mes);
   const comissaoMesTotal = d.porMes[mesNum - 1]?.comissao ?? 0;
+  const mesAnterior = mesNum > 1 ? d.porMes[mesNum - 2] : null;
+  const caixaAnterior = mesNum > 1 ? d.caixaPorMes[mesNum - 2] : null;
+  const nomeMes = NOME_MES_COMPLETO[mesNum].toLowerCase();
+  const taxaPct = d.taxaRecebimento !== null ? d.taxaRecebimento * 100 : null;
 
   return (
     <div className="max-w-6xl">
@@ -60,41 +65,122 @@ export default async function PaginaExecutivo({
         }
       />
 
+      {/* ---------- resumo do mês em linguagem natural ---------- */}
+      <Card
+        className="mb-6 border-l-4 px-6 py-4"
+        style={{ borderLeftColor: "var(--marca-laranja)" }}
+      >
+        <p className="text-sm leading-relaxed text-slate-700">
+          Em <strong>{nomeMes}</strong>, entraram{" "}
+          <strong>{formatarBRL(d.recebidoMes)}</strong> dos locatários e a
+          administradora ganhou{" "}
+          <strong style={{ color: "var(--marca-primaria)" }}>
+            {formatarBRL(d.comissaoMes)}
+          </strong>{" "}
+          de comissão.{" "}
+          {d.inadimplentesQtde > 0 ? (
+            <>
+              <strong>{d.inadimplentesQtde} cobrança(s)</strong> somando{" "}
+              <strong>{formatarBRL(d.inadimplentesValor)}</strong> ainda não
+              foram pagas
+            </>
+          ) : (
+            <>Todas as cobranças do mês foram pagas</>
+          )}
+          {d.reajustesDoMes.length > 0 ? (
+            <>
+              {" "}e <strong>{d.reajustesDoMes.length} contrato(s)</strong>{" "}
+              fazem aniversário de reajuste.
+            </>
+          ) : (
+            <>.</>
+          )}
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {taxaPct !== null ? (
+            <Badge
+              cor={taxaPct >= 95 ? "verde" : taxaPct >= 80 ? "ambar" : "vermelho"}
+            >
+              {taxaPct >= 95 ? "✔" : "!"} recebemos {pct(d.taxaRecebimento)} do
+              que era devido
+            </Badge>
+          ) : null}
+          {d.caixaMes ? (
+            <Badge cor={d.saldoCaixaMes >= 0 ? "verde" : "vermelho"}>
+              {d.saldoCaixaMes >= 0 ? "✔ caixa positivo" : "✘ caixa negativo"}{" "}
+              no mês
+            </Badge>
+          ) : null}
+          {d.reajustesDoMes.length > 0 ? (
+            <Badge cor="ambar">
+              ! {d.reajustesDoMes.length} reajuste(s) para aplicar
+            </Badge>
+          ) : null}
+        </div>
+      </Card>
+
       {/* ---------- KPIs ---------- */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Kpi
           rotulo="Comissão do mês"
           valor={<Dinheiro centavos={d.comissaoMes} destaque />}
-          detalhe={`sobre base de aluguel recebido`}
+          variacao={
+            <Variacao
+              atual={d.comissaoMes}
+              anterior={mesAnterior?.comissao ?? null}
+            />
+          }
+          detalhe="o que a administradora ganhou"
         />
         <Kpi
           rotulo="Comissão acumulada no ano"
           valor={<Dinheiro centavos={d.comissaoAcumuladaAno} destaque />}
-          detalhe={`JAN a ${NOME_MES_ABREV[mesNum]} de ${d.ano}`}
+          detalhe={`somando JAN a ${NOME_MES_ABREV[mesNum]} de ${d.ano}`}
         />
         <Kpi
           rotulo="Taxa de recebimento"
           valor={pct(d.taxaRecebimento)}
-          detalhe={`recebido ${formatarBRL(d.recebidoMes)} / devido ${formatarBRL(d.devidoMes)}`}
+          detalhe={`entrou ${formatarBRL(d.recebidoMes)} de ${formatarBRL(d.devidoMes)} devidos (acima de 100% = atrasos quitados)`}
         />
         <Kpi
           rotulo="Inadimplência do mês"
           valor={<Dinheiro centavos={d.inadimplentesValor} destaque />}
-          detalhe={`${d.inadimplentesQtde} cobrança(s) sem recebimento`}
+          variacao={
+            <Variacao
+              atual={d.inadimplentesValor}
+              anterior={mesAnterior?.pendenteValor ?? null}
+              bomQuandoSobe={false}
+            />
+          }
+          detalhe={`${d.inadimplentesQtde} cobrança(s) aguardando pagamento`}
         />
       </div>
       <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Kpi
           rotulo="Recebido no mês"
           valor={<Dinheiro centavos={d.recebidoMes} destaque />}
+          variacao={
+            <Variacao
+              atual={d.recebidoMes}
+              anterior={mesAnterior?.recebido ?? null}
+            />
+          }
           detalhe="aluguel + repasses (IPTU/cond.)"
         />
         <Kpi
           rotulo="Saldo de caixa do mês"
           valor={<Dinheiro centavos={d.saldoCaixaMes} destaque />}
+          variacao={
+            d.caixaMes ? (
+              <Variacao
+                atual={d.saldoCaixaMes}
+                anterior={caixaAnterior?.saldo ?? null}
+              />
+            ) : undefined
+          }
           detalhe={
             d.caixaMes
-              ? `receita ${formatarBRL(d.caixaMes.receita)} − AL ${formatarBRL(d.caixaMes.despesaAL)} − CH ${formatarBRL(d.caixaMes.despesaCH)}`
+              ? `entrou ${formatarBRL(d.caixaMes.receita)}, saiu ${formatarBRL(d.caixaMes.despesaAL + d.caixaMes.despesaCH)}`
               : "sem lançamentos no mês"
           }
         />
@@ -109,14 +195,14 @@ export default async function PaginaExecutivo({
           }
           detalhe={
             d.lucroTemporadaMes !== null
-              ? `receita ${formatarBRL(d.receitaTemporadaMes)} − despesa ${formatarBRL(d.despesaTemporadaMes)}`
-              : `comissão AIRBNB no núcleo: ${formatarBRL(d.comissaoAirbnbMes)}`
+              ? `entrou ${formatarBRL(d.receitaTemporadaMes)}, gastou ${formatarBRL(d.despesaTemporadaMes)}`
+              : `Airbnb rendeu ${formatarBRL(d.comissaoAirbnbMes)} de comissão no mês`
           }
         />
         <Kpi
           rotulo="Contratos a reajustar"
           valor={String(d.reajustesDoMes.length)}
-          detalhe={`aniversário em ${NOME_MES_COMPLETO[mesNum].toLowerCase()}`}
+          detalhe={`aluguéis com aniversário em ${nomeMes} — hora de corrigir o valor`}
         />
       </div>
 
@@ -133,6 +219,10 @@ export default async function PaginaExecutivo({
             valores={d.porMes.map((l) => l.comissao)}
             mesSelecionado={mesNum}
           />
+          <p className="mt-2 text-xs text-slate-500">
+            Cada barra é o ganho da administradora naquele mês; a barra escura
+            é o mês que você está vendo.
+          </p>
           <details className="mt-2 text-xs text-slate-600">
             <summary className="cursor-pointer select-none">Ver dados</summary>
             <div className="mt-2 overflow-x-auto">
@@ -262,6 +352,10 @@ export default async function PaginaExecutivo({
           despesaAL={d.caixaPorMes.map((c) => c.despesaAL)}
           despesaCH={d.caixaPorMes.map((c) => c.despesaCH)}
         />
+        <p className="mt-2 text-xs text-slate-500">
+          Azul = quanto entrou; a pilha laranja + azul-claro = quanto saiu em
+          cada centro. Mês bom é azul maior que a pilha.
+        </p>
         <details className="mt-2 text-xs text-slate-600">
           <summary className="cursor-pointer select-none">Ver dados</summary>
           <div className="mt-2 overflow-x-auto">
