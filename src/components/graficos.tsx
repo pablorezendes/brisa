@@ -17,7 +17,7 @@ const GRADE = "#e5e1d8"; // contorno do papel — recessiva
 const EIXO = "#75786f";
 const ROTULO = "#444840";
 
-/** Barra com topo arredondado (4px) ancorada na base. */
+/** Barra com topo arredondado (4px) ancorada na base. Cresce ao carregar. */
 function BarraPath({
   x,
   y,
@@ -25,6 +25,7 @@ function BarraPath({
   h,
   cor,
   titulo,
+  delayMs = 0,
 }: {
   x: number;
   y: number;
@@ -32,6 +33,7 @@ function BarraPath({
   h: number;
   cor: string;
   titulo: string;
+  delayMs?: number;
 }) {
   if (h <= 0)
     return (
@@ -42,7 +44,12 @@ function BarraPath({
   const r = Math.min(4, w / 2, h);
   const d = `M${x},${y + h} v${-(h - r)} q0,${-r} ${r},${-r} h${w - 2 * r} q${r},0 ${r},${r} v${h - r} z`;
   return (
-    <path d={d} fill={cor}>
+    <path
+      d={d}
+      fill={cor}
+      className="g-barra"
+      style={{ animationDelay: `${delayMs}ms` }}
+    >
       <title>{titulo}</title>
     </path>
   );
@@ -127,6 +134,7 @@ export function BarrasMensais({
               h={h}
               cor={selecionado ? COR_1_FORTE : COR_1}
               titulo={`${NOME_MES_ABREV[i + 1]}: ${formatarBRL(v)}`}
+              delayMs={i * 45}
             />
             {rotular && v > 0 ? (
               <text
@@ -206,6 +214,7 @@ export function BarrasDuplas({
               h={hA}
               cor={corA}
               titulo={`${NOME_MES_ABREV[i + 1]} — ${nomeA}: ${formatarBRL(a)}`}
+              delayMs={i * 45}
             />
             <BarraPath
               x={xB}
@@ -214,6 +223,7 @@ export function BarrasDuplas({
               h={hB}
               cor={corB}
               titulo={`${NOME_MES_ABREV[i + 1]} — ${nomeB}: ${formatarBRL(b)}`}
+              delayMs={i * 45 + 20}
             />
             <text
               x={centro}
@@ -281,6 +291,7 @@ export function BarrasCaixa({
               h={hR}
               cor={COR_1}
               titulo={`${mes} — Receita: ${formatarBRL(rec)}`}
+              delayMs={i * 45}
             />
             {/* pilha: AL na base; CH acima com 2px de respiro */}
             {hAL > 0 ? (
@@ -290,6 +301,8 @@ export function BarrasCaixa({
                 width={larguraBarra}
                 height={hAL}
                 fill={COR_2}
+                className="g-barra"
+                style={{ animationDelay: `${i * 45 + 20}ms` }}
               >
                 <title>{`${mes} — Despesa Antonio/Laura: ${formatarBRL(al)}`}</title>
               </rect>
@@ -302,6 +315,7 @@ export function BarrasCaixa({
                 h={hCH}
                 cor={COR_3}
                 titulo={`${mes} — Despesa Chácara Brisa: ${formatarBRL(ch)}`}
+                delayMs={i * 45 + 40}
               />
             ) : null}
             <text
@@ -370,6 +384,8 @@ export function BarrasHorizontais({
             <path
               d={`M${ROTULO_W},${y} h${w - 4} q4,0 4,4 v${ALT_BARRA - 8} q0,4 -4,4 h${-(w - 4)} z`}
               fill={cor}
+              className="g-barra-x"
+              style={{ animationDelay: `${i * 60}ms` }}
             >
               <title>{`${item.rotulo}: ${formatarBRL(item.valor)}`}</title>
             </path>
@@ -417,12 +433,257 @@ export function Sparkline({ valores }: { valores: number[] }) {
         strokeWidth={2}
         strokeLinejoin="round"
         strokeLinecap="round"
+        pathLength={1}
+        className="g-linha"
       />
-      <circle cx={px(n - 1)} cy={py(ultimo)} r={2.5} fill={COR_1_FORTE} />
+      <circle
+        cx={px(n - 1)}
+        cy={py(ultimo)}
+        r={2.5}
+        fill={COR_1_FORTE}
+        className="g-surgir"
+        style={{ animationDelay: "0.9s" }}
+      />
       <title>
         {valores.map((v, i) => `${NOME_MES_ABREV[i + 1]} ${formatarBRL(v)}`).join(" · ")}
       </title>
     </svg>
+  );
+}
+
+// ---------- geometria de arcos (medidor e rosca) ----------
+
+function polar(cx: number, cy: number, r: number, ang: number): [number, number] {
+  const a = ((ang - 90) * Math.PI) / 180; // 0° = topo, cresce no sentido horário
+  return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+}
+
+function arcoPath(
+  cx: number,
+  cy: number,
+  r: number,
+  a0: number,
+  a1: number
+): string {
+  const [x0, y0] = polar(cx, cy, r, a0);
+  const [x1, y1] = polar(cx, cy, r, a1);
+  const grande = a1 - a0 > 180 ? 1 : 0;
+  return `M${x0.toFixed(2)},${y0.toFixed(2)} A${r},${r} 0 ${grande} 1 ${x1.toFixed(2)},${y1.toFixed(2)}`;
+}
+
+/**
+ * Medidor (velocímetro) para percentuais — leitura instantânea de "quanto de
+ * 100%". O arco enche até 100% e a COR já dá o veredito: verde = ótimo,
+ * ocre = atenção, terracota = baixo. O número mostra o valor real (pode passar
+ * de 100% quando atrasos são quitados). Anima varrendo da esquerda.
+ */
+export function Medidor({
+  fracao,
+  rotulo,
+  faixaBoa = 0.95,
+  faixaAtencao = 0.8,
+}: {
+  fracao: number; // 1 = 100%
+  rotulo?: string;
+  faixaBoa?: number;
+  faixaAtencao?: number;
+}) {
+  const cx = 100;
+  const cy = 104;
+  const R = 78;
+  const esp = 16;
+  const t = Math.max(0, Math.min(1, fracao));
+  const theta = Math.PI * (1 - t);
+  const ex = cx + R * Math.cos(theta);
+  const ey = cy - R * Math.sin(theta);
+  const grande = t > 0.5 ? 1 : 0;
+  const trackD = `M${cx - R},${cy} A${R},${R} 0 1 1 ${cx + R},${cy}`;
+  const valorD = `M${cx - R},${cy} A${R},${R} 0 ${grande} 1 ${ex.toFixed(2)},${ey.toFixed(2)}`;
+  const pct = fracao * 100;
+  const { cor, texto } =
+    fracao >= faixaBoa
+      ? { cor: COR_1, texto: "ótimo" }
+      : fracao >= faixaAtencao
+        ? { cor: COR_2, texto: "atenção" }
+        : { cor: "#ba1a1a", texto: "baixo" };
+
+  return (
+    <svg
+      viewBox="0 0 200 122"
+      className="w-full"
+      role="img"
+      aria-label={`${rotulo ?? "medidor"}: ${pct.toFixed(0)}%`}
+    >
+      <path
+        d={trackD}
+        fill="none"
+        stroke={GRADE}
+        strokeWidth={esp}
+        strokeLinecap="round"
+      />
+      {t > 0 ? (
+        <path
+          d={valorD}
+          fill="none"
+          stroke={cor}
+          strokeWidth={esp}
+          strokeLinecap="round"
+          pathLength={1}
+          className="g-linha"
+        >
+          <title>{`${rotulo ?? ""}: ${pct.toFixed(1).replace(".", ",")}%`}</title>
+        </path>
+      ) : null}
+      <text
+        x={cx}
+        y={cy - 8}
+        textAnchor="middle"
+        fontSize={32}
+        fontWeight={700}
+        fill="#1c2430"
+        style={{ fontFamily: "var(--font-source-serif), Georgia, serif" }}
+      >
+        {pct.toFixed(0)}%
+      </text>
+      <text
+        x={cx}
+        y={cy + 12}
+        textAnchor="middle"
+        fontSize={11}
+        fontWeight={700}
+        letterSpacing="0.08em"
+        fill={cor}
+      >
+        {texto.toUpperCase()}
+      </text>
+    </svg>
+  );
+}
+
+/**
+ * Rosca (donut) para composição — mostra de que partes o todo é feito.
+ * Cada arco desenha-se em sequência ao redor do anel. Passe no máximo 4 fatias
+ * (ex.: top 3 + "Outros") para respeitar a paleta e a legibilidade.
+ */
+export function Rosca({
+  fatias,
+  centroTitulo,
+  centroValor,
+}: {
+  fatias: { rotulo: string; valor: number }[];
+  centroTitulo?: string;
+  centroValor?: string;
+}) {
+  const CORES = [COR_1, COR_2, COR_3, "#a9a7ad", "#75786f"];
+  const total = fatias.reduce((s, f) => s + f.valor, 0);
+  const cx = 90;
+  const cy = 90;
+  const R = 64;
+  const esp = 26;
+  if (total <= 0) return null;
+
+  let acc = 0;
+  const segs = fatias.map((f, i) => {
+    const frac = f.valor / total;
+    const a0 = acc * 360;
+    const a1 = (acc + frac) * 360;
+    const delay = acc * 0.7;
+    acc += frac;
+    return { ...f, frac, a0, a1, delay, cor: CORES[i] ?? "#75786f" };
+  });
+
+  return (
+    <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center sm:gap-5">
+      <svg
+        viewBox="0 0 180 180"
+        width={150}
+        height={150}
+        className="shrink-0"
+        role="img"
+        aria-label="Composição"
+      >
+        <circle
+          cx={cx}
+          cy={cy}
+          r={R}
+          fill="none"
+          stroke={GRADE}
+          strokeWidth={esp}
+          opacity={0.5}
+        />
+        {segs.map((s, i) =>
+          s.frac >= 0.999 ? (
+            <circle
+              key={i}
+              cx={cx}
+              cy={cy}
+              r={R}
+              fill="none"
+              stroke={s.cor}
+              strokeWidth={esp}
+            >
+              <title>{`${s.rotulo}: ${formatarBRL(s.valor)}`}</title>
+            </circle>
+          ) : (
+            <path
+              key={i}
+              d={arcoPath(cx, cy, R, s.a0, s.a1)}
+              fill="none"
+              stroke={s.cor}
+              strokeWidth={esp}
+              strokeLinecap="butt"
+              pathLength={1}
+              className="g-linha"
+              style={{ animationDelay: `${s.delay}s` }}
+            >
+              <title>{`${s.rotulo}: ${formatarBRL(s.valor)} (${(s.frac * 100).toFixed(1).replace(".", ",")}%)`}</title>
+            </path>
+          )
+        )}
+        {centroValor ? (
+          <text
+            x={cx}
+            y={cy - 2}
+            textAnchor="middle"
+            fontSize={18}
+            fontWeight={700}
+            fill="#1c2430"
+            style={{ fontFamily: "var(--font-source-serif), Georgia, serif" }}
+          >
+            {centroValor}
+          </text>
+        ) : null}
+        {centroTitulo ? (
+          <text
+            x={cx}
+            y={cy + 14}
+            textAnchor="middle"
+            fontSize={9}
+            letterSpacing="0.1em"
+            fill={ROTULO}
+          >
+            {centroTitulo.toUpperCase()}
+          </text>
+        ) : null}
+      </svg>
+      <div className="flex w-full flex-col gap-1.5">
+        {segs.map((s, i) => (
+          <div key={i} className="flex items-center gap-2 text-xs">
+            <span
+              className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+              style={{ backgroundColor: s.cor }}
+            />
+            <span className="min-w-0 flex-1 truncate text-tinta">{s.rotulo}</span>
+            <span className="font-mono tabular-nums text-tinta-suave">
+              {(s.frac * 100).toFixed(0)}%
+            </span>
+            <span className="w-24 text-right font-mono tabular-nums text-tinta">
+              {formatarBRL(s.valor)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

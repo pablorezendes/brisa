@@ -59,6 +59,58 @@ h3 {
   letter-spacing: -0.01em;
 }
 
+/* ---------- animações de entrada dos gráficos (CSS puro, SVG estático) ---- */
+@keyframes g-crescer {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+@keyframes g-crescer-x {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+@keyframes g-desenhar {
+  to { stroke-dashoffset: 0; }
+}
+@keyframes g-surgir {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+/* barra vertical: cresce da base para cima */
+.g-barra {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  animation: g-crescer 0.55s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+/* barra horizontal: cresce da esquerda para a direita */
+.g-barra-x {
+  transform-box: fill-box;
+  transform-origin: left;
+  animation: g-crescer-x 0.6s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+/* linha/arco: desenha-se do começo ao fim (exige pathLength="1") */
+.g-linha {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: g-desenhar 1.1s ease forwards;
+}
+/* elemento que surge com leve zoom (rótulos, ponto final, centro) */
+.g-surgir {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: g-surgir 0.5s ease both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .g-barra,
+  .g-barra-x,
+  .g-linha,
+  .g-surgir {
+    animation: none !important;
+    stroke-dashoffset: 0 !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+}
+
 /* tabelas: sem bordas verticais, réguas horizontais sutis,
    cabeçalho em serifa (qualidade de "relatório editorial") */
 .tabela {

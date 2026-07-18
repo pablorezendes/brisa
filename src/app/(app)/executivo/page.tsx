@@ -25,6 +25,8 @@ import {
   COR_2,
   COR_3,
   Legenda,
+  Medidor,
+  Rosca,
 } from "@/components/graficos";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +50,27 @@ export default async function PaginaExecutivo({
   const caixaAnterior = mesNum > 1 ? d.caixaPorMes[mesNum - 2] : null;
   const nomeMes = NOME_MES_COMPLETO[mesNum].toLowerCase();
   const taxaPct = d.taxaRecebimento !== null ? d.taxaRecebimento * 100 : null;
+
+  // rosca: composição da comissão do mês — top 3 empreendimentos + "Outros"
+  const empOrdenados = [...d.porEmpreendimento]
+    .filter((e) => e.comissaoMes > 0)
+    .sort((a, b) => b.comissaoMes - a.comissaoMes);
+  const roscaFatias = [
+    ...empOrdenados.slice(0, 3).map((e) => ({
+      rotulo: e.nome,
+      valor: e.comissaoMes,
+    })),
+    ...(empOrdenados.length > 3
+      ? [
+          {
+            rotulo: `Outros (${empOrdenados.length - 3})`,
+            valor: empOrdenados
+              .slice(3)
+              .reduce((s, e) => s + e.comissaoMes, 0),
+          },
+        ]
+      : []),
+  ];
 
   return (
     <div className="max-w-6xl">
@@ -212,8 +235,56 @@ export default async function PaginaExecutivo({
         />
       </div>
 
+      {/* ---------- visão rápida: medidor + rosca ---------- */}
+      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card className="p-5">
+          <div className="mb-1 flex items-center gap-1.5">
+            <h2 className="text-sm font-semibold">
+              Quanto do mês já entrou
+            </h2>
+            <Ajuda dica="Do total que era devido no mês, quanto já foi recebido. Verde (≥95%) é ótimo; ocre pede atenção; vermelho exige cobrança. Passa de 100% quando alguém quita atrasos." />
+          </div>
+          {d.taxaRecebimento !== null ? (
+            <>
+              <Medidor
+                fracao={d.taxaRecebimento}
+                rotulo="Taxa de recebimento"
+              />
+              <p className="mt-1 text-center text-xs text-slate-500">
+                recebido {formatarBRL(d.recebidoMes)} de{" "}
+                {formatarBRL(d.devidoMes)} devidos
+              </p>
+            </>
+          ) : (
+            <p className="py-8 text-center text-sm text-slate-500">
+              Nada devido neste mês ainda.
+            </p>
+          )}
+        </Card>
+
+        <Card className="p-5">
+          <div className="mb-3 flex items-center gap-1.5">
+            <h2 className="text-sm font-semibold">
+              De onde veio a comissão do mês
+            </h2>
+            <Ajuda dica="Participação de cada empreendimento na comissão do mês. Mostra os 3 maiores e agrupa o resto em Outros — útil para ver de quem depende o resultado." />
+          </div>
+          {roscaFatias.length > 0 ? (
+            <Rosca
+              fatias={roscaFatias}
+              centroTitulo="total"
+              centroValor={formatarBRL(comissaoMesTotal).replace("R$ ", "")}
+            />
+          ) : (
+            <p className="py-8 text-center text-sm text-slate-500">
+              Sem comissão registrada neste mês.
+            </p>
+          )}
+        </Card>
+      </div>
+
       {/* ---------- gráficos do núcleo ---------- */}
-      <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card className="p-5">
           <div className="mb-2 flex items-baseline justify-between">
             <h2 className="text-sm font-semibold">Comissão mês a mês</h2>
