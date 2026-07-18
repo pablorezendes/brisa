@@ -213,7 +213,7 @@ export default async function PaginaExecutivo({
       </div>
 
       {/* ---------- gráficos do núcleo ---------- */}
-      <div className="mt-6 grid gap-4 xl:grid-cols-2">
+      <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card className="p-5">
           <div className="mb-2 flex items-baseline justify-between">
             <h2 className="text-sm font-semibold">Comissão mês a mês</h2>
@@ -419,7 +419,7 @@ export default async function PaginaExecutivo({
       </Card>
 
       {/* ---------- listas operacionais ---------- */}
-      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card className="p-5">
           <h2 className="mb-2 text-sm font-semibold">
             Reajustes de {NOME_MES_COMPLETO[mesNum].toLowerCase()}
@@ -429,26 +429,28 @@ export default async function PaginaExecutivo({
               Nenhum contrato com aniversário de reajuste neste mês.
             </p>
           ) : (
-            <table className="tabela">
-              <thead>
-                <tr>
-                  <th>Empreendimento</th>
-                  <th>Localização</th>
-                  <th>Locatário</th>
-                  <th className="text-right">Aluguel atual</th>
-                </tr>
-              </thead>
-              <tbody>
-                {d.reajustesDoMes.map((r, i) => (
-                  <tr key={i}>
-                    <td>{r.empreendimento}</td>
-                    <td>{r.localizacao}</td>
-                    <td>{r.locatario}</td>
-                    <td className="text-right"><Dinheiro centavos={r.valorBase} /></td>
+            <div className="overflow-x-auto">
+              <table className="tabela">
+                <thead>
+                  <tr>
+                    <th>Empreendimento</th>
+                    <th>Localização</th>
+                    <th>Locatário</th>
+                    <th className="text-right">Aluguel atual</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {d.reajustesDoMes.map((r, i) => (
+                    <tr key={i}>
+                      <td>{r.empreendimento}</td>
+                      <td>{r.localizacao}</td>
+                      <td>{r.locatario}</td>
+                      <td className="text-right"><Dinheiro centavos={r.valorBase} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </Card>
 
@@ -466,42 +468,44 @@ export default async function PaginaExecutivo({
               Todas as cobranças do mês foram recebidas. ✔
             </p>
           ) : (
-            <table className="tabela">
-              <thead>
-                <tr>
-                  <th>Empreendimento</th>
-                  <th>Locatário</th>
-                  <th>Localização</th>
-                  <th className="text-right">
-                    Devido{" "}
-                    <Ajuda dica="Aluguel + IPTU + condomínio da cobrança pendente. Registre o pagamento em Recebimentos assim que entrar." />
-                  </th>
-                  <th className="text-right">
-                    Atraso{" "}
-                    <Ajuda dica="Dias corridos desde o vencimento do contrato. Acima de 30 dias fica vermelho — priorize a cobrança." />
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {d.pendentesDoMes.slice(0, 10).map((p, i) => (
-                  <tr key={i}>
-                    <td>{p.empreendimento}</td>
-                    <td>{p.locatario}</td>
-                    <td>{p.localizacao}</td>
-                    <td className="text-right"><Dinheiro centavos={p.totalDevido} /></td>
-                    <td className="text-right">
-                      {p.diasAtraso !== null ? (
-                        <Badge cor={p.diasAtraso > 30 ? "vermelho" : "ambar"}>
-                          {p.diasAtraso}d
-                        </Badge>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="tabela">
+                <thead>
+                  <tr>
+                    <th>Empreendimento</th>
+                    <th>Locatário</th>
+                    <th>Localização</th>
+                    <th className="text-right">
+                      Devido{" "}
+                      <Ajuda dica="Aluguel + IPTU + condomínio da cobrança pendente. Registre o pagamento em Recebimentos assim que entrar." />
+                    </th>
+                    <th className="text-right">
+                      Atraso{" "}
+                      <Ajuda dica="Dias corridos desde o vencimento do contrato. Acima de 30 dias fica vermelho — priorize a cobrança." />
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {d.pendentesDoMes.slice(0, 10).map((p, i) => (
+                    <tr key={i}>
+                      <td>{p.empreendimento}</td>
+                      <td>{p.locatario}</td>
+                      <td>{p.localizacao}</td>
+                      <td className="text-right"><Dinheiro centavos={p.totalDevido} /></td>
+                      <td className="text-right">
+                        {p.diasAtraso !== null ? (
+                          <Badge cor={p.diasAtraso > 30 ? "vermelho" : "ambar"}>
+                            {p.diasAtraso}d
+                          </Badge>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
           {d.pendentesDoMes.length > 10 ? (
             <p className="mt-2 text-xs text-slate-500">

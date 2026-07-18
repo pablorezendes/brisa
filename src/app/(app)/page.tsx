@@ -52,7 +52,7 @@ export default async function Home({
         acoes={<SeletorMes base="/" mes={mes} />}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi
           rotulo="Comissão do mês"
           valor={<Dinheiro centavos={kpis.comissaoMes} />}
@@ -105,7 +105,7 @@ export default async function Home({
         />
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card className="px-5 py-4">
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
@@ -118,39 +118,41 @@ export default async function Home({
               Matriz completa →
             </Link>
           </div>
-          <table className="tabela">
-            <thead>
-              <tr>
-                <th>Empreendimento</th>
-                <th className="text-right">Comissão</th>
-              </tr>
-            </thead>
-            <tbody>
-              {comissaoPorEmp.map((c) => (
-                <tr key={c.empreendimentoId}>
-                  <td className="font-medium">{c.empreendimento}</td>
-                  <td className="text-right">
-                    <Dinheiro centavos={c.comissao} />
-                  </td>
-                </tr>
-              ))}
-              {comissaoPorEmp.length === 0 ? (
+          <div className="overflow-x-auto">
+            <table className="tabela">
+              <thead>
                 <tr>
-                  <td colSpan={2} className="py-6 text-center text-slate-500">
-                    Nenhuma comissão em {formatarCompetencia(mes)}.
+                  <th>Empreendimento</th>
+                  <th className="text-right">Comissão</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comissaoPorEmp.map((c) => (
+                  <tr key={c.empreendimentoId}>
+                    <td className="font-medium">{c.empreendimento}</td>
+                    <td className="text-right">
+                      <Dinheiro centavos={c.comissao} />
+                    </td>
+                  </tr>
+                ))}
+                {comissaoPorEmp.length === 0 ? (
+                  <tr>
+                    <td colSpan={2} className="py-6 text-center text-slate-500">
+                      Nenhuma comissão em {formatarCompetencia(mes)}.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td>Total</td>
+                  <td className="text-right">
+                    <Dinheiro centavos={kpis.comissaoMes} destaque />
                   </td>
                 </tr>
-              ) : null}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td>Total</td>
-                <td className="text-right">
-                  <Dinheiro centavos={kpis.comissaoMes} destaque />
-                </td>
-              </tr>
-            </tfoot>
-          </table>
+              </tfoot>
+            </table>
+          </div>
         </Card>
 
         <Card className="px-5 py-4">
@@ -165,59 +167,61 @@ export default async function Home({
               Inadimplência completa →
             </Link>
           </div>
-          <table className="tabela">
-            <thead>
-              <tr>
-                <th>Empreendimento</th>
-                <th>Locatário</th>
-                <th className="text-right">
-                  Total devido{" "}
-                  <Ajuda dica="Aluguel + IPTU + condomínio da cobrança ainda sem pagamento. Quando entrar o dinheiro, registre em Recebimentos — se vier parcial ou em acordo, anote o motivo na Observação." />
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {topPendentes.map((p) => (
-                <tr key={p.recebimentoId}>
-                  <td className="font-medium">{p.empreendimento}</td>
-                  <td>
-                    {p.locatario ?? (
-                      <span className="text-slate-400">{p.identificacao}</span>
-                    )}
-                  </td>
-                  <td className="text-right">
-                    <Dinheiro centavos={p.totalDevido} />
-                  </td>
-                </tr>
-              ))}
-              {topPendentes.length === 0 ? (
+          <div className="overflow-x-auto">
+            <table className="tabela">
+              <thead>
                 <tr>
-                  <td colSpan={3} className="py-6 text-center text-slate-500">
-                    Nenhuma pendência em {formatarCompetencia(mes)}.
-                  </td>
+                  <th>Empreendimento</th>
+                  <th>Locatário</th>
+                  <th className="text-right">
+                    Total devido{" "}
+                    <Ajuda dica="Aluguel + IPTU + condomínio da cobrança ainda sem pagamento. Quando entrar o dinheiro, registre em Recebimentos — se vier parcial ou em acordo, anote o motivo na Observação." />
+                  </th>
                 </tr>
+              </thead>
+              <tbody>
+                {topPendentes.map((p) => (
+                  <tr key={p.recebimentoId}>
+                    <td className="font-medium">{p.empreendimento}</td>
+                    <td>
+                      {p.locatario ?? (
+                        <span className="text-slate-400">{p.identificacao}</span>
+                      )}
+                    </td>
+                    <td className="text-right">
+                      <Dinheiro centavos={p.totalDevido} />
+                    </td>
+                  </tr>
+                ))}
+                {topPendentes.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="py-6 text-center text-slate-500">
+                      Nenhuma pendência em {formatarCompetencia(mes)}.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+              {pendentes.length > 0 ? (
+                <tfoot>
+                  <tr>
+                    <td colSpan={2}>
+                      {pendentes.length > topPendentes.length
+                        ? `Top ${topPendentes.length} de ${pendentes.length} pendências`
+                        : `${pendentes.length} ${
+                            pendentes.length === 1 ? "pendência" : "pendências"
+                          }`}
+                    </td>
+                    <td className="text-right">
+                      <Dinheiro
+                        centavos={kpis.inadimplencia.valorDevido}
+                        destaque
+                      />
+                    </td>
+                  </tr>
+                </tfoot>
               ) : null}
-            </tbody>
-            {pendentes.length > 0 ? (
-              <tfoot>
-                <tr>
-                  <td colSpan={2}>
-                    {pendentes.length > topPendentes.length
-                      ? `Top ${topPendentes.length} de ${pendentes.length} pendências`
-                      : `${pendentes.length} ${
-                          pendentes.length === 1 ? "pendência" : "pendências"
-                        }`}
-                  </td>
-                  <td className="text-right">
-                    <Dinheiro
-                      centavos={kpis.inadimplencia.valorDevido}
-                      destaque
-                    />
-                  </td>
-                </tr>
-              </tfoot>
-            ) : null}
-          </table>
+            </table>
+          </div>
         </Card>
       </div>
 
@@ -236,44 +240,46 @@ export default async function Home({
             Nenhum contrato com reajuste em {formatarCompetencia(mes)}.
           </p>
         ) : (
-          <table className="tabela">
-            <thead>
-              <tr>
-                <th>Empreendimento</th>
-                <th>Localização</th>
-                <th>Locatário</th>
-                <th>
-                  Índice{" "}
-                  <Ajuda dica="Índice de correção combinado no contrato (IGP-M, IPCA...). Aplique o percentual acumulado de 12 meses sobre o valor atual e atualize o contrato." />
-                </th>
-                <th className="text-right">
-                  Valor atual{" "}
-                  <Ajuda dica="Aluguel-base vigente antes do reajuste, sem IPTU nem condomínio. É sobre este valor que o índice é aplicado." />
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {reajustes.map((r) => (
-                <tr key={r.contratoId}>
-                  <td className="font-medium">{r.empreendimento}</td>
-                  <td>{r.identificacao}</td>
-                  <td>
-                    {r.locatario ?? <span className="text-slate-400">—</span>}
-                  </td>
-                  <td>
-                    {r.indiceReajuste ? (
-                      <Badge cor="azul">{r.indiceReajuste}</Badge>
-                    ) : (
-                      <span className="text-slate-400">—</span>
-                    )}
-                  </td>
-                  <td className="text-right">
-                    <Dinheiro centavos={r.valorBase} />
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="tabela">
+              <thead>
+                <tr>
+                  <th>Empreendimento</th>
+                  <th>Localização</th>
+                  <th>Locatário</th>
+                  <th>
+                    Índice{" "}
+                    <Ajuda dica="Índice de correção combinado no contrato (IGP-M, IPCA...). Aplique o percentual acumulado de 12 meses sobre o valor atual e atualize o contrato." />
+                  </th>
+                  <th className="text-right">
+                    Valor atual{" "}
+                    <Ajuda dica="Aluguel-base vigente antes do reajuste, sem IPTU nem condomínio. É sobre este valor que o índice é aplicado." />
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {reajustes.map((r) => (
+                  <tr key={r.contratoId}>
+                    <td className="font-medium">{r.empreendimento}</td>
+                    <td>{r.identificacao}</td>
+                    <td>
+                      {r.locatario ?? <span className="text-slate-400">—</span>}
+                    </td>
+                    <td>
+                      {r.indiceReajuste ? (
+                        <Badge cor="azul">{r.indiceReajuste}</Badge>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                    <td className="text-right">
+                      <Dinheiro centavos={r.valorBase} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
     </div>

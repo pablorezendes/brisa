@@ -17,14 +17,16 @@ export function PageHeader({
   acoes?: React.ReactNode;
 }) {
   return (
-    <div className="mb-6 flex items-end justify-between gap-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{titulo}</h1>
+    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+      <div className="min-w-0">
+        <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{titulo}</h1>
         {descricao ? (
           <p className="mt-1 text-sm text-slate-500">{descricao}</p>
         ) : null}
       </div>
-      {acoes ? <div className="flex items-center gap-2">{acoes}</div> : null}
+      {acoes ? (
+        <div className="flex flex-wrap items-center gap-2">{acoes}</div>
+      ) : null}
     </div>
   );
 }
@@ -126,12 +128,12 @@ export function Kpi({
   ajuda?: string;
 }) {
   return (
-    <Card className="px-5 py-4">
+    <Card className="px-4 py-4 sm:px-5">
       <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-tinta-suave">
         {rotulo}
         {ajuda ? <Ajuda dica={ajuda} /> : null}
       </div>
-      <div className="mt-1.5 font-serif text-2xl font-semibold tabular-nums text-tinta">
+      <div className="mt-1.5 font-serif text-xl font-semibold tabular-nums text-tinta sm:text-2xl">
         {valor}
       </div>
       {variacao ? <div className="mt-1">{variacao}</div> : null}

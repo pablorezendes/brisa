@@ -207,7 +207,7 @@ export default async function PainelCobranca({
       </Card>
 
       {/* ---------- AGING + TOP DEVEDORES ---------- */}
-      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card className="p-5">
           <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
             Aging — há quanto tempo venceu

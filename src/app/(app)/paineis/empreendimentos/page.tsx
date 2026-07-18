@@ -52,7 +52,7 @@ export default async function PaginaPainelEmpreendimentos({
             recebidos.
           </p>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {painel.cartoes.map((c) => (
               <Card key={c.id} className="flex flex-col p-5">
                 <div className="flex items-start justify-between gap-3">

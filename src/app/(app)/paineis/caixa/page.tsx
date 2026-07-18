@@ -272,7 +272,7 @@ export default async function PaginaPainelCaixa({
       </Card>
 
       {/* ---------- despesas por categoria ---------- */}
-      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card className="p-5">
           <div className="mb-2 flex items-baseline justify-between">
             <h2 className="text-sm font-semibold">

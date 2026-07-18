@@ -36,10 +36,19 @@
   --font-mono: var(--font-jetbrains);
 }
 
+/* impede que o menu lateral off-canvas (position:fixed em x negativo) crie
+   rolagem horizontal fantasma no mobile. O html é o bloco de contenção do
+   elemento fixo, então a trava precisa estar aqui. Não afeta o scroll próprio
+   das tabelas, que vive em seus contêineres .overflow-x-auto. */
+html {
+  overflow-x: hidden;
+}
+
 body {
   background: var(--papel);
   color: var(--tinta);
   font-family: var(--font-public-sans), Arial, Helvetica, sans-serif;
+  overflow-x: hidden;
 }
 
 /* títulos editoriais em serifa */

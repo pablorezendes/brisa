@@ -43,7 +43,7 @@ export default async function RelatoriosPage({
         descricao="Visões gerenciais derivadas dos recebimentos — as mesmas da planilha, sempre atualizadas."
         acoes={<SeletorAno base="/relatorios" ano={ano} />}
       />
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {SECOES(ano, mesRecente).map((s) => (
           <Link key={s.href} href={s.href} className="group">
             <Card className="h-full px-5 py-4 transition-colors group-hover:border-slate-400">
