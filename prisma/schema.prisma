@@ -1,0 +1,195 @@
+// Schema conforme gestao-imoveis-brisa/references/06-schema-dados.md.
+// Decisões de adaptação para SQLite:
+//  - Valores monetários SEMPRE em centavos (Int). Nunca float.
+//  - Competências/meses como String "YYYY-MM" e datas como String "YYYY-MM-DD"
+//    (evita deslocamento de fuso em datas sem hora; portável p/ PostgreSQL).
+//  - Enums como String (SQLite não suporta enum no Prisma).
+//  - Insumos persistidos; total/base/comissão são derivados em código
+//    (src/lib/dominio/comissao.ts — única fonte da regra).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Núcleo de locação ----------
+
+model Empreendimento {
+  id           String         @id @default(uuid())
+  nome         String         @unique // normalizado (upper, sem acento)
+  ativo        Boolean        @default(true)
+  unidades     Unidade[]
+  recebimentos Recebimento[]
+}
+
+model Locatario {
+  id        String     @id @default(uuid())
+  nome      String
+  nomeNorm  String     // chave de matching (upper, sem acento, espaços colapsados)
+  cpfCnpj   String?    // só dígitos
+  contato   String?
+  contratos Contrato[]
+
+  @@index([nomeNorm])
+}
+
+model Unidade {
+  id               String         @id @default(uuid())
+  empreendimentoId String
+  identificacao    String         // "PIO XII SALA 01"
+  tipo             String         @default("residencial") // residencial|comercial|temporada
+  ativo            Boolean        @default(true)
+  empreendimento   Empreendimento @relation(fields: [empreendimentoId], references: [id])
+  contratos        Contrato[]
+  unidadeTemporada UnidadeTemporada[]
+
+  @@unique([empreendimentoId, identificacao])
+}
+
+model Contrato {
+  id             String        @id @default(uuid())
+  unidadeId      String
+  locatarioId    String? // NULL = desocupado
+  valorBase      Int           @default(0) // centavos
+  iptu           Int           @default(0)
+  condominio     Int           @default(0)
+  diaVencimento  Int?
+  mesReajuste    Int? // 1..12
+  indiceReajuste String? // IGPM|IPCA (não consta na origem)
+  status         String        @default("ativo") // ativo|encerrado|acordo
+  inicio         String? // "YYYY-MM-DD"
+  fim            String?
+  observacao     String?
+  unidade        Unidade       @relation(fields: [unidadeId], references: [id])
+  locatario      Locatario?    @relation(fields: [locatarioId], references: [id])
+  recebimentos   Recebimento[]
+
+  @@index([unidadeId])
+}
+
+model ParametroComissao {
+  id       String @id @default(uuid())
+  vigencia String @unique // "YYYY-MM" (início da vigência)
+  taxaBps  Int    @default(1000) // 1000 = 10%
+}
+
+model Recebimento {
+  id               String         @id @default(uuid())
+  contratoId       String
+  empreendimentoId String // denormalizado p/ relatório de comissão
+  mesLancamento    String // "YYYY-MM" — mês da aba RECEB (dimensão da matriz COMISSÃO e do fechamento)
+  competencia      String // "YYYY-MM" (mês de referência; pode diferir do lançamento — atrasos/adiantamentos)
+  valor            Int            @default(0) // insumos em centavos
+  iptu             Int            @default(0)
+  cond             Int            @default(0)
+  recebido         Int? // NULL = não recebido
+  dataPagamento    String? // "YYYY-MM-DD"
+  via              String? // BOLETO|PIX|DINHEIRO
+  taxaComissaoBps  Int            @default(1000) // snapshot da taxa do mês
+  observacao       String?
+  origemAgregada   Boolean        @default(false) // true na linha AIRBNB/TODOS
+  contrato         Contrato       @relation(fields: [contratoId], references: [id])
+  empreendimento   Empreendimento @relation(fields: [empreendimentoId], references: [id])
+
+  @@index([mesLancamento, empreendimentoId])
+  @@index([competencia])
+  @@index([contratoId])
+}
+
+model FechamentoMensal {
+  id            String   @id @default(uuid())
+  mesLancamento String   @unique // "YYYY-MM" (mês operacional fechado — mesma dimensão da matriz)
+  comissaoTotal Int // centavos (snapshot imutável)
+  detalhe       String // JSON: comissão por empreendimento
+  fechadoEm     DateTime @default(now())
+}
+
+// ---------- Módulo Temporada (Airbnb) ----------
+
+model UnidadeTemporada {
+  id           String                 @id @default(uuid())
+  codigo       String                 @unique // "208", "304"...
+  unidadeId    String?
+  ativo        Boolean                @default(true)
+  unidade      Unidade?               @relation(fields: [unidadeId], references: [id])
+  limpezas     Limpeza[]
+  despesas     DespesaTemporada[]
+  recebimentos RecebimentoTemporada[]
+}
+
+model Limpeza {
+  id                 String           @id @default(uuid())
+  unidadeTemporadaId String
+  competencia        String // "YYYY-MM"
+  quantidade         Int              @default(0)
+  valorUnitario      Int              @default(5000) // R$50,00
+  extraPdl           Int              @default(0)
+  unidadeTemporada   UnidadeTemporada @relation(fields: [unidadeTemporadaId], references: [id])
+
+  @@index([competencia])
+}
+
+model DespesaTemporada {
+  id                 String            @id @default(uuid())
+  unidadeTemporadaId String? // NULL = despesa do mês (extra/produto)
+  competencia        String
+  tipo               String // ENERGIA|CONDO|IPTU|LIMPEZA|EXTRA
+  valor              Int
+  unidadeTemporada   UnidadeTemporada? @relation(fields: [unidadeTemporadaId], references: [id])
+
+  @@index([competencia])
+}
+
+model RecebimentoTemporada {
+  id                 String            @id @default(uuid())
+  unidadeTemporadaId String?
+  competencia        String
+  valor              Int
+  plataforma         String?
+  hospede            String?
+  unidadeTemporada   UnidadeTemporada? @relation(fields: [unidadeTemporadaId], references: [id])
+
+  @@index([competencia])
+}
+
+// Apuração histórica importada da planilha AIRBNB (anos anteriores à operação).
+// 2023/2024 têm receita e despesa rotuladas; 2025 só receita (despesa = null,
+// lucro indeterminado). O ano corrente é derivado do núcleo, não desta tabela.
+model ApuracaoTemporadaHistorica {
+  id      String @id @default(uuid())
+  ano     Int
+  mes     Int // 1..12
+  receita Int // centavos
+  despesa Int? // null = planilha não tem total de despesa rotulado no ano
+
+  @@unique([ano, mes])
+}
+
+// ---------- Módulo Caixa (CONTA_AC) ----------
+
+model LancamentoCaixa {
+  id            String  @id @default(uuid())
+  mesReferencia String // "YYYY-MM" (mês da aba)
+  centroCusto   String // AL|CH|GERAL (GERAL: ENTRADA e RECEB_DINHEIRO, que na origem não têm centro)
+  tipo          String // SAIDA|ENTRADA|RECEB_DINHEIRO
+  categoria     String? // seção da legenda (só SAIDA)
+  data          String? // "YYYY-MM-DD"
+  valor         Int // centavos
+  descricao     String?
+  cliente       String? // só RECEB_DINHEIRO
+  local         String? // só RECEB_DINHEIRO
+
+  @@index([mesReferencia, centroCusto])
+}
+
+model CategoriaCentroCusto {
+  id          String @id @default(uuid())
+  centroCusto String // AL|CH
+  nome        String
+
+  @@unique([centroCusto, nome])
+}

@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f6f7f9;
+  --foreground: #16181d;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+/* tabelas densas padrão do sistema */
+.tabela {
+  @apply w-full text-sm;
+}
+.tabela th {
+  @apply px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-200 whitespace-nowrap;
+}
+.tabela td {
+  @apply px-3 py-1.5 border-b border-slate-100 whitespace-nowrap;
+}
+.tabela tbody tr:hover {
+  @apply bg-slate-50;
+}
+.tabela tfoot td {
+  @apply font-semibold border-t-2 border-slate-300 bg-slate-50;
+}

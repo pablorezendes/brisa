@@ -1,0 +1,27 @@
+services:
+  brisa:
+    build: .
+    container_name: brisa
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=file:/data/brisa.db
+    volumes:
+      - ./dados:/data          # banco SQLite (backup = copiar esta pasta)
+      - ./data:/app/data       # dataset.json p/ seed + relatório de exceções
+    networks:
+      - traefik
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.brisa.rule=Host(`brisa.codexaurora.com.br`)
+      - traefik.http.routers.brisa.entrypoints=websecure
+      - traefik.http.routers.brisa.tls=true
+      # AJUSTAR: nome do certresolver do seu Traefik (veja DEPLOY.md)
+      - traefik.http.routers.brisa.tls.certresolver=letsencrypt
+      - traefik.http.services.brisa.loadbalancer.server.port=3000
+      # proteção de acesso (obrigatória: o sistema não tem login próprio)
+      - traefik.http.routers.brisa.middlewares=brisa-auth
+      - traefik.http.middlewares.brisa-auth.basicauth.users=${BRISA_BASICAUTH:?defina BRISA_BASICAUTH no .env}
+
+networks:
+  traefik:
+    external: true # AJUSTAR: nome real da rede do Traefik (veja DEPLOY.md)

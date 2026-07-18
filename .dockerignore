@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.claude
+prisma/dev.db
+*.db
+*.db-journal
+dados
+auth
+data/*.json
+.env
+DEPLOY.md
