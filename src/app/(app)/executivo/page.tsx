@@ -24,7 +24,7 @@ import {
   COR_2,
   COR_3,
   Legenda,
-} from "./graficos";
+} from "@/components/graficos";
 
 export const dynamic = "force-dynamic";
 
@@ -501,7 +501,7 @@ export default async function PaginaExecutivo({
 }
 
 /** wrapper para import dinâmico do sparkline (mantém page enxuta) */
-import { Sparkline } from "./graficos";
+import { Sparkline } from "@/components/graficos";
 function BarraSparkline({ valores }: { valores: number[] }) {
   return <Sparkline valores={valores} />;
 }

@@ -2,14 +2,37 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { encerrarSessao, exigirSessao } from "@/lib/auth";
 
-const MENU = [
-  { href: "/", rotulo: "Início" },
-  { href: "/executivo", rotulo: "Executivo" },
-  { href: "/recebimentos", rotulo: "Recebimentos" },
-  { href: "/contratos", rotulo: "Contratos" },
-  { href: "/temporada", rotulo: "Temporada" },
-  { href: "/caixa", rotulo: "Caixa" },
-  { href: "/relatorios", rotulo: "Relatórios" },
+const MENU: { titulo: string; itens: { href: string; rotulo: string }[] }[] = [
+  {
+    titulo: "Visão",
+    itens: [
+      { href: "/", rotulo: "Início" },
+      { href: "/executivo", rotulo: "Executivo" },
+    ],
+  },
+  {
+    titulo: "Operação",
+    itens: [
+      { href: "/recebimentos", rotulo: "Recebimentos" },
+      { href: "/contratos", rotulo: "Contratos" },
+      { href: "/temporada", rotulo: "Temporada" },
+      { href: "/caixa", rotulo: "Caixa" },
+    ],
+  },
+  {
+    titulo: "Análise",
+    itens: [
+      { href: "/paineis/cobranca", rotulo: "Cobrança" },
+      { href: "/paineis/empreendimentos", rotulo: "Empreendimentos" },
+      { href: "/paineis/caixa", rotulo: "Caixa analítico" },
+      { href: "/paineis/temporada", rotulo: "Temporada anual" },
+      { href: "/relatorios", rotulo: "Relatórios" },
+    ],
+  },
+  {
+    titulo: "Apoio",
+    itens: [{ href: "/ajuda", rotulo: "Como funciona" }],
+  },
 ];
 
 async function sair() {
@@ -36,16 +59,23 @@ export default async function AppLayout({
             Gestão de Imóveis
           </div>
         </Link>
-        <nav className="flex-1 space-y-0.5 px-3 py-6">
-          {MENU.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="group flex items-center gap-3 px-3 py-2.5 text-xs font-bold uppercase tracking-[0.08em] text-tinta-suave transition-colors hover:bg-[#eae8e4] hover:text-tinta"
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-contorno transition-colors group-hover:bg-oliva" />
-              {item.rotulo}
-            </Link>
+        <nav className="flex-1 overflow-y-auto px-3 py-4">
+          {MENU.map((grupo) => (
+            <div key={grupo.titulo} className="mb-4">
+              <div className="px-3 pb-1 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-tinta-suave/70">
+                {grupo.titulo}
+              </div>
+              {grupo.itens.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="group flex items-center gap-3 px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] text-tinta-suave transition-colors hover:bg-[#eae8e4] hover:text-tinta"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-contorno transition-colors group-hover:bg-oliva" />
+                  {item.rotulo}
+                </Link>
+              ))}
+            </div>
           ))}
         </nav>
         <div className="border-t border-contorno px-5 py-4">

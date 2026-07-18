@@ -97,22 +97,39 @@ export function Badge({
   );
 }
 
+/**
+ * "?" de ajuda com explicação em tooltip (CSS puro, hover/foco).
+ * Use ao lado de rótulos de KPI e cabeçalhos de coluna para explicar a
+ * métrica em linguagem simples — sempre dizendo COMO agir no lançamento.
+ */
+export function Ajuda({ dica }: { dica: string }) {
+  return (
+    <span className="dica" tabIndex={0} data-dica={dica} aria-label={dica}>
+      ?
+    </span>
+  );
+}
+
 /** KPI simples para dashboards. */
 export function Kpi({
   rotulo,
   valor,
   detalhe,
   variacao,
+  ajuda,
 }: {
   rotulo: string;
   valor: React.ReactNode;
   detalhe?: string;
   variacao?: React.ReactNode;
+  /** explicação da métrica em linguagem simples (vira um "?" com tooltip) */
+  ajuda?: string;
 }) {
   return (
     <Card className="px-5 py-4">
-      <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-tinta-suave">
+      <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-tinta-suave">
         {rotulo}
+        {ajuda ? <Ajuda dica={ajuda} /> : null}
       </div>
       <div className="mt-1.5 font-serif text-2xl font-semibold tabular-nums text-tinta">
         {valor}

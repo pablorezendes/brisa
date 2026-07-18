@@ -318,6 +318,75 @@ export function BarrasCaixa({
   );
 }
 
+/**
+ * Barras horizontais para rankings (top categorias, top devedores).
+ * Série única em um matiz; rótulo direto do valor em cada barra (a relação
+ * de contraste da cor pede rótulos visíveis — regra do design de dados).
+ */
+export function BarrasHorizontais({
+  itens,
+  cor = COR_1,
+}: {
+  itens: { rotulo: string; valor: number }[];
+  cor?: string;
+}) {
+  const LARG = 560;
+  const ALT_BARRA = 18;
+  const GAP = 10;
+  const ROTULO_W = 170;
+  const VALOR_W = 90;
+  const n = itens.length;
+  if (n === 0) return null;
+  const max = Math.max(...itens.map((i) => i.valor), 1);
+  const plotW = LARG - ROTULO_W - VALOR_W;
+  const altura = n * (ALT_BARRA + GAP);
+
+  return (
+    <svg
+      viewBox={`0 0 ${LARG} ${altura}`}
+      className="w-full"
+      role="img"
+      aria-label="Ranking"
+    >
+      {itens.map((item, i) => {
+        const y = i * (ALT_BARRA + GAP);
+        const w = Math.max((item.valor / max) * plotW, 2);
+        const rotulo =
+          item.rotulo.length > 24 ? item.rotulo.slice(0, 23) + "…" : item.rotulo;
+        return (
+          <g key={i}>
+            <text
+              x={ROTULO_W - 8}
+              y={y + ALT_BARRA / 2 + 3.5}
+              fontSize={10}
+              fill="#1c2430"
+              textAnchor="end"
+            >
+              {rotulo}
+              <title>{item.rotulo}</title>
+            </text>
+            <path
+              d={`M${ROTULO_W},${y} h${w - 4} q4,0 4,4 v${ALT_BARRA - 8} q0,4 -4,4 h${-(w - 4)} z`}
+              fill={cor}
+            >
+              <title>{`${item.rotulo}: ${formatarBRL(item.valor)}`}</title>
+            </path>
+            <text
+              x={ROTULO_W + w + 6}
+              y={y + ALT_BARRA / 2 + 3.5}
+              fontSize={10}
+              fontWeight={600}
+              fill="#444840"
+            >
+              {formatarBRL(item.valor)}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 /** Sparkline de evolução (linha 2px + ponto final). */
 export function Sparkline({ valores }: { valores: number[] }) {
   const LARG = 110;

@@ -74,3 +74,44 @@ h3 {
   border-bottom: none;
   background: transparent;
 }
+
+/* tooltip editorial de ajuda ("?") — CSS puro, hover/foco, sem sombra */
+.dica {
+  @apply relative inline-flex h-4 w-4 shrink-0 cursor-help items-center justify-center rounded-full border align-middle font-mono text-[10px] font-bold;
+  border-color: var(--contorno-forte);
+  color: var(--tinta-suave);
+}
+.dica:hover,
+.dica:focus-visible {
+  border-color: var(--tinta);
+  color: var(--tinta);
+  outline: none;
+}
+.dica::after {
+  content: attr(data-dica);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  width: 280px;
+  padding: 10px 12px;
+  background: var(--carta);
+  border: 1px solid var(--tinta);
+  color: var(--tinta);
+  font-family: var(--font-public-sans), sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: normal;
+  text-align: left;
+  z-index: 50;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.dica:hover::after,
+.dica:focus-visible::after {
+  opacity: 1;
+}
