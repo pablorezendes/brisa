@@ -279,19 +279,23 @@ export default async function PaginaCaixa({
         <Kpi
           rotulo="Despesa Antonio/Laura"
           valor={<Dinheiro centavos={consolidacao.despesaAL} destaque />}
+          ajuda="Soma das saídas do centro de custo AL (Antonio/Laura) no mês, agrupadas por categoria no bloco abaixo. Ao lançar uma saída, escolha o centro certo — é isso que separa as contas de cada núcleo da família."
         />
         <Kpi
           rotulo="Despesa Chácara Brisa"
           valor={<Dinheiro centavos={consolidacao.despesaCH} destaque />}
+          ajuda="Soma das saídas do centro de custo CH (Chácara Brisa) no mês. Gastos da chácara entram aqui; gastos pessoais de Antonio/Laura vão no centro AL."
         />
         <Kpi
           rotulo="Receita (entradas)"
           valor={<Dinheiro centavos={consolidacao.receita} destaque />}
+          ajuda="Tudo o que entrou na conta no mês (tipo ENTRADA, centro GERAL). Recebimentos em dinheiro NÃO estão aqui — são registro paralelo de espécie e ficam no bloco próprio."
         />
         <Kpi
           rotulo="Saldo do mês"
           valor={<Dinheiro centavos={consolidacao.saldo} destaque />}
           detalhe="receita − despesa AL − despesa CH"
+          ajuda="Entradas menos as saídas dos dois centros. Positivo: sobrou dinheiro no mês; negativo: as saídas superaram as entradas. O registro de espécie não entra nesta conta."
         />
       </div>
 

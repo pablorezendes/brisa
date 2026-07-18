@@ -1,5 +1,6 @@
 import Link from "next/link";
 import {
+  Ajuda,
   Badge,
   Card,
   Dinheiro,
@@ -128,16 +129,19 @@ export default async function PaginaExecutivo({
             />
           }
           detalhe="o que a administradora ganhou"
+          ajuda="Calculada sobre o que realmente entrou: (recebido − IPTU − condomínio) × taxa do mês (padrão 10%). Repasses nunca entram. O número cresce conforme você registra pagamentos em Recebimentos."
         />
         <Kpi
           rotulo="Comissão acumulada no ano"
           valor={<Dinheiro centavos={d.comissaoAcumuladaAno} destaque />}
           detalhe={`somando JAN a ${NOME_MES_ABREV[mesNum]} de ${d.ano}`}
+          ajuda="Soma das comissões de janeiro até o mês selecionado, pelo mês de lançamento de cada cobrança. Bate com o subtotal da matriz de comissão em Relatórios."
         />
         <Kpi
           rotulo="Taxa de recebimento"
           valor={pct(d.taxaRecebimento)}
           detalhe={`entrou ${formatarBRL(d.recebidoMes)} de ${formatarBRL(d.devidoMes)} devidos (acima de 100% = atrasos quitados)`}
+          ajuda="Total recebido dividido pelo total devido do mês. Acima de 100% é bom sinal: alguém quitou atrasos de meses anteriores. Bem abaixo de 100%, veja a lista de pendentes e cobre."
         />
         <Kpi
           rotulo="Inadimplência do mês"
@@ -150,6 +154,7 @@ export default async function PaginaExecutivo({
             />
           }
           detalhe={`${d.inadimplentesQtde} cobrança(s) aguardando pagamento`}
+          ajuda="Cobranças do mês ainda sem pagamento registrado (aluguel + repasses). Quando o locatário pagar, registre em Recebimentos com a data e a via — a pendência some automaticamente."
         />
       </div>
       <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -163,6 +168,7 @@ export default async function PaginaExecutivo({
             />
           }
           detalhe="aluguel + repasses (IPTU/cond.)"
+          ajuda="Tudo o que os locatários pagaram no mês, incluindo IPTU e condomínio (que são repassados ao proprietário). Não é o ganho da administradora — o ganho é a comissão."
         />
         <Kpi
           rotulo="Saldo de caixa do mês"
@@ -180,6 +186,7 @@ export default async function PaginaExecutivo({
               ? `entrou ${formatarBRL(d.caixaMes.receita)}, saiu ${formatarBRL(d.caixaMes.despesaAL + d.caixaMes.despesaCH)}`
               : "sem lançamentos no mês"
           }
+          ajuda="Entradas menos as saídas dos centros Antonio/Laura e Chácara Brisa, do livro-caixa. Recebimentos em dinheiro são registro paralelo de espécie e ficam fora do saldo. Lançado na tela Caixa."
         />
         <Kpi
           rotulo="Lucro de temporada"
@@ -195,11 +202,13 @@ export default async function PaginaExecutivo({
               ? `entrou ${formatarBRL(d.receitaTemporadaMes)}, gastou ${formatarBRL(d.despesaTemporadaMes)}`
               : `Airbnb rendeu ${formatarBRL(d.comissaoAirbnbMes)} de comissão no mês`
           }
+          ajuda="Repasses do Airbnb menos despesas (energia, condomínio, IPTU, extras) e limpezas do mês, lançados na tela Temporada. A receita deve conciliar com a linha AIRBNB do núcleo de recebimentos."
         />
         <Kpi
           rotulo="Contratos a reajustar"
           valor={String(d.reajustesDoMes.length)}
           detalhe={`aluguéis com aniversário em ${nomeMes} — hora de corrigir o valor`}
+          ajuda="Contratos cujo mês de reajuste é o mês em tela. Aplique o índice combinado (IGP-M, IPCA...) e atualize o valor em Contratos — o sistema avisa, mas não reajusta sozinho."
         />
       </div>
 
@@ -292,11 +301,20 @@ export default async function PaginaExecutivo({
             <thead>
               <tr>
                 <th>Empreendimento</th>
-                <th className="text-right">Comissão no mês</th>
-                <th className="text-right">% do mês</th>
+                <th className="text-right">
+                  Comissão no mês{" "}
+                  <Ajuda dica="Ganho da administradora neste empreendimento no mês: (recebido − IPTU − condomínio) × taxa de cada contrato." />
+                </th>
+                <th className="text-right">
+                  % do mês{" "}
+                  <Ajuda dica="Fatia deste empreendimento na comissão total do mês. Mostra de onde vem o ganho da administradora." />
+                </th>
                 <th className="text-right">Acumulada no ano</th>
                 <th className="text-right">Recebido no mês</th>
-                <th className="text-right">Ticket médio</th>
+                <th className="text-right">
+                  Ticket médio{" "}
+                  <Ajuda dica="Valor médio recebido por cobrança paga do empreendimento no mês. Ajuda a comparar empreendimentos de portes diferentes." />
+                </th>
                 <th>Evolução ({NOME_MES_ABREV[1]}–{NOME_MES_ABREV[d.ultimoMesComDados]})</th>
               </tr>
             </thead>
@@ -454,8 +472,14 @@ export default async function PaginaExecutivo({
                   <th>Empreendimento</th>
                   <th>Locatário</th>
                   <th>Localização</th>
-                  <th className="text-right">Devido</th>
-                  <th className="text-right">Atraso</th>
+                  <th className="text-right">
+                    Devido{" "}
+                    <Ajuda dica="Aluguel + IPTU + condomínio da cobrança pendente. Registre o pagamento em Recebimentos assim que entrar." />
+                  </th>
+                  <th className="text-right">
+                    Atraso{" "}
+                    <Ajuda dica="Dias corridos desde o vencimento do contrato. Acima de 30 dias fica vermelho — priorize a cobrança." />
+                  </th>
                 </tr>
               </thead>
               <tbody>

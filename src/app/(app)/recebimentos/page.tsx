@@ -1,5 +1,6 @@
 import Link from "next/link";
 import {
+  Ajuda,
   PageHeader,
   Card,
   Dinheiro,
@@ -244,16 +245,43 @@ export default async function PaginaRecebimentos({
                 <th>Empreendimento</th>
                 <th>Locatário</th>
                 <th>Localização</th>
-                <th style={{ textAlign: "right" }}>Valor</th>
-                <th style={{ textAlign: "right" }}>IPTU</th>
-                <th style={{ textAlign: "right" }}>Cond.</th>
-                <th style={{ textAlign: "right" }}>Total</th>
-                <th style={{ textAlign: "right" }}>Recebido</th>
-                <th style={{ textAlign: "right" }}>Base de cálculo</th>
-                <th style={{ textAlign: "right" }}>Comissão</th>
+                <th style={{ textAlign: "right" }}>
+                  Valor{" "}
+                  <Ajuda dica="Aluguel-base do contrato, sem IPTU nem condomínio. É a única parte que gera comissão para a administradora." />
+                </th>
+                <th style={{ textAlign: "right" }}>
+                  IPTU{" "}
+                  <Ajuda dica="Repasse: o locatário paga junto e o valor vai para o proprietário. Não entra na comissão — o sistema já desconta sozinho." />
+                </th>
+                <th style={{ textAlign: "right" }}>
+                  Cond.{" "}
+                  <Ajuda dica="Condomínio cobrado junto com o aluguel. Assim como o IPTU, é repasse ao proprietário e fica fora da comissão." />
+                </th>
+                <th style={{ textAlign: "right" }}>
+                  Total{" "}
+                  <Ajuda dica="Total devido = valor + IPTU + condomínio. É o que o locatário deve pagar no mês. Calculado pelo sistema — você não digita." />
+                </th>
+                <th style={{ textAlign: "right" }}>
+                  Recebido{" "}
+                  <Ajuda dica="O que de fato entrou. Pode ser maior que o total (locatário quitando mês atrasado junto) ou menor (parcial/acordo) — nesses casos, explique na Observação. Vazio = pendente." />
+                </th>
+                <th style={{ textAlign: "right" }}>
+                  Base de cálculo{" "}
+                  <Ajuda dica="Recebido − IPTU − condomínio: só a parte de aluguel do que entrou. É sobre ela que incide a comissão. Calculada automaticamente." />
+                </th>
+                <th style={{ textAlign: "right" }}>
+                  Comissão{" "}
+                  <Ajuda dica="Base de cálculo × taxa do lançamento (padrão 10%), arredondada ao centavo. Ex.: recebeu R$ 5.747,92 com IPTU de R$ 400,92 → base R$ 5.347,00 → comissão R$ 534,70." />
+                </th>
                 <th>Data</th>
-                <th>Competência</th>
-                <th>Via</th>
+                <th>
+                  Competência{" "}
+                  <Ajuda dica="Mês a que o aluguel se refere — pode ser diferente do mês em tela quando é atraso ou adiantamento. Num pagamento atrasado, a competência continua sendo a do mês devido (aparece destacada)." />
+                </th>
+                <th>
+                  Via{" "}
+                  <Ajuda dica="Como o dinheiro entrou: BOLETO, PIX, DINHEIRO ou SERVICO (permuta). Sempre preencha ao registrar — pagamentos em dinheiro também vão no registro de espécie do Caixa." />
+                </th>
                 <th>Observação</th>
                 <th></th>
               </tr>

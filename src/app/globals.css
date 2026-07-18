@@ -115,3 +115,20 @@ h3 {
 .dica:focus-visible::after {
   opacity: 1;
 }
+/* Em cabeçalhos de tabelas com rolagem horizontal, o contêiner corta o que
+   sobe: a dica abre para BAIXO e, nas colunas das pontas, alinha-se à borda
+   para não vazar do contêiner. */
+.overflow-x-auto th .dica::after {
+  bottom: auto;
+  top: calc(100% + 8px);
+}
+.overflow-x-auto th:first-child .dica::after,
+.overflow-x-auto th:nth-child(2) .dica::after {
+  left: 0;
+  transform: none;
+}
+.overflow-x-auto th:nth-last-child(-n + 3) .dica::after {
+  left: auto;
+  right: 0;
+  transform: none;
+}

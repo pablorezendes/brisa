@@ -1,5 +1,6 @@
 import Link from "next/link";
 import {
+  Ajuda,
   PageHeader,
   Card,
   Dinheiro,
@@ -98,17 +99,29 @@ export default async function PaginaTemporada({
 
       {/* Apuração do mês (derivada — nunca persistida) */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Kpi rotulo="Receita" valor={<Dinheiro centavos={apuracao.receita} destaque />} detalhe="Σ recebimentos do mês" />
+        <Kpi
+          rotulo="Receita"
+          valor={<Dinheiro centavos={apuracao.receita} destaque />}
+          detalhe="Σ recebimentos do mês"
+          ajuda="Soma dos repasses das plataformas (Airbnb, Booking...) e hospedagens lançados no bloco Recebimentos abaixo. Deve bater com a linha AIRBNB do núcleo — confira o selo de conciliação."
+        />
         <Kpi
           rotulo="Despesa"
           valor={<Dinheiro centavos={apuracao.despesa} destaque />}
           detalhe="despesas + limpezas"
+          ajuda="Despesas lançadas (energia, condomínio, IPTU, extras) mais o total das limpezas, que entra automaticamente — não lance a limpeza de novo como despesa."
         />
-        <Kpi rotulo="Lucro" valor={<Dinheiro centavos={apuracao.lucro} destaque />} detalhe="receita − despesa" />
+        <Kpi
+          rotulo="Lucro"
+          valor={<Dinheiro centavos={apuracao.lucro} destaque />}
+          detalhe="receita − despesa"
+          ajuda="O que a temporada rendeu no mês: receita menos despesas e limpezas. Sempre calculado na hora a partir dos lançamentos — nunca digitado."
+        />
         <Kpi
           rotulo="Pagamento diarista"
           valor={<Dinheiro centavos={apuracao.totalLimpezas} destaque />}
           detalhe="total das limpezas do mês"
+          ajuda="Quanto pagar à diarista no mês: para cada unidade, quantidade de limpezas × valor unitário + extra/PDL. Preencha no bloco Limpezas e o total sai aqui."
         />
       </div>
 
@@ -168,10 +181,22 @@ export default async function PaginaTemporada({
               <thead>
                 <tr>
                   <th>Unidade</th>
-                  <th className="text-right">Quantidade</th>
-                  <th className="text-right">Valor unitário</th>
-                  <th className="text-right">Extra/PDL</th>
-                  <th className="text-right">Total</th>
+                  <th className="text-right">
+                    Quantidade{" "}
+                    <Ajuda dica="Quantas limpezas a unidade teve no mês. Atualize e clique em Salvar na linha — o total recalcula sozinho." />
+                  </th>
+                  <th className="text-right">
+                    Valor unitário{" "}
+                    <Ajuda dica="Preço combinado por limpeza (padrão R$ 50,00). Se a diarista reajustar, altere aqui — vale só para o mês em tela." />
+                  </th>
+                  <th className="text-right">
+                    Extra/PDL{" "}
+                    <Ajuda dica="Valores avulsos pagos à diarista além das limpezas (passadoria, lavagem de roupa de cama etc.). Entram no total da unidade." />
+                  </th>
+                  <th className="text-right">
+                    Total{" "}
+                    <Ajuda dica="Quantidade × valor unitário + extra/PDL. Calculado pelo sistema e somado ao pagamento do mês da diarista." />
+                  </th>
                   <th></th>
                 </tr>
               </thead>
@@ -260,8 +285,14 @@ export default async function PaginaTemporada({
             <table className="tabela">
               <thead>
                 <tr>
-                  <th>Unidade</th>
-                  <th>Tipo</th>
+                  <th>
+                    Unidade{" "}
+                    <Ajuda dica="Despesa de uma unidade específica ou '— mês' quando é geral (produto de limpeza, por exemplo)." />
+                  </th>
+                  <th>
+                    Tipo{" "}
+                    <Ajuda dica="ENERGIA, CONDO, IPTU ou EXTRA — lançados por você. LIMPEZA é derivada automaticamente do bloco de limpezas; não a lance de novo." />
+                  </th>
                   <th className="text-right">Valor</th>
                   <th></th>
                 </tr>

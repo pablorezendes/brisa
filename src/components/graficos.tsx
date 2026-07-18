@@ -89,9 +89,11 @@ function Grade({
 export function BarrasMensais({
   valores,
   mesSelecionado,
+  rotuloAcessivel = "Comissão mês a mês",
 }: {
   valores: number[]; // índice 0 = JAN (centavos)
   mesSelecionado: number; // 1..12
+  rotuloAcessivel?: string;
 }) {
   const LARG = 560;
   const ALT = 150;
@@ -108,7 +110,7 @@ export function BarrasMensais({
       viewBox={`0 0 ${LARG} ${BASE + 18}`}
       className="w-full"
       role="img"
-      aria-label="Comissão mês a mês"
+      aria-label={rotuloAcessivel}
     >
       <Grade larg={LARG} alt={ALT} topo={TOPO} max={max} />
       {valores.map((v, i) => {

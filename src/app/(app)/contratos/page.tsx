@@ -1,5 +1,6 @@
 import Link from "next/link";
 import {
+  Ajuda,
   PageHeader,
   Card,
   Dinheiro,
@@ -98,16 +99,22 @@ export default async function PaginaContratos({
       ) : null}
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Kpi rotulo="Contratos ativos" valor={ativos.length} />
+        <Kpi
+          rotulo="Contratos ativos"
+          valor={ativos.length}
+          ajuda="Contratos com status ativo — geram cobrança todo mês pelo botão Gerar devidos, em Recebimentos. Contratos em acordo ou encerrados ficam de fora desta conta."
+        />
         <Kpi
           rotulo="Unidades desocupadas"
           valor={desocupados.length}
           detalhe="contratos ativos sem locatário"
+          ajuda="Unidades com contrato ativo mas sem locatário — não estão rendendo. Quando alugar, edite o contrato e vincule o novo locatário."
         />
         <Kpi
           rotulo="Total contratado / mês"
           valor={<Dinheiro centavos={totalContratado} destaque />}
           detalhe="valor + IPTU + condomínio dos ativos"
+          ajuda="Quanto entraria por mês se todos os ativos pagassem em dia: aluguel + IPTU + condomínio. É o teto teórico — o realizado aparece em Recebimentos."
         />
       </div>
 
@@ -137,13 +144,34 @@ export default async function PaginaContratos({
                   <tr>
                     <th>Localização</th>
                     <th>Locatário</th>
-                    <th style={{ textAlign: "right" }}>Valor</th>
-                    <th style={{ textAlign: "right" }}>IPTU</th>
-                    <th style={{ textAlign: "right" }}>Cond.</th>
-                    <th style={{ textAlign: "right" }}>Total contratado</th>
-                    <th style={{ textAlign: "right" }}>Dia venc.</th>
-                    <th>Mês de reajuste</th>
-                    <th>Status</th>
+                    <th style={{ textAlign: "right" }}>
+                      Valor{" "}
+                      <Ajuda dica="Aluguel-base combinado no contrato. É a parte que gera comissão — IPTU e condomínio ficam de fora." />
+                    </th>
+                    <th style={{ textAlign: "right" }}>
+                      IPTU{" "}
+                      <Ajuda dica="Parcela mensal de IPTU cobrada junto com o aluguel. É repasse ao proprietário, não receita da administradora." />
+                    </th>
+                    <th style={{ textAlign: "right" }}>
+                      Cond.{" "}
+                      <Ajuda dica="Condomínio cobrado junto com o aluguel. Também é repasse — nunca entra na comissão." />
+                    </th>
+                    <th style={{ textAlign: "right" }}>
+                      Total contratado{" "}
+                      <Ajuda dica="Valor + IPTU + condomínio: o boleto cheio do locatário. É este total que vira o devido do mês em Recebimentos." />
+                    </th>
+                    <th style={{ textAlign: "right" }}>
+                      Dia venc.{" "}
+                      <Ajuda dica="Dia do mês em que o aluguel vence. Depois dessa data, a cobrança pendente conta dias de atraso nos painéis." />
+                    </th>
+                    <th>
+                      Mês de reajuste{" "}
+                      <Ajuda dica="Aniversário anual de correção do aluguel. Quando chega, aplique o índice do contrato e atualize o valor aqui — o sistema avisa, mas não reajusta sozinho." />
+                    </th>
+                    <th>
+                      Status{" "}
+                      <Ajuda dica="Ativo = gera cobrança todo mês; Acordo = renegociação em curso (lançamentos manuais); Encerrado = não gera mais nada." />
+                    </th>
                     <th></th>
                   </tr>
                 </thead>
