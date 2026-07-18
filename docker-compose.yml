@@ -10,7 +10,7 @@ services:
       - ./dados:/data          # banco SQLite (backup = copiar esta pasta)
       - ./data:/app/data       # dataset.json p/ seed + relatório de exceções
     networks:
-      - traefik
+      - proxy
     labels:
       - traefik.enable=true
       - traefik.http.routers.brisa.rule=Host(`brisa.codexaurora.com.br`)
@@ -23,5 +23,5 @@ services:
       # o basic auth do Traefik foi aposentado
 
 networks:
-  traefik:
+  proxy:
     external: true # AJUSTAR: nome real da rede do Traefik (veja DEPLOY.md)
