@@ -308,7 +308,7 @@ export default async function PaginaRecebimentos({
                         <span className="flex gap-2 text-xs">
                           <Link
                             href={urlBase({ editar: r.id })}
-                            className="text-sky-700 hover:underline"
+                            className="font-semibold text-oliva-escura hover:underline"
                           >
                             {r.recebido === null ? "Registrar" : "Editar"}
                           </Link>

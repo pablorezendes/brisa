@@ -1,53 +1,76 @@
 @import "tailwindcss";
 
-/* Identidade visual A.Camargo (extraída de acamargo.com):
-   azul institucional #015CA9 · azul-escuro #0B406F · noite #002546
-   azul-claro #0CAFEB · laranja #F08F11 · fundo #F8FAFC · borda #CBD5E1 */
+/* Design system "Paper & Ink Editorial" (stile/DESIGN.md):
+   papel quente, tinta azul-preta, oliva como ação, flat com bordas de 1px,
+   serifa (Source Serif 4) em títulos, Public Sans no corpo, JetBrains Mono
+   em dados. Sem sombras, sem gradientes, sem pílulas. */
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --marca-primaria: #015ca9;
-  --marca-escura: #0b406f;
-  --marca-noite: #002546;
-  --marca-clara: #0cafeb;
-  --marca-laranja: #f08f11;
-  --borda: #cbd5e1;
+  --papel: #faf7f1; /* fundo da página */
+  --carta: #fdfbf8; /* superfície de cards */
+  --tinta: #1c2430; /* texto principal */
+  --tinta-suave: #444840; /* texto secundário */
+  --contorno: #e5e1d8; /* bordas estruturais */
+  --contorno-forte: #75786f;
+  --oliva: #5e6e52; /* ação primária */
+  --oliva-escura: #46563b;
+  --erro: #ba1a1a; /* terracota */
+  --ambar: #b3801a;
+  --background: var(--papel);
+  --foreground: var(--tinta);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-marca: var(--marca-primaria);
-  --color-marca-escura: var(--marca-escura);
-  --color-marca-noite: var(--marca-noite);
-  --color-marca-clara: var(--marca-clara);
-  --color-marca-laranja: var(--marca-laranja);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-papel: var(--papel);
+  --color-carta: var(--carta);
+  --color-tinta: var(--tinta);
+  --color-tinta-suave: var(--tinta-suave);
+  --color-contorno: var(--contorno);
+  --color-oliva: var(--oliva);
+  --color-oliva-escura: var(--oliva-escura);
+  --color-erro: var(--erro);
+  --color-ambar: var(--ambar);
+  --font-sans: var(--font-public-sans);
+  --font-serif: var(--font-source-serif);
+  --font-mono: var(--font-jetbrains);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  background: var(--papel);
+  color: var(--tinta);
+  font-family: var(--font-public-sans), Arial, Helvetica, sans-serif;
 }
 
-/* tabelas densas padrão do sistema */
+/* títulos editoriais em serifa */
+h1,
+h2,
+h3 {
+  font-family: var(--font-source-serif), Georgia, serif;
+  letter-spacing: -0.01em;
+}
+
+/* tabelas: sem bordas verticais, réguas horizontais sutis,
+   cabeçalho em serifa (qualidade de "relatório editorial") */
 .tabela {
   @apply w-full text-sm;
 }
 .tabela th {
-  @apply px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide border-b whitespace-nowrap;
-  color: var(--marca-escura);
-  border-color: var(--borda);
+  @apply px-3 py-2.5 text-left text-[13px] font-medium whitespace-nowrap;
+  font-family: var(--font-source-serif), Georgia, serif;
+  color: var(--tinta-suave);
+  border-bottom: 1px solid var(--tinta);
 }
 .tabela td {
-  @apply px-3 py-1.5 border-b border-slate-100 whitespace-nowrap;
+  @apply px-3 py-2 whitespace-nowrap;
+  border-bottom: 1px solid color-mix(in srgb, var(--contorno) 60%, transparent);
 }
 .tabela tbody tr:hover {
-  background: #f0f7ff; /* azul-claríssimo da marca */
+  background: #f5f3ef;
 }
 .tabela tfoot td {
-  @apply font-semibold border-t-2 bg-slate-50;
-  border-color: var(--borda);
+  @apply font-semibold;
+  border-top: 2px solid var(--tinta);
+  border-bottom: none;
+  background: transparent;
 }

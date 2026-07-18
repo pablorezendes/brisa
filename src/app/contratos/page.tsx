@@ -178,7 +178,7 @@ export default async function PaginaContratos({
                       <td>
                         <Link
                           href={`/contratos/${c.id}`}
-                          className="text-xs text-sky-700 hover:underline"
+                          className="text-xs font-semibold text-oliva-escura hover:underline"
                         >
                           Detalhe
                         </Link>

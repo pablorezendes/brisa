@@ -1,21 +1,21 @@
 /**
  * Gráficos SVG server-side do dashboard executivo. Sem libs.
- * Paleta categórica da marca A.Camargo, validada p/ CVD (ΔE adjacente 102,9):
- * 1 azul #015CA9 · 2 laranja #F08F11 · 3 azul-claro #0CAFEB.
- * Texto sempre em tons neutros (nunca na cor da série). Cada gráfico traz
- * tooltips nativos (<title>) e a página oferece a tabela ("Ver dados").
+ * Paleta "pigmentos naturais" do design editorial, validada p/ CVD
+ * (todos os critérios PASS): 1 musgo #4F7A33 · 2 ocre #B3801A · 3 índigo
+ * #4A68A8. Texto sempre em tons de tinta (nunca na cor da série). Cada
+ * gráfico traz tooltips nativos (<title>) e a página oferece a tabela.
  */
 import { formatarBRL } from "@/lib/dominio/dinheiro";
 import { NOME_MES_ABREV } from "@/lib/dominio/normalizacao";
 
-export const COR_1 = "#015ca9"; // azul institucional — série principal
-export const COR_1_FORTE = "#002546"; // passo noite do mesmo matiz (destaque)
-export const COR_2 = "#f08f11"; // laranja da marca
-export const COR_3 = "#0cafeb"; // azul-claro da marca
+export const COR_1 = "#4f7a33"; // musgo — série principal (dinheiro que entra)
+export const COR_1_FORTE = "#33511f"; // passo escuro do mesmo matiz (destaque)
+export const COR_2 = "#b3801a"; // ocre
+export const COR_3 = "#4a68a8"; // índigo
 
-const GRADE = "#e2e8f0"; // slate-200 — recessiva
-const EIXO = "#94a3b8"; // slate-400
-const ROTULO = "#64748b"; // slate-500
+const GRADE = "#e5e1d8"; // contorno do papel — recessiva
+const EIXO = "#75786f";
+const ROTULO = "#444840";
 
 /** Barra com topo arredondado (4px) ancorada na base. */
 function BarraPath({
@@ -132,7 +132,7 @@ export function BarrasMensais({
                 y={BASE - h - 4}
                 fontSize={9}
                 fontWeight={600}
-                fill="#334155"
+                fill="#1c2430"
                 textAnchor="middle"
               >
                 {formatarBRL(v)}
@@ -142,7 +142,7 @@ export function BarrasMensais({
               x={x + larguraBarra / 2}
               y={BASE + 12}
               fontSize={9}
-              fill={selecionado ? "#334155" : ROTULO}
+              fill={selecionado ? "#1c2430" : ROTULO}
               fontWeight={selecionado ? 700 : 400}
               textAnchor="middle"
             >
@@ -161,11 +161,15 @@ export function BarrasDuplas({
   serieB,
   nomeA,
   nomeB,
+  corA = COR_1,
+  corB = COR_2,
 }: {
   serieA: number[];
   serieB: number[];
   nomeA: string;
   nomeB: string;
+  corA?: string;
+  corB?: string;
 }) {
   const LARG = 560;
   const ALT = 150;
@@ -198,7 +202,7 @@ export function BarrasDuplas({
               y={BASE - hA}
               w={larguraBarra}
               h={hA}
-              cor={COR_1}
+              cor={corA}
               titulo={`${NOME_MES_ABREV[i + 1]} — ${nomeA}: ${formatarBRL(a)}`}
             />
             <BarraPath
@@ -206,7 +210,7 @@ export function BarrasDuplas({
               y={BASE - hB}
               w={larguraBarra}
               h={hB}
-              cor={COR_2}
+              cor={corB}
               titulo={`${NOME_MES_ABREV[i + 1]} — ${nomeB}: ${formatarBRL(b)}`}
             />
             <text

@@ -66,15 +66,12 @@ export default async function PaginaExecutivo({
       />
 
       {/* ---------- resumo do mês em linguagem natural ---------- */}
-      <Card
-        className="mb-6 border-l-4 px-6 py-4"
-        style={{ borderLeftColor: "var(--marca-laranja)" }}
-      >
+      <Card className="mb-6 border-l-4 border-l-oliva px-6 py-4">
         <p className="text-sm leading-relaxed text-slate-700">
           Em <strong>{nomeMes}</strong>, entraram{" "}
           <strong>{formatarBRL(d.recebidoMes)}</strong> dos locatários e a
           administradora ganhou{" "}
-          <strong style={{ color: "var(--marca-primaria)" }}>
+          <strong className="font-serif text-base text-oliva-escura">
             {formatarBRL(d.comissaoMes)}
           </strong>{" "}
           de comissão.{" "}
@@ -257,8 +254,8 @@ export default async function PaginaExecutivo({
             <h2 className="text-sm font-semibold">Devido × Recebido</h2>
             <Legenda
               itens={[
-                { cor: COR_1, nome: "Devido" },
-                { cor: COR_2, nome: "Recebido" },
+                { cor: COR_2, nome: "Devido" },
+                { cor: COR_1, nome: "Recebido" },
               ]}
             />
           </div>
@@ -267,6 +264,8 @@ export default async function PaginaExecutivo({
             serieB={d.porMes.map((l) => l.recebido)}
             nomeA="Devido"
             nomeB="Recebido"
+            corA={COR_2}
+            corB={COR_1}
           />
           <p className="mt-2 text-xs text-slate-500">
             Recebido acima do devido indica atrasos quitados no mês; abaixo,
@@ -283,7 +282,7 @@ export default async function PaginaExecutivo({
           </h2>
           <Link
             href="/relatorios/comissao"
-            className="text-xs text-sky-700 hover:underline"
+            className="text-xs font-semibold text-oliva-escura hover:underline"
           >
             matriz completa →
           </Link>
@@ -352,9 +351,9 @@ export default async function PaginaExecutivo({
           despesaAL={d.caixaPorMes.map((c) => c.despesaAL)}
           despesaCH={d.caixaPorMes.map((c) => c.despesaCH)}
         />
-        <p className="mt-2 text-xs text-slate-500">
-          Azul = quanto entrou; a pilha laranja + azul-claro = quanto saiu em
-          cada centro. Mês bom é azul maior que a pilha.
+        <p className="mt-2 text-xs text-tinta-suave">
+          Verde = quanto entrou; a pilha ocre + índigo = quanto saiu em cada
+          centro. Mês bom é o verde maior que a pilha.
         </p>
         <details className="mt-2 text-xs text-slate-600">
           <summary className="cursor-pointer select-none">Ver dados</summary>
@@ -483,7 +482,7 @@ export default async function PaginaExecutivo({
           {d.pendentesDoMes.length > 10 ? (
             <p className="mt-2 text-xs text-slate-500">
               Mostrando 10 de {d.pendentesDoMes.length} — lista completa em{" "}
-              <Link href={`/relatorios/inadimplencia?mes=${mes}`} className="text-sky-700 hover:underline">
+              <Link href={`/relatorios/inadimplencia?mes=${mes}`} className="font-semibold text-oliva-escura hover:underline">
                 Relatórios → Inadimplência
               </Link>
               .

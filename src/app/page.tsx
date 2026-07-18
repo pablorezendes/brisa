@@ -105,7 +105,7 @@ export default async function Home({
             </h2>
             <Link
               href={`/relatorios/comissao?ano=${ano}`}
-              className="text-sm font-medium text-sky-700 hover:underline"
+              className="text-sm font-medium font-semibold text-oliva-escura hover:underline"
             >
               Matriz completa →
             </Link>
@@ -152,7 +152,7 @@ export default async function Home({
             </h2>
             <Link
               href={`/relatorios/inadimplencia?mes=${mes}`}
-              className="text-sm font-medium text-sky-700 hover:underline"
+              className="text-sm font-medium font-semibold text-oliva-escura hover:underline"
             >
               Inadimplência completa →
             </Link>

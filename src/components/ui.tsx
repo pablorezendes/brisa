@@ -40,7 +40,7 @@ export function Card({
 }) {
   return (
     <div
-      className={`rounded-xl border border-slate-200 bg-white shadow-sm ${className}`}
+      className={`rounded-lg border border-contorno bg-carta ${className}`}
       style={style}
     >
       {children}
@@ -68,6 +68,10 @@ export function Dinheiro({
   );
 }
 
+/**
+ * Status editorial: ponto colorido de 8px + rótulo em caixa alta.
+ * (O design system proíbe pílulas/badges preenchidos.)
+ */
 export function Badge({
   children,
   cor = "slate",
@@ -75,17 +79,19 @@ export function Badge({
   children: React.ReactNode;
   cor?: "slate" | "verde" | "vermelho" | "ambar" | "azul";
 }) {
-  const cores: Record<string, string> = {
-    slate: "bg-slate-100 text-slate-700",
-    verde: "bg-emerald-100 text-emerald-800",
-    vermelho: "bg-red-100 text-red-700",
-    ambar: "bg-amber-100 text-amber-800",
-    azul: "bg-sky-100 text-sky-800",
+  const ponto: Record<string, string> = {
+    slate: "#75786f",
+    verde: "#5e6e52",
+    vermelho: "#ba1a1a",
+    ambar: "#b3801a",
+    azul: "#4a68a8",
   };
   return (
-    <span
-      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cores[cor]}`}
-    >
+    <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-tinta-suave">
+      <span
+        className="inline-block h-2 w-2 rounded-full"
+        style={{ backgroundColor: ponto[cor] }}
+      />
       {children}
     </span>
   );
@@ -104,14 +110,16 @@ export function Kpi({
   variacao?: React.ReactNode;
 }) {
   return (
-    <Card className="border-t-2 px-5 py-4" >
-      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+    <Card className="px-5 py-4">
+      <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-tinta-suave">
         {rotulo}
       </div>
-      <div className="mt-1 text-2xl font-bold tabular-nums">{valor}</div>
+      <div className="mt-1.5 font-serif text-2xl font-semibold tabular-nums text-tinta">
+        {valor}
+      </div>
       {variacao ? <div className="mt-1">{variacao}</div> : null}
       {detalhe ? (
-        <div className="mt-1 text-xs text-slate-500">{detalhe}</div>
+        <div className="mt-1 text-xs text-tinta-suave">{detalhe}</div>
       ) : null}
     </Card>
   );
@@ -150,8 +158,8 @@ export function Variacao({
   const positivo = subiu === bomQuandoSobe;
   return (
     <span
-      className={`text-xs font-semibold ${
-        positivo ? "text-emerald-700" : "text-red-600"
+      className={`font-mono text-[11px] font-bold ${
+        positivo ? "text-oliva-escura" : "text-erro"
       }`}
     >
       {subiu ? "▲" : "▼"} {Math.abs(pct).toFixed(1).replace(".", ",")}% vs mês
@@ -174,16 +182,16 @@ export function SeletorMes({ base, mes }: { base: string; mes: string }) {
     <div className="flex items-center gap-1 text-sm">
       <Link
         href={`${base}?mes=${anterior}`}
-        className="rounded-md border border-slate-300 bg-white px-2.5 py-1 hover:bg-slate-50"
+        className="rounded border border-contorno bg-carta px-2.5 py-1 hover:bg-[#efeee9]"
       >
         ‹
       </Link>
-      <span className="min-w-24 px-2 text-center font-semibold">
+      <span className="min-w-24 px-2 text-center font-mono text-[13px] font-bold uppercase tracking-wider">
         {formatarCompetencia(mes)}
       </span>
       <Link
         href={`${base}?mes=${proximo}`}
-        className="rounded-md border border-slate-300 bg-white px-2.5 py-1 hover:bg-slate-50"
+        className="rounded border border-contorno bg-carta px-2.5 py-1 hover:bg-[#efeee9]"
       >
         ›
       </Link>
@@ -192,8 +200,8 @@ export function SeletorMes({ base, mes }: { base: string; mes: string }) {
 }
 
 export const btnPrimario =
-  "inline-flex items-center gap-1.5 rounded-md bg-marca px-3 py-1.5 text-sm font-medium text-white hover:bg-marca-escura disabled:opacity-50";
+  "inline-flex items-center gap-1.5 rounded bg-oliva px-3 py-1.5 text-sm font-semibold text-white hover:bg-oliva-escura disabled:opacity-50";
 export const btnSecundario =
-  "inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-50 disabled:opacity-50";
+  "inline-flex items-center gap-1.5 rounded border border-tinta bg-transparent px-3 py-1.5 text-sm font-semibold text-tinta hover:bg-[#efeee9] disabled:opacity-50";
 export const inputBase =
-  "rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-marca-clara";
+  "rounded border border-contorno bg-white px-2.5 py-1.5 font-mono text-sm text-tinta focus:outline-none focus:border-tinta focus:ring-1 focus:ring-tinta";
