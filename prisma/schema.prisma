@@ -16,6 +16,16 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ---------- Autenticação ----------
+
+model Usuario {
+  id        String   @id @default(uuid())
+  nome      String
+  usuario   String   @unique // login
+  senhaHash String // scrypt: salt:hash (hex)
+  criadoEm  DateTime @default(now())
+}
+
 // ---------- Núcleo de locação ----------
 
 model Empreendimento {

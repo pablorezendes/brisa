@@ -5,6 +5,7 @@ services:
     restart: unless-stopped
     environment:
       - DATABASE_URL=file:/data/brisa.db
+      - AUTH_SECRET=${AUTH_SECRET:?defina AUTH_SECRET no .env (openssl rand -hex 32)}
     volumes:
       - ./dados:/data          # banco SQLite (backup = copiar esta pasta)
       - ./data:/app/data       # dataset.json p/ seed + relatório de exceções
@@ -18,9 +19,8 @@ services:
       # AJUSTAR: nome do certresolver do seu Traefik (veja DEPLOY.md)
       - traefik.http.routers.brisa.tls.certresolver=letsencrypt
       - traefik.http.services.brisa.loadbalancer.server.port=3000
-      # proteção de acesso (obrigatória: o sistema não tem login próprio)
-      - traefik.http.routers.brisa.middlewares=brisa-auth
-      - traefik.http.middlewares.brisa-auth.basicauth.users=${BRISA_BASICAUTH:?defina BRISA_BASICAUTH no .env}
+      # a proteção de acesso agora é o login do próprio app (/login);
+      # o basic auth do Traefik foi aposentado
 
 networks:
   traefik:

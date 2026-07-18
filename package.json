@@ -10,7 +10,8 @@
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "reconciliar": "tsx scripts/reconciliar.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "usuario": "tsx scripts/usuario.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

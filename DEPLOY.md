@@ -25,14 +25,15 @@ cd /srv/stack/acamargo
 git clone https://github.com/pablorezendes/brisa.git .
 mkdir -p dados data
 
-# credencial de acesso (troque usuário/senha!)
-HASH=$(openssl passwd -apr1 'TROQUE-ESTA-SENHA')
-printf "BRISA_BASICAUTH='admin:%s'\n" "$HASH" > .env
+# segredo de assinatura das sessões de login (obrigatório)
+printf "AUTH_SECRET=%s\n" "$(openssl rand -hex 32)" > .env
 chmod 600 .env
-
-# conferir que o hash chegou intacto ao compose (deve mostrar admin:$apr1$...)
-docker compose config | grep basicauth
 ```
+
+> A autenticação agora é do próprio app: a primeira visita a
+> https://brisa.codexaurora.com.br abre a tela de **Primeiro acesso**, onde
+> você cria o usuário administrador. Usuários adicionais / redefinir senha:
+> `docker compose exec brisa npm run usuario -- "Nome" login "senha"`.
 
 ## 2) Enviar o dataset (fora do git — contém dados reais)
 
@@ -85,8 +86,8 @@ Todo o estado é um arquivo: `/srv/stack/acamargo/dados/brisa.db`.
 - O repo GitHub está **público**: o histórico publicado foi sanitizado (sem
   `dev.db`/`dataset.json`), mas o ideal é torná-lo **privado**
   (Settings → General → Danger Zone → Change visibility).
-- O basic auth do Traefik é a única barreira de acesso. Use senha forte e
-  HTTPS sempre (o Traefik já redireciona se seu entrypoint web tiver
-  redirect configurado).
-- Próximo passo recomendado: login de verdade no app (NextAuth) com
-  usuários por pessoa e trilha de auditoria.
+- A barreira de acesso é o **login do app** (/login): senhas com scrypt,
+  sessão assinada (HMAC + AUTH_SECRET) em cookie httpOnly, bloqueio no proxy
+  e no layout. Guarde o AUTH_SECRET: trocá-lo derruba todas as sessões.
+- O banco (`dados/brisa.db`) guarda também os usuários — o backup diário
+  cobre tudo.
