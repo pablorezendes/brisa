@@ -142,16 +142,26 @@ export default async function PaginaDetalheContrato({
           rotulo="Comissão gerada"
           valor={<Dinheiro centavos={totalComissao} destaque />}
           detalhe={`${recebimentos.length} lançamento(s) no histórico`}
+          ajuda="Tudo o que este contrato já rendeu de comissão à administradora, somando todos os lançamentos do histórico: (recebido − IPTU − condomínio) × taxa de cada mês."
         />
         <Kpi
           rotulo="Total recebido"
           valor={<Dinheiro centavos={totalRecebido} />}
           detalhe={pendentes > 0 ? `${pendentes} pendente(s)` : "sem pendências"}
+          nivel={pendentes > 0 ? "atencao" : "otimo"}
+          selo={pendentes > 0 ? `${pendentes} em aberto` : "em dia"}
+          nota={
+            pendentes > 0
+              ? "Há lançamentos deste contrato sem pagamento registrado — veja o histórico abaixo."
+              : undefined
+          }
+          ajuda="Soma de tudo que o locatário pagou neste contrato, incluindo IPTU e condomínio (que são repassados ao proprietário). Não é o ganho da administradora — o ganho é a comissão."
         />
         <Kpi
           rotulo="Total contratado / mês"
           valor={<Dinheiro centavos={totalContratado} />}
           detalhe="valor + IPTU + condomínio"
+          ajuda="Quanto este contrato deveria gerar por mês se tudo fosse pago em dia: aluguel-base + IPTU + condomínio. É o teto teórico da cobrança mensal."
         />
       </div>
 

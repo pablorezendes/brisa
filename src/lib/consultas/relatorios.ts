@@ -324,6 +324,10 @@ export interface KpisDoMes {
   /** comissão acumulada de JAN até o mês, no mesmo ano */
   comissaoAcumuladaAno: number;
   inadimplencia: { quantidade: number; valorDevido: number };
+  /** Σ totalDevido do mês — denominador do semáforo de inadimplência */
+  devidoMes: number;
+  /** Σ recebido do mês */
+  recebidoMes: number;
   /** Σ recebido / Σ totalDevido no mês (fração 0..1); null sem cobrança */
   taxaRecebimento: number | null;
   contratosAReajustar: number;
@@ -419,6 +423,8 @@ export async function kpisDoMes(mes: string): Promise<KpisDoMes> {
     comissaoMes,
     comissaoAcumuladaAno,
     inadimplencia: { quantidade: pendentes, valorDevido: valorPendente },
+    devidoMes: somaDevido,
+    recebidoMes: somaRecebido,
     taxaRecebimento: somaDevido > 0 ? somaRecebido / somaDevido : null,
     contratosAReajustar,
     saldoCaixaMes,

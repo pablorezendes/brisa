@@ -130,6 +130,20 @@ export default async function PaginaPainelTemporada() {
           detalhe={
             d.lucroMedio ? `média de ${d.lucroMedio.meses} meses` : "sem despesa conhecida"
           }
+          nivel={
+            !d.lucroMedio
+              ? "neutro"
+              : d.lucroMedio.valorMensal > 0
+                ? "otimo"
+                : "critico"
+          }
+          selo={
+            d.lucroMedio
+              ? d.lucroMedio.valorMensal > 0
+                ? "no azul"
+                : "no vermelho"
+              : undefined
+          }
           ajuda="Média do lucro (receita − despesa) por mês nos anos em que a despesa é conhecida (2023 e 2024). 2025 fica de fora porque a planilha daquele ano não rotulou as despesas — receita sem despesa não dá lucro confiável."
         />
       </div>

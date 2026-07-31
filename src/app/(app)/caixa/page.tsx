@@ -18,6 +18,13 @@ import {
   btnSecundario,
 } from "@/components/ui";
 import { parseCompetencia } from "@/lib/dominio/normalizacao";
+import { nivelSaldo } from "@/lib/dominio/semaforo";
+import {
+  BarraComposicao,
+  COR_1,
+  COR_2,
+  COR_3,
+} from "@/components/graficos";
 import {
   consolidacaoDoMes,
   lancamentosDoMes,
@@ -295,6 +302,32 @@ export default async function PaginaCaixa({
           rotulo="Saldo do mês"
           valor={<Dinheiro centavos={consolidacao.saldo} destaque />}
           detalhe="receita − despesa AL − despesa CH"
+          nivel={nivelSaldo(consolidacao.saldo)}
+          selo={
+            consolidacao.saldo > 0
+              ? "sobrou"
+              : consolidacao.saldo < 0
+                ? "faltou"
+                : undefined
+          }
+          nota={
+            consolidacao.saldo < 0
+              ? "Saiu mais do que entrou. Confira se alguma despesa caiu no centro de custo errado."
+              : undefined
+          }
+          grafico={
+            consolidacao.receita > 0 ||
+            consolidacao.despesaAL > 0 ||
+            consolidacao.despesaCH > 0 ? (
+              <BarraComposicao
+                partes={[
+                  { rotulo: "entradas", valor: consolidacao.receita, cor: COR_1 },
+                  { rotulo: "saídas AL", valor: consolidacao.despesaAL, cor: COR_2 },
+                  { rotulo: "saídas CH", valor: consolidacao.despesaCH, cor: COR_3 },
+                ]}
+              />
+            ) : undefined
+          }
           ajuda="Entradas menos as saídas dos dois centros. Positivo: sobrou dinheiro no mês; negativo: as saídas superaram as entradas. O registro de espécie não entra nesta conta."
         />
       </div>

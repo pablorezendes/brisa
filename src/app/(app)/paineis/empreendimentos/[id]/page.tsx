@@ -10,12 +10,17 @@ import {
   btnSecundario,
 } from "@/components/ui";
 import {
+  BarraComposicao,
   BarrasDuplas,
   BarrasMensais,
   COR_1,
   COR_2,
   Legenda,
 } from "@/components/graficos";
+import {
+  nivelInadimplencia,
+  nivelTaxaRecebimento,
+} from "@/lib/dominio/semaforo";
 import { formatarBRL } from "@/lib/dominio/dinheiro";
 import {
   NOME_MES_ABREV,
@@ -96,6 +101,21 @@ export default async function PaginaDetalheEmpreendimento({
           rotulo="Taxa de recebimento"
           valor={pct(d.taxaRecebimento)}
           detalhe={`entrou ${formatarBRL(d.recebidoAno)} de ${formatarBRL(d.devidoAno)} devidos`}
+          nivel={nivelTaxaRecebimento(d.taxaRecebimento)}
+          grafico={
+            d.devidoAno > 0 ? (
+              <BarraComposicao
+                partes={[
+                  { rotulo: "recebido", valor: d.recebidoAno, cor: COR_1 },
+                  {
+                    rotulo: "a receber",
+                    valor: Math.max(d.devidoAno - d.recebidoAno, 0),
+                    cor: COR_2,
+                  },
+                ]}
+              />
+            ) : undefined
+          }
           ajuda="Recebido ÷ devido no ano. Acima de 100% = atrasos de meses anteriores quitados; abaixo, há cobranças sem pagamento ou pagas em parte (o motivo do parcial vai na Observação do lançamento)."
         />
         <Kpi
@@ -110,12 +130,37 @@ export default async function PaginaDetalheEmpreendimento({
               ? `${d.ocupacao.desocupadas} unidade(s) desocupada(s)`
               : "todas as unidades ocupadas"
           }
+          nivel={
+            d.ocupacao.ativas === 0
+              ? "neutro"
+              : d.ocupacao.desocupadas === 0
+                ? "otimo"
+                : "atencao"
+          }
+          selo={
+            d.ocupacao.ativas === 0
+              ? undefined
+              : d.ocupacao.desocupadas === 0
+                ? "tudo alugado"
+                : "unidade vazia"
+          }
+          nota={
+            d.ocupacao.desocupadas > 0
+              ? "Cada mês vazio é receita perdida — priorize divulgar e negociar essas unidades."
+              : undefined
+          }
           ajuda="Unidades ativas com locatário no contrato vigente. Unidade desocupada não gera aluguel nem comissão — cada mês vazio é receita perdida; priorize divulgar e negociar essas unidades."
         />
         <Kpi
           rotulo="Pendente em aberto"
           valor={<Dinheiro centavos={d.pendenteAberto} destaque />}
           detalhe={`${d.pendentesQtde} cobrança(s) sem pagamento em ${ano}`}
+          nivel={nivelInadimplencia(d.pendenteAberto, d.devidoAno)}
+          nota={
+            d.pendenteAberto > 0
+              ? "Registre o pagamento em Recebimentos assim que o dinheiro entrar."
+              : undefined
+          }
           ajuda="Cobranças lançadas no ano que ainda estão sem valor em Recebido. Quando o locatário pagar, preencha Recebido e a Data de pagamento no lançamento — a competência continua sendo a do mês devido."
         />
       </div>

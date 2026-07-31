@@ -21,6 +21,23 @@ export function formatarBRL(centavos: number | null | undefined): string {
   return fmtBRL.format(centavos / 100);
 }
 
+/**
+ * Formato curto para eixos e rótulos apertados de gráfico:
+ * 1.234.500 centavos → "12,3 mil" · 250.000.000 → "2,5 mi" · 4.500 → "45".
+ * Sem "R$" — o eixo já diz que é dinheiro e a repetição só rouba espaço.
+ */
+export function abreviarBRL(centavos: number | null | undefined): string {
+  if (centavos === null || centavos === undefined) return "—";
+  const reais = centavos / 100;
+  const abs = Math.abs(reais);
+  const sinal = reais < 0 ? "-" : "";
+  const um = (v: number) =>
+    (Math.round(v * 10) / 10).toString().replace(".", ",");
+  if (abs >= 1_000_000) return `${sinal}${um(abs / 1_000_000)} mi`;
+  if (abs >= 1_000) return `${sinal}${um(abs / 1_000)} mil`;
+  return `${sinal}${Math.round(abs)}`;
+}
+
 /** "1.234,56" | "1234.56" | "1234" → centavos. Vazio/inválido → null. */
 export function parseBRL(texto: string | null | undefined): number | null {
   if (!texto) return null;

@@ -10,6 +10,7 @@ import {
   btnSecundario,
 } from "@/components/ui";
 import { NOME_MES_COMPLETO } from "@/lib/dominio/normalizacao";
+import { nivelTarefas } from "@/lib/dominio/semaforo";
 import {
   contratosParaLista,
   type ContratoComRelacoes,
@@ -108,6 +109,13 @@ export default async function PaginaContratos({
           rotulo="Unidades desocupadas"
           valor={desocupados.length}
           detalhe="contratos ativos sem locatário"
+          nivel={nivelTarefas(desocupados.length, 5)}
+          selo={desocupados.length === 0 ? "tudo alugado" : "sem render"}
+          nota={
+            desocupados.length > 0
+              ? "Unidade vazia não gera aluguel nem comissão. Ao alugar, edite o contrato e vincule o locatário."
+              : undefined
+          }
           ajuda="Unidades com contrato ativo mas sem locatário — não estão rendendo. Quando alugar, edite o contrato e vincule o novo locatário."
         />
         <Kpi

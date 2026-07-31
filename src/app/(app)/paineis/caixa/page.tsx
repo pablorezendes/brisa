@@ -14,6 +14,7 @@ import {
   btnSecundario,
 } from "@/components/ui";
 import {
+  BarraComposicao,
   BarrasCaixa,
   BarrasHorizontais,
   COR_1,
@@ -21,6 +22,7 @@ import {
   COR_3,
   Legenda,
 } from "@/components/graficos";
+import { nivelSaldo } from "@/lib/dominio/semaforo";
 import { formatarBRL } from "@/lib/dominio/dinheiro";
 import { NOME_MES_ABREV, parseCompetencia } from "@/lib/dominio/normalizacao";
 import {
@@ -164,6 +166,24 @@ export default async function PaginaPainelCaixa({
           rotulo="Saldo acumulado"
           valor={<Dinheiro centavos={t.saldo} destaque />}
           detalhe="receita − saídas AL − saídas CH"
+          nivel={nivelSaldo(t.saldo)}
+          selo={t.saldo > 0 ? "sobrou" : t.saldo < 0 ? "faltou" : undefined}
+          nota={
+            t.saldo < 0
+              ? "No acumulado do ano saiu mais do que entrou pelo livro-caixa."
+              : undefined
+          }
+          grafico={
+            t.receita > 0 || despesaTotal > 0 ? (
+              <BarraComposicao
+                partes={[
+                  { rotulo: "entradas", valor: t.receita, cor: COR_1 },
+                  { rotulo: "saídas AL", valor: t.despesaAL, cor: COR_2 },
+                  { rotulo: "saídas CH", valor: t.despesaCH, cor: COR_3 },
+                ]}
+              />
+            ) : undefined
+          }
           ajuda="Quanto sobrou no ano: receita menos as saídas dos dois centros, somando mês a mês. Se aparecer em vermelho, saiu mais do que entrou até aqui."
         />
         <Kpi

@@ -10,7 +10,14 @@ import {
   PageHeader,
   btnSecundario,
 } from "@/components/ui";
+import {
+  BarraComposicao,
+  COR_1,
+  COR_2,
+  COR_3,
+} from "@/components/graficos";
 import { NOME_MES_COMPLETO, parseCompetencia } from "@/lib/dominio/normalizacao";
+import { nivelSaldo } from "@/lib/dominio/semaforo";
 import { consolidacaoAnual, mesMaisRecente } from "@/lib/consultas/caixa";
 
 const RE_ANO = /^\d{4}$/;
@@ -60,21 +67,51 @@ export default async function PaginaCaixaAnual({
           rotulo="Despesa Antonio/Laura"
           valor={<Dinheiro centavos={resumo.totais.despesaAL} destaque />}
           detalhe={`ano ${ano}`}
+          ajuda="Tudo o que saiu pelo centro de custo AL (Antonio/Laura) no ano inteiro. Ao lançar uma saída, o centro escolhido é o que separa as contas de cada núcleo da família — errar aqui embaralha os dois."
         />
         <Kpi
           rotulo="Despesa Chácara Brisa"
           valor={<Dinheiro centavos={resumo.totais.despesaCH} destaque />}
           detalhe={`ano ${ano}`}
+          ajuda="Tudo o que saiu pelo centro de custo CH (Chácara Brisa) no ano. Gastos da chácara entram aqui; gastos pessoais de Antonio/Laura vão no centro AL."
         />
         <Kpi
           rotulo="Receita (entradas)"
           valor={<Dinheiro centavos={resumo.totais.receita} destaque />}
           detalhe={`ano ${ano}`}
+          ajuda="Tudo o que entrou na conta ao longo do ano (tipo ENTRADA, centro GERAL). Recebimentos em dinheiro NÃO estão aqui — são registro paralelo de espécie."
         />
         <Kpi
           rotulo="Saldo do ano"
           valor={<Dinheiro centavos={resumo.totais.saldo} destaque />}
           detalhe="receita − despesa AL − despesa CH"
+          nivel={nivelSaldo(resumo.totais.saldo)}
+          selo={
+            resumo.totais.saldo > 0
+              ? "sobrou"
+              : resumo.totais.saldo < 0
+                ? "faltou"
+                : undefined
+          }
+          nota={
+            resumo.totais.saldo < 0
+              ? "No acumulado do ano saiu mais do que entrou pelo livro-caixa."
+              : undefined
+          }
+          grafico={
+            resumo.totais.receita > 0 ||
+            resumo.totais.despesaAL > 0 ||
+            resumo.totais.despesaCH > 0 ? (
+              <BarraComposicao
+                partes={[
+                  { rotulo: "entradas", valor: resumo.totais.receita, cor: COR_1 },
+                  { rotulo: "saídas AL", valor: resumo.totais.despesaAL, cor: COR_2 },
+                  { rotulo: "saídas CH", valor: resumo.totais.despesaCH, cor: COR_3 },
+                ]}
+              />
+            ) : undefined
+          }
+          ajuda="Entradas do ano menos as saídas dos dois centros. Positivo: sobrou dinheiro no período; negativo: as saídas superaram as entradas. O registro de espécie fica fora desta conta."
         />
       </div>
 

@@ -13,6 +13,7 @@ import {
 } from "@/components/ui";
 import { formatarBRL } from "@/lib/dominio/dinheiro";
 import { competencia, formatarCompetencia } from "@/lib/dominio/normalizacao";
+import { nivelSaldo } from "@/lib/dominio/semaforo";
 import {
   calcularApuracao,
   conciliacaoComNucleo,
@@ -115,6 +116,19 @@ export default async function PaginaTemporada({
           rotulo="Lucro"
           valor={<Dinheiro centavos={apuracao.lucro} destaque />}
           detalhe="receita − despesa"
+          nivel={nivelSaldo(apuracao.lucro)}
+          selo={
+            apuracao.lucro > 0
+              ? "no azul"
+              : apuracao.lucro < 0
+                ? "no vermelho"
+                : undefined
+          }
+          nota={
+            apuracao.lucro < 0
+              ? "Despesas e limpezas passaram do que as plataformas repassaram no mês."
+              : undefined
+          }
           ajuda="O que a temporada rendeu no mês: receita menos despesas e limpezas. Sempre calculado na hora a partir dos lançamentos — nunca digitado."
         />
         <Kpi
