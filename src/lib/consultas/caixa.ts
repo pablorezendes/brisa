@@ -6,6 +6,8 @@
  * que NÃO entra no saldo do mês).
  *
  * Todos os valores em centavos (Int). Meses como "YYYY-MM".
+ * Além das visões por mês e por ano, há variantes por PERÍODO (lista de
+ * competências vinda de parsePeriodo) na seção ao fim do arquivo.
  */
 import { prisma } from "@/lib/db";
 import type { LancamentoCaixa } from "@prisma/client";
@@ -94,12 +96,7 @@ function agruparPorCategoria(ls: LancamentoCaixa[]): BlocoSaidas {
   return { grupos, total: somar(ls) };
 }
 
-/** Lançamentos do mês agrupados nos 4 blocos do livro-caixa. */
-export async function lancamentosDoMes(mes: string): Promise<LancamentosDoMes> {
-  const todos = await prisma.lancamentoCaixa.findMany({
-    where: { mesReferencia: mes },
-    orderBy: [{ data: "asc" }],
-  });
+function montarBlocos(todos: LancamentoCaixa[]): LancamentosDoMes {
   const saidasAL = todos.filter((l) => l.tipo === "SAIDA" && l.centroCusto === "AL");
   const saidasCH = todos.filter((l) => l.tipo === "SAIDA" && l.centroCusto === "CH");
   const entradas = todos.filter((l) => l.tipo === "ENTRADA");
@@ -110,6 +107,15 @@ export async function lancamentosDoMes(mes: string): Promise<LancamentosDoMes> {
     entradas: { lancamentos: entradas, total: somar(entradas) },
     recebimentosDinheiro: { lancamentos: recebDinheiro, total: somar(recebDinheiro) },
   };
+}
+
+/** Lançamentos do mês agrupados nos 4 blocos do livro-caixa. */
+export async function lancamentosDoMes(mes: string): Promise<LancamentosDoMes> {
+  const todos = await prisma.lancamentoCaixa.findMany({
+    where: { mesReferencia: mes },
+    orderBy: [{ data: "asc" }],
+  });
+  return montarBlocos(todos);
 }
 
 type SomaPorGrupo = {
@@ -154,24 +160,31 @@ export async function consolidacaoDoMes(mes: string): Promise<ConsolidacaoMes> {
   );
 }
 
-/** Resumo anual mês a mês (12 linhas), com saldo acumulado e totais do ano. */
-export async function consolidacaoAnual(ano: number): Promise<ConsolidacaoAnual> {
-  const grupos = await prisma.lancamentoCaixa.groupBy({
-    by: ["mesReferencia", "centroCusto", "tipo"],
-    where: { mesReferencia: { startsWith: `${ano}-` } },
-    _sum: { valor: true },
-  });
+type GrupoMensal = {
+  mesReferencia: string;
+  centroCusto: string;
+  tipo: string;
+  _sum: { valor: number | null };
+};
+
+function mapaPorMes(grupos: GrupoMensal[]): Map<string, SomaPorGrupo[]> {
   const porMes = new Map<string, SomaPorGrupo[]>();
   for (const g of grupos) {
     const lista = porMes.get(g.mesReferencia) ?? [];
     lista.push({ centroCusto: g.centroCusto, tipo: g.tipo, soma: g._sum.valor ?? 0 });
     porMes.set(g.mesReferencia, lista);
   }
+  return porMes;
+}
 
+/** Uma linha por competência de `meses`, com saldo acumulado do 1º ao último. */
+function linhasComAcumulado(
+  meses: string[],
+  porMes: Map<string, SomaPorGrupo[]>,
+): LinhaAnual[] {
   const linhas: LinhaAnual[] = [];
   let acumulado = 0;
-  for (let m = 1; m <= 12; m++) {
-    const mes = competencia(ano, m);
+  for (const mes of meses) {
     const doMes = porMes.get(mes);
     const c = consolidar(doMes ?? []);
     acumulado += c.saldo;
@@ -182,8 +195,11 @@ export async function consolidacaoAnual(ano: number): Promise<ConsolidacaoAnual>
       acumulado,
     });
   }
+  return linhas;
+}
 
-  const totais = linhas.reduce<ConsolidacaoMes>(
+function somarTotais(linhas: LinhaAnual[]): ConsolidacaoMes {
+  return linhas.reduce<ConsolidacaoMes>(
     (acc, l) => ({
       despesaAL: acc.despesaAL + l.despesaAL,
       despesaCH: acc.despesaCH + l.despesaCH,
@@ -193,8 +209,81 @@ export async function consolidacaoAnual(ano: number): Promise<ConsolidacaoAnual>
     }),
     { despesaAL: 0, despesaCH: 0, receita: 0, recebDinheiro: 0, saldo: 0 },
   );
+}
 
-  return { ano, linhas, totais };
+/** Resumo anual mês a mês (12 linhas), com saldo acumulado e totais do ano. */
+export async function consolidacaoAnual(ano: number): Promise<ConsolidacaoAnual> {
+  const grupos = await prisma.lancamentoCaixa.groupBy({
+    by: ["mesReferencia", "centroCusto", "tipo"],
+    where: { mesReferencia: { startsWith: `${ano}-` } },
+    _sum: { valor: true },
+  });
+  const meses = Array.from({ length: 12 }, (_, i) => competencia(ano, i + 1));
+  const linhas = linhasComAcumulado(meses, mapaPorMes(grupos));
+  return { ano, linhas, totais: somarTotais(linhas) };
+}
+
+// ---------------------------------------------------------------------------
+// Consultas por PERÍODO (lista de competências "YYYY-MM" vinda de parsePeriodo)
+// ---------------------------------------------------------------------------
+// Competências comparam certo como string, então a janela [meses[0], último]
+// vira mesReferencia: { gte, lte }. Mesmas regras canônicas do modo mensal,
+// agregadas sobre a janela inteira. Valores em centavos.
+
+export type ConsolidacaoPeriodo = {
+  /** competências da janela, em ordem crescente (linhas alinhadas a elas) */
+  meses: string[];
+  linhas: LinhaAnual[];
+  totais: ConsolidacaoMes;
+};
+
+function janela(meses: string[]): { gte: string; lte: string } {
+  return { gte: meses[0], lte: meses[meses.length - 1] };
+}
+
+/** Lançamentos da janela inteira nos 4 blocos (ordem: competência, depois data). */
+export async function lancamentosDoPeriodo(
+  meses: string[],
+): Promise<LancamentosDoMes> {
+  const todos = await prisma.lancamentoCaixa.findMany({
+    where: { mesReferencia: janela(meses) },
+    orderBy: [{ mesReferencia: "asc" }, { data: "asc" }],
+  });
+  return montarBlocos(todos);
+}
+
+/** Consolidação agregada da janela: despesa AL, despesa CH, receita e saldo. */
+export async function consolidacaoDoPeriodo(
+  meses: string[],
+): Promise<ConsolidacaoMes> {
+  const grupos = await prisma.lancamentoCaixa.groupBy({
+    by: ["centroCusto", "tipo"],
+    where: { mesReferencia: janela(meses) },
+    _sum: { valor: true },
+  });
+  return consolidar(
+    grupos.map((g) => ({
+      centroCusto: g.centroCusto,
+      tipo: g.tipo,
+      soma: g._sum.valor ?? 0,
+    })),
+  );
+}
+
+/**
+ * Resumo mês a mês da janela (uma linha por competência, mesmo cruzando anos),
+ * com saldo acumulado DENTRO da janela e totais do período.
+ */
+export async function consolidacaoMensalDoPeriodo(
+  meses: string[],
+): Promise<ConsolidacaoPeriodo> {
+  const grupos = await prisma.lancamentoCaixa.groupBy({
+    by: ["mesReferencia", "centroCusto", "tipo"],
+    where: { mesReferencia: janela(meses) },
+    _sum: { valor: true },
+  });
+  const linhas = linhasComAcumulado(meses, mapaPorMes(grupos));
+  return { meses, linhas, totais: somarTotais(linhas) };
 }
 
 /**

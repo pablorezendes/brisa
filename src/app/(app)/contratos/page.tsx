@@ -71,13 +71,13 @@ export default async function PaginaContratos({
       />
 
       {sp.erro ? (
-        <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+        <div className="mb-4 rounded-md border border-erro/25 bg-erro/5 px-4 py-2.5 text-sm text-erro">
           {sp.erro}
         </div>
       ) : null}
 
       {comReajuste.length > 0 ? (
-        <Card className="mb-4 border-amber-300 bg-amber-50 p-4">
+        <Card className="mb-4 border-ambar/40 bg-ambar/10 p-4">
           <div className="mb-1 flex items-center gap-2 text-sm font-semibold">
             <Badge cor="ambar">Reajuste este mês</Badge>
             <span>
@@ -85,7 +85,7 @@ export default async function PaginaContratos({
               {NOME_MES_COMPLETO[mesCorrente]}
             </span>
           </div>
-          <ul className="text-sm text-slate-700">
+          <ul className="text-sm text-tinta">
             {comReajuste.map((c) => (
               <li key={c.id}>
                 <Link href={`/contratos/${c.id}`} className="hover:underline">
@@ -142,7 +142,7 @@ export default async function PaginaContratos({
               <h2 className="text-sm font-bold tracking-tight">
                 {nomeEmpreendimento}
               </h2>
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-tinta-suave">
                 {lista.length} contrato(s)
               </span>
             </div>

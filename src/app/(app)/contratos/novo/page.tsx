@@ -28,7 +28,7 @@ export default async function PaginaNovoContrato({
         descricao="Vincule uma unidade (existente ou nova) a um locatário e defina os valores contratados"
       />
       {sp.erro ? (
-        <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+        <div className="mb-4 rounded-md border border-erro/25 bg-erro/5 px-4 py-2.5 text-sm text-erro">
           {sp.erro}
         </div>
       ) : null}

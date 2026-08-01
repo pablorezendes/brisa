@@ -7,6 +7,8 @@ import {
   Dinheiro,
   Kpi,
   PageHeader,
+  Ponto,
+  SeletorPeriodo,
   btnSecundario,
 } from "@/components/ui";
 import {
@@ -27,9 +29,17 @@ import {
   NOME_MES_COMPLETO,
   parseCompetencia,
 } from "@/lib/dominio/normalizacao";
+import {
+  numerosDeMes,
+  parsePeriodo,
+  rotulosCompetencias,
+} from "@/lib/dominio/periodo";
 import { formatarDataBR } from "@/lib/consultas/locacao";
 import { mesMaisRecenteComLancamentos } from "@/lib/consultas/relatorios";
-import { detalheEmpreendimento } from "@/lib/consultas/painel-empreendimentos";
+import {
+  detalheEmpreendimento,
+  detalheEmpreendimentoDoPeriodo,
+} from "@/lib/consultas/painel-empreendimentos";
 import { SeletorAno, anoDaQuery } from "@/app/(app)/relatorios/seletor-ano";
 import { badgeStatus } from "@/app/(app)/contratos/status";
 
@@ -46,22 +56,62 @@ export default async function PaginaDetalheEmpreendimento({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ ano?: string }>;
+  searchParams: Promise<{ ano?: string; de?: string; ate?: string }>;
 }) {
   const { id } = await params;
   const sp = await searchParams;
+  const periodo = parsePeriodo(sp.de, sp.ate);
   const mesRecente = await mesMaisRecenteComLancamentos();
   const ano = anoDaQuery(sp.ano, parseCompetencia(mesRecente).ano);
-  const d = await detalheEmpreendimento(id, ano);
-  if (!d) notFound();
 
   const hoje = new Date();
   const anoAtual = hoje.getFullYear();
   const mesAtual = hoje.getMonth() + 1;
+
+  // ---- as duas visões desembocam no MESMO view-model -----------------------
+  // (modo ano: séries JAN..DEZ cortadas no último mês com dados; modo
+  //  período: exatamente as competências escolhidas no calendário)
+  const vm = periodo
+    ? await (async () => {
+        const d = await detalheEmpreendimentoDoPeriodo(id, periodo.meses);
+        if (!d) return null;
+        const rotulos = rotulosCompetencias(periodo.meses);
+        return {
+          d,
+          janela: periodo.rotulo,
+          naJanela: "no período",
+          rotulosSerie: rotulos as string[] | undefined,
+          rotulosLinhas: rotulos,
+          corte: periodo.meses.length,
+          destaqueSerie: undefined as number | undefined,
+          mesesReajuste: new Set(numerosDeMes(periodo.meses)) as Set<number> | null,
+          hrefVoltar: `/paineis/empreendimentos?de=${periodo.de}&ate=${periodo.ate}`,
+        };
+      })()
+    : await (async () => {
+        const d = await detalheEmpreendimento(id, ano);
+        if (!d) return null;
+        return {
+          d,
+          janela: String(ano),
+          naJanela: `em ${ano}`,
+          rotulosSerie: undefined as string[] | undefined,
+          rotulosLinhas: NOME_MES_ABREV.slice(1, d.ultimoMesComDados + 1),
+          corte: d.ultimoMesComDados,
+          destaqueSerie: (ano === anoAtual ? mesAtual : 0) as
+            | number
+            | undefined,
+          mesesReajuste: null as Set<number> | null,
+          hrefVoltar: `/paineis/empreendimentos?ano=${ano}`,
+        };
+      })();
+  if (!vm) notFound();
+  const d = vm.d;
+
   const ocupacaoPct =
     d.ocupacao.ativas > 0 ? d.ocupacao.ocupadas / d.ocupacao.ativas : null;
   const totalComissaoUnidades = d.unidades.reduce(
-    (a, u) => a + u.comissaoAno,
+    (a, u) => a + u.comissaoJanela,
     0
   );
 
@@ -69,14 +119,24 @@ export default async function PaginaDetalheEmpreendimento({
     <div className="max-w-6xl">
       <PageHeader
         titulo={d.nome}
-        descricao={`Comissão, recebimentos, unidades e locatários deste empreendimento em ${ano}.`}
+        descricao={
+          periodo
+            ? `Comissão, recebimentos, unidades e locatários deste empreendimento no período ${periodo.rotulo}.`
+            : `Comissão, recebimentos, unidades e locatários deste empreendimento em ${ano}.`
+        }
         acoes={
           <>
-            <SeletorAno base={`/paineis/empreendimentos/${d.id}`} ano={ano} />
-            <Link
-              href={`/paineis/empreendimentos?ano=${ano}`}
-              className={btnSecundario}
-            >
+            {!periodo ? (
+              <SeletorAno
+                base={`/paineis/empreendimentos/${d.id}`}
+                ano={ano}
+              />
+            ) : null}
+            <SeletorPeriodo
+              base={`/paineis/empreendimentos/${d.id}`}
+              periodo={periodo}
+            />
+            <Link href={vm.hrefVoltar} className={btnSecundario}>
               Voltar
             </Link>
           </>
@@ -86,37 +146,37 @@ export default async function PaginaDetalheEmpreendimento({
       {/* ---------- KPIs ---------- */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <Kpi
-          rotulo="Comissão no ano"
-          valor={<Dinheiro centavos={d.comissaoAno} destaque />}
+          rotulo={periodo ? "Comissão no período" : "Comissão no ano"}
+          valor={<Dinheiro centavos={d.comissaoTotal} destaque />}
           detalhe="o ganho da administradora aqui"
           ajuda="Soma da comissão de cada lançamento pago do empreendimento: (recebido − IPTU − condomínio) × taxa do lançamento (padrão 10%). IPTU e condomínio são repasses ao proprietário e nunca entram na conta."
         />
         <Kpi
-          rotulo="Recebido no ano"
-          valor={<Dinheiro centavos={d.recebidoAno} destaque />}
+          rotulo={periodo ? "Recebido no período" : "Recebido no ano"}
+          valor={<Dinheiro centavos={d.recebidoTotal} destaque />}
           detalhe="aluguel + repasses (IPTU/cond.)"
-          ajuda="Tudo o que os locatários pagaram nos lançamentos deste ano. Só conta quando o campo Recebido é preenchido — se o locatário pagou junto um mês atrasado, lance tudo em Recebido e anote o motivo na Observação."
+          ajuda={`Tudo o que os locatários pagaram nos lançamentos ${periodo ? "do período" : "deste ano"}. Só conta quando o campo Recebido é preenchido — se o locatário pagou junto um mês atrasado, lance tudo em Recebido e anote o motivo na Observação.`}
         />
         <Kpi
           rotulo="Taxa de recebimento"
           valor={pct(d.taxaRecebimento)}
-          detalhe={`entrou ${formatarBRL(d.recebidoAno)} de ${formatarBRL(d.devidoAno)} devidos`}
+          detalhe={`entrou ${formatarBRL(d.recebidoTotal)} de ${formatarBRL(d.devidoTotal)} devidos`}
           nivel={nivelTaxaRecebimento(d.taxaRecebimento)}
           grafico={
-            d.devidoAno > 0 ? (
+            d.devidoTotal > 0 ? (
               <BarraComposicao
                 partes={[
-                  { rotulo: "recebido", valor: d.recebidoAno, cor: COR_1 },
+                  { rotulo: "recebido", valor: d.recebidoTotal, cor: COR_1 },
                   {
                     rotulo: "a receber",
-                    valor: Math.max(d.devidoAno - d.recebidoAno, 0),
+                    valor: Math.max(d.devidoTotal - d.recebidoTotal, 0),
                     cor: COR_2,
                   },
                 ]}
               />
             ) : undefined
           }
-          ajuda="Recebido ÷ devido no ano. Acima de 100% = atrasos de meses anteriores quitados; abaixo, há cobranças sem pagamento ou pagas em parte (o motivo do parcial vai na Observação do lançamento)."
+          ajuda={`Recebido ÷ devido ${periodo ? "no período" : "no ano"}. Acima de 100% = atrasos de meses anteriores quitados; abaixo, há cobranças sem pagamento ou pagas em parte (o motivo do parcial vai na Observação do lançamento).`}
         />
         <Kpi
           rotulo="Ocupação"
@@ -154,14 +214,14 @@ export default async function PaginaDetalheEmpreendimento({
         <Kpi
           rotulo="Pendente em aberto"
           valor={<Dinheiro centavos={d.pendenteAberto} destaque />}
-          detalhe={`${d.pendentesQtde} cobrança(s) sem pagamento em ${ano}`}
-          nivel={nivelInadimplencia(d.pendenteAberto, d.devidoAno)}
+          detalhe={`${d.pendentesQtde} cobrança(s) sem pagamento ${vm.naJanela}`}
+          nivel={nivelInadimplencia(d.pendenteAberto, d.devidoTotal)}
           nota={
             d.pendenteAberto > 0
               ? "Registre o pagamento em Recebimentos assim que o dinheiro entrar."
               : undefined
           }
-          ajuda="Cobranças lançadas no ano que ainda estão sem valor em Recebido. Quando o locatário pagar, preencha Recebido e a Data de pagamento no lançamento — a competência continua sendo a do mês devido."
+          ajuda={`Cobranças lançadas ${periodo ? "no período" : "no ano"} que ainda estão sem valor em Recebido. Quando o locatário pagar, preencha Recebido e a Data de pagamento no lançamento — a competência continua sendo a do mês devido.`}
         />
       </div>
 
@@ -170,22 +230,23 @@ export default async function PaginaDetalheEmpreendimento({
         <Card className="p-5">
           <div className="mb-2 flex items-baseline justify-between">
             <h2 className="text-sm font-semibold">
-              Comissão mês a mês — {ano}
+              Comissão mês a mês — {vm.janela}
             </h2>
-            <span className="text-xs text-slate-500">
-              total: {formatarBRL(d.comissaoAno)}
+            <span className="text-xs text-tinta-suave">
+              total: {formatarBRL(d.comissaoTotal)}
             </span>
           </div>
           <BarrasMensais
             valores={d.comissaoPorMes}
-            mesSelecionado={ano === anoAtual ? mesAtual : 0}
+            mesSelecionado={vm.destaqueSerie}
+            rotulos={vm.rotulosSerie}
           />
-          <p className="mt-2 text-xs text-slate-500">
+          <p className="mt-2 text-xs text-tinta-suave">
             Cada barra é a comissão que este empreendimento gerou no mês de
             lançamento. Mês sem barra = nada recebido (ou só devidos ainda em
             aberto).
           </p>
-          <details className="mt-2 text-xs text-slate-600">
+          <details className="mt-2 text-xs text-tinta-suave">
             <summary className="cursor-pointer select-none">Ver dados</summary>
             <div className="mt-2 overflow-x-auto">
               <table className="tabela">
@@ -196,16 +257,14 @@ export default async function PaginaDetalheEmpreendimento({
                   </tr>
                 </thead>
                 <tbody>
-                  {d.comissaoPorMes
-                    .slice(0, d.ultimoMesComDados)
-                    .map((v, i) => (
-                      <tr key={i}>
-                        <td>{NOME_MES_ABREV[i + 1]}</td>
-                        <td className="text-right">
-                          <Dinheiro centavos={v} />
-                        </td>
-                      </tr>
-                    ))}
+                  {d.comissaoPorMes.slice(0, vm.corte).map((v, i) => (
+                    <tr key={i}>
+                      <td>{vm.rotulosLinhas[i]}</td>
+                      <td className="text-right">
+                        <Dinheiro centavos={v} />
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -214,7 +273,9 @@ export default async function PaginaDetalheEmpreendimento({
 
         <Card className="p-5">
           <div className="mb-2 flex items-baseline justify-between">
-            <h2 className="text-sm font-semibold">Devido × Recebido — {ano}</h2>
+            <h2 className="text-sm font-semibold">
+              Devido × Recebido — {vm.janela}
+            </h2>
             <Legenda
               itens={[
                 { cor: COR_2, nome: "Devido" },
@@ -229,13 +290,14 @@ export default async function PaginaDetalheEmpreendimento({
             nomeB="Recebido"
             corA={COR_2}
             corB={COR_1}
+            rotulos={vm.rotulosSerie}
           />
-          <p className="mt-2 text-xs text-slate-500">
+          <p className="mt-2 text-xs text-tinta-suave">
             Recebido acima do devido = atrasos quitados no mês; abaixo =
             inadimplência ou pagamento parcial (motivo na Observação do
             lançamento).
           </p>
-          <details className="mt-2 text-xs text-slate-600">
+          <details className="mt-2 text-xs text-tinta-suave">
             <summary className="cursor-pointer select-none">Ver dados</summary>
             <div className="mt-2 overflow-x-auto">
               <table className="tabela">
@@ -248,9 +310,9 @@ export default async function PaginaDetalheEmpreendimento({
                   </tr>
                 </thead>
                 <tbody>
-                  {d.devidoPorMes.slice(0, d.ultimoMesComDados).map((v, i) => (
+                  {d.devidoPorMes.slice(0, vm.corte).map((v, i) => (
                     <tr key={i}>
-                      <td>{NOME_MES_ABREV[i + 1]}</td>
+                      <td>{vm.rotulosLinhas[i]}</td>
                       <td className="text-right">
                         <Dinheiro centavos={v} />
                       </td>
@@ -273,13 +335,13 @@ export default async function PaginaDetalheEmpreendimento({
       <Card className="mt-4 p-5">
         <div className="mb-2 flex items-baseline justify-between">
           <h2 className="text-sm font-semibold">Unidades</h2>
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-tinta-suave">
             {d.ocupacao.ativas} ativa(s) · {d.ocupacao.desocupadas}{" "}
             desocupada(s)
           </span>
         </div>
         {d.unidades.length === 0 ? (
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-tinta-suave">
             Nenhuma unidade cadastrada neste empreendimento.
           </p>
         ) : (
@@ -298,12 +360,20 @@ export default async function PaginaDetalheEmpreendimento({
                   </th>
                   <th>
                     Reajuste{" "}
-                    <Ajuda dica="Mês de aniversário da correção anual do aluguel. Quando ele chega, aplique o índice e atualize o valor-base no contrato — o sistema não corrige sozinho. 'Já passou' = o aniversário deste ano ficou para trás; confira se o valor foi corrigido." />
+                    <Ajuda
+                      dica={
+                        periodo
+                          ? "Mês de aniversário da correção anual do aluguel. 'Cai no período' = o aniversário cai em um dos meses da janela escolhida — confira se o índice foi aplicado e o valor-base atualizado no contrato; o sistema não corrige sozinho."
+                          : "Mês de aniversário da correção anual do aluguel. Quando ele chega, aplique o índice e atualize o valor-base no contrato — o sistema não corrige sozinho. 'Já passou' = o aniversário deste ano ficou para trás; confira se o valor foi corrigido."
+                      }
+                    />
                   </th>
                   <th>Status</th>
                   <th className="text-right">
-                    Comissão no ano{" "}
-                    <Ajuda dica="Comissão que os lançamentos pagos desta unidade geraram no ano, pela regra (recebido − repasses) × taxa." />
+                    {periodo ? "Comissão no período" : "Comissão no ano"}{" "}
+                    <Ajuda
+                      dica={`Comissão que os lançamentos pagos desta unidade geraram ${periodo ? "no período" : "no ano"}, pela regra (recebido − repasses) × taxa.`}
+                    />
                   </th>
                 </tr>
               </thead>
@@ -330,14 +400,18 @@ export default async function PaginaDetalheEmpreendimento({
                           <span className="font-mono text-xs">
                             {NOME_MES_ABREV[u.mesReajuste]}
                           </span>
-                          {ano === anoAtual && u.mesReajuste === mesAtual ? (
+                          {periodo ? (
+                            vm.mesesReajuste?.has(u.mesReajuste) ? (
+                              <Badge cor="ambar">cai no período</Badge>
+                            ) : null
+                          ) : ano === anoAtual && u.mesReajuste === mesAtual ? (
                             <Badge cor="ambar">é agora</Badge>
                           ) : ano === anoAtual && u.mesReajuste < mesAtual ? (
                             <Badge cor="ambar">já passou — confira</Badge>
                           ) : null}
                         </span>
                       ) : (
-                        <span className="text-slate-400">—</span>
+                        <span className="text-tinta-suave/60">—</span>
                       )}
                     </td>
                     <td>
@@ -348,7 +422,7 @@ export default async function PaginaDetalheEmpreendimento({
                       )}
                     </td>
                     <td className="text-right">
-                      <Dinheiro centavos={u.comissaoAno} />
+                      <Dinheiro centavos={u.comissaoJanela} />
                     </td>
                   </tr>
                 ))}
@@ -365,10 +439,13 @@ export default async function PaginaDetalheEmpreendimento({
           </div>
         )}
         {d.ocupacao.desocupadas > 0 ? (
-          <p className="mt-2 text-xs text-ambar">
-            Unidade desocupada não gera aluguel nem comissão — cada mês vazio é
-            receita que não volta. Vale priorizar a divulgação e a negociação
-            dessas unidades.
+          <p className="mt-2 flex items-baseline gap-1.5 text-xs text-tinta-suave">
+            <Ponto nivel="atencao" titulo="atenção" />
+            <span>
+              Unidade desocupada não gera aluguel nem comissão — cada mês vazio
+              é receita que não volta. Vale priorizar a divulgação e a
+              negociação dessas unidades.
+            </span>
           </p>
         ) : null}
       </Card>
@@ -376,14 +453,17 @@ export default async function PaginaDetalheEmpreendimento({
       {/* ---------- locatários ---------- */}
       <Card className="mt-4 p-5">
         <div className="mb-2 flex items-baseline justify-between">
-          <h2 className="text-sm font-semibold">Locatários em {ano}</h2>
-          <span className="text-xs text-slate-500">
+          <h2 className="text-sm font-semibold">
+            {periodo ? "Locatários no período" : `Locatários em ${ano}`}
+          </h2>
+          <span className="text-xs text-tinta-suave">
             pendente em aberto: {formatarBRL(d.pendenteAberto)}
           </span>
         </div>
         {d.locatarios.length === 0 ? (
-          <p className="text-sm text-slate-500">
-            Nenhum lançamento para locatários deste empreendimento em {ano}.
+          <p className="text-sm text-tinta-suave">
+            Nenhum lançamento para locatários deste empreendimento{" "}
+            {vm.naJanela}.
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -392,16 +472,22 @@ export default async function PaginaDetalheEmpreendimento({
                 <tr>
                   <th>Locatário</th>
                   <th className="text-right">
-                    Recebido no ano{" "}
-                    <Ajuda dica="Soma do campo Recebido dos lançamentos do locatário no ano (aluguel + IPTU + condomínio quando cobrados juntos). Pode passar do contratado quando ele quita atrasos." />
+                    {periodo ? "Recebido no período" : "Recebido no ano"}{" "}
+                    <Ajuda
+                      dica={`Soma do campo Recebido dos lançamentos do locatário ${periodo ? "no período" : "no ano"} (aluguel + IPTU + condomínio quando cobrados juntos). Pode passar do contratado quando ele quita atrasos.`}
+                    />
                   </th>
                   <th className="text-right">
                     Pendente{" "}
-                    <Ajuda dica="Cobranças lançadas no ano ainda sem valor em Recebido. Ao receber, preencha Recebido e a Data de pagamento; se for acordo ou pagamento parcial, anote o motivo na Observação." />
+                    <Ajuda
+                      dica={`Cobranças lançadas ${periodo ? "no período" : "no ano"} ainda sem valor em Recebido. Ao receber, preencha Recebido e a Data de pagamento; se for acordo ou pagamento parcial, anote o motivo na Observação.`}
+                    />
                   </th>
                   <th className="text-right">
                     Último pagamento{" "}
-                    <Ajuda dica="Data de pagamento mais recente registrada nos lançamentos do ano. Se aparecer '—' com valor recebido, a data não foi preenchida no lançamento — vale sempre preencher." />
+                    <Ajuda
+                      dica={`Data de pagamento mais recente registrada nos lançamentos ${periodo ? "do período" : "do ano"}. Se aparecer '—' com valor recebido, a data não foi preenchida no lançamento — vale sempre preencher.`}
+                    />
                   </th>
                 </tr>
               </thead>
@@ -410,25 +496,25 @@ export default async function PaginaDetalheEmpreendimento({
                   <tr key={l.nome}>
                     <td className="font-medium">{l.nome}</td>
                     <td className="text-right">
-                      <Dinheiro centavos={l.recebidoAno} />
+                      <Dinheiro centavos={l.recebidoJanela} />
                     </td>
                     <td className="text-right">
-                      {l.pendenteAno > 0 ? (
+                      {l.pendenteJanela > 0 ? (
                         <span className="inline-flex items-center justify-end gap-2">
                           <Badge cor={l.lancamentosPendentes > 1 ? "vermelho" : "ambar"}>
                             {l.lancamentosPendentes}×
                           </Badge>
-                          <Dinheiro centavos={l.pendenteAno} />
+                          <Dinheiro centavos={l.pendenteJanela} />
                         </span>
                       ) : (
-                        <span className="text-slate-300">—</span>
+                        <span className="text-tinta-suave/40">—</span>
                       )}
                     </td>
                     <td className="text-right font-mono text-xs">
                       {l.ultimoPagamento ? (
                         formatarDataBR(l.ultimoPagamento)
                       ) : (
-                        <span className="text-slate-400">—</span>
+                        <span className="text-tinta-suave/60">—</span>
                       )}
                     </td>
                   </tr>
@@ -438,7 +524,7 @@ export default async function PaginaDetalheEmpreendimento({
                 <tr>
                   <td>Total</td>
                   <td className="text-right">
-                    <Dinheiro centavos={d.recebidoAno} destaque />
+                    <Dinheiro centavos={d.recebidoTotal} destaque />
                   </td>
                   <td className="text-right">
                     <Dinheiro centavos={d.pendenteAberto} destaque />
@@ -451,12 +537,28 @@ export default async function PaginaDetalheEmpreendimento({
         )}
       </Card>
 
-      <p className="mt-6 text-xs text-slate-400">
-        Todos os números nascem dos lançamentos de recebimento do ano{" "}
-        {ano} deste empreendimento (mês de lançamento {NOME_MES_ABREV[1]}–
-        {NOME_MES_ABREV[12]}), pela regra canônica: comissão = (recebido − IPTU
-        − condomínio) × taxa do lançamento. {NOME_MES_COMPLETO[mesAtual]} é o
-        mês corrente usado para destacar reajustes.
+      <p className="mt-6 text-xs text-tinta-suave/60">
+        {periodo ? (
+          <>
+            Todos os números nascem dos lançamentos de recebimento deste
+            empreendimento no período {periodo.rotulo} (
+            {vm.rotulosLinhas.length === 1
+              ? `competência ${vm.rotulosLinhas[0]}`
+              : `competências ${vm.rotulosLinhas[0]}–${vm.rotulosLinhas[vm.rotulosLinhas.length - 1]}`}
+            ), pela regra canônica: comissão = (recebido − IPTU − condomínio) ×
+            taxa do lançamento. Reajustes ganham a marca &quot;cai no
+            período&quot; quando o mês de aniversário está dentro da janela.
+          </>
+        ) : (
+          <>
+            Todos os números nascem dos lançamentos de recebimento do ano {ano}{" "}
+            deste empreendimento (mês de lançamento {NOME_MES_ABREV[1]}–
+            {NOME_MES_ABREV[12]}), pela regra canônica: comissão = (recebido −
+            IPTU − condomínio) × taxa do lançamento.{" "}
+            {NOME_MES_COMPLETO[mesAtual]} é o mês corrente usado para destacar
+            reajustes.
+          </>
+        )}
       </p>
     </div>
   );

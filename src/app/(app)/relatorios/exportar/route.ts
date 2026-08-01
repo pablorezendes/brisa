@@ -1,5 +1,8 @@
 /**
- * Exportação Excel dos relatórios (GET ?tipo=comissao|resultado&ano=YYYY).
+ * Exportação Excel dos relatórios.
+ * GET ?tipo=comissao|resultado & (ano=YYYY | de=YYYY-MM-DD&ate=YYYY-MM-DD).
+ * Quando ?de/?ate estão presentes e válidos, exporta a janela do período
+ * (mesma regra das telas); senão, o ano — comportamento original intacto.
  * Abas e colunas com os mesmos nomes da planilha original (COMISSÃO, RESULTADO);
  * valores em reais com formato "#,##0.00".
  */
@@ -7,13 +10,17 @@
 import ExcelJS from "exceljs";
 import {
   matrizComissao,
+  matrizComissaoPeriodo,
   mesMaisRecenteComLancamentos,
   resultadoConsolidado,
+  resultadoConsolidadoPeriodo,
+  type LinhaResultado,
 } from "@/lib/consultas/relatorios";
 import {
   NOME_MES_ABREV,
   parseCompetencia,
 } from "@/lib/dominio/normalizacao";
+import { parsePeriodo, rotulosCompetencias } from "@/lib/dominio/periodo";
 
 const FORMATO_MOEDA = "#,##0.00";
 
@@ -21,18 +28,25 @@ function reais(centavos: number): number {
   return centavos / 100;
 }
 
+/** Dados da aba COMISSÃO — mesmo shape no modo ano (12 colunas) e período. */
+interface DadosComissao {
+  linhas: { empreendimento: string; porMes: number[]; total: number }[];
+  totalPorMes: number[];
+  totalGeral: number;
+}
+
 function planilhaComissao(
   wb: ExcelJS.Workbook,
-  m: Awaited<ReturnType<typeof matrizComissao>>
+  m: DadosComissao,
+  colunas: string[]
 ) {
   const ws = wb.addWorksheet("COMISSÃO");
-  const meses = NOME_MES_ABREV.slice(1); // JAN..DEZ
 
   ws.columns = [
     { header: "EMPREENDIMENTO", key: "emp", width: 24 },
-    ...meses.map((nome) => ({
+    ...colunas.map((nome, i) => ({
       header: nome,
-      key: nome,
+      key: `m${i}`,
       width: 12,
       style: { numFmt: FORMATO_MOEDA },
     })),
@@ -56,10 +70,16 @@ function planilhaComissao(
   rodape.font = { bold: true };
 }
 
-function planilhaResultado(
-  wb: ExcelJS.Workbook,
-  r: Awaited<ReturnType<typeof resultadoConsolidado>>
-) {
+/** Dados da aba RESULTADO — mesmo shape no modo ano e período. */
+interface DadosResultado {
+  linhas: LinhaResultado[];
+  totalGeral: Pick<
+    LinhaResultado,
+    "recebidos" | "iptu" | "cond" | "base" | "comissao"
+  >;
+}
+
+function planilhaResultado(wb: ExcelJS.Workbook, r: DadosResultado) {
   const ws = wb.addWorksheet("RESULTADO");
   const moeda = { numFmt: FORMATO_MOEDA };
   ws.columns = [
@@ -110,19 +130,41 @@ export async function GET(request: Request) {
     );
   }
 
-  const anoParam = Number(params.get("ano"));
-  const ano =
-    Number.isInteger(anoParam) && anoParam >= 2000 && anoParam <= 2100
-      ? anoParam
-      : parseCompetencia(await mesMaisRecenteComLancamentos()).ano;
+  // ?de/?ate válidos vencem o ?ano — mesma regra das telas de relatório
+  const periodo = parsePeriodo(
+    params.get("de") ?? undefined,
+    params.get("ate") ?? undefined
+  );
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "Brisa — Gestão de Imóveis";
 
-  if (tipo === "comissao") {
-    planilhaComissao(wb, await matrizComissao(ano));
+  let sufixoArquivo: string;
+
+  if (periodo) {
+    if (tipo === "comissao") {
+      planilhaComissao(
+        wb,
+        await matrizComissaoPeriodo(periodo.meses),
+        rotulosCompetencias(periodo.meses)
+      );
+    } else {
+      planilhaResultado(wb, await resultadoConsolidadoPeriodo(periodo.meses));
+    }
+    sufixoArquivo = `${periodo.de}-a-${periodo.ate}`;
   } else {
-    planilhaResultado(wb, await resultadoConsolidado(ano));
+    const anoParam = Number(params.get("ano"));
+    const ano =
+      Number.isInteger(anoParam) && anoParam >= 2000 && anoParam <= 2100
+        ? anoParam
+        : parseCompetencia(await mesMaisRecenteComLancamentos()).ano;
+
+    if (tipo === "comissao") {
+      planilhaComissao(wb, await matrizComissao(ano), NOME_MES_ABREV.slice(1));
+    } else {
+      planilhaResultado(wb, await resultadoConsolidado(ano));
+    }
+    sufixoArquivo = String(ano);
   }
 
   const buffer = await wb.xlsx.writeBuffer();
@@ -132,7 +174,7 @@ export async function GET(request: Request) {
     headers: {
       "Content-Type":
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="${tipo}-${ano}.xlsx"`,
+      "Content-Disposition": `attachment; filename="${tipo}-${sufixoArquivo}.xlsx"`,
       "Cache-Control": "no-store",
     },
   });

@@ -10,7 +10,7 @@ import {
 } from "@/lib/consultas/locacao";
 import type { Empreendimento, Locatario } from "@prisma/client";
 
-const rotulo = "block text-xs font-medium text-slate-600";
+const rotulo = "block text-xs font-medium text-tinta-suave";
 
 /**
  * Formulário de contrato (criar/editar) — 100% server-side.
@@ -65,8 +65,8 @@ export function FormularioContrato({
             </select>
           </label>
         </div>
-        <div className="mt-3 border-t border-slate-100 pt-3">
-          <div className="mb-2 text-xs text-slate-500">
+        <div className="mt-3 border-t border-contorno/60 pt-3">
+          <div className="mb-2 text-xs text-tinta-suave">
             … ou criar unidade nova (a identificação será normalizada; se
             preenchida, tem prioridade sobre o select acima):
           </div>
@@ -132,8 +132,8 @@ export function FormularioContrato({
             </select>
           </label>
         </div>
-        <div className="mt-3 border-t border-slate-100 pt-3">
-          <div className="mb-2 text-xs text-slate-500">
+        <div className="mt-3 border-t border-contorno/60 pt-3">
+          <div className="mb-2 text-xs text-tinta-suave">
             … ou cadastrar locatário novo (se o nome for preenchido, tem
             prioridade sobre o select acima):
           </div>
@@ -275,7 +275,7 @@ export function FormularioContrato({
             />
           </label>
         </div>
-        <p className="mt-3 text-xs text-slate-500">
+        <p className="mt-3 text-xs text-tinta-suave">
           IPTU e condomínio são repasses: compõem o total devido, mas nunca
           entram na base de cálculo da comissão.
         </p>

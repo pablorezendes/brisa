@@ -4,12 +4,15 @@ import {
   Dinheiro,
   PageHeader,
   SeletorMes,
+  SeletorPeriodo,
 } from "@/components/ui";
 import {
   mesMaisRecenteComLancamentos,
   pendentesDoMes,
+  pendentesDoPeriodo,
 } from "@/lib/consultas/relatorios";
 import { formatarCompetencia } from "@/lib/dominio/normalizacao";
+import { parsePeriodo } from "@/lib/dominio/periodo";
 
 export const metadata = { title: "Inadimplência — Brisa" };
 
@@ -21,7 +24,7 @@ function Atraso({
   diaVencimento: number | null;
 }) {
   if (dias === null || diaVencimento === null) {
-    return <span className="text-slate-400">—</span>;
+    return <span className="text-tinta-suave/60">—</span>;
   }
   if (dias <= 0) {
     return <Badge cor="ambar">a vencer (dia {diaVencimento})</Badge>;
@@ -36,21 +39,43 @@ function Atraso({
 export default async function InadimplenciaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string }>;
+  searchParams: Promise<{ mes?: string; de?: string; ate?: string }>;
 }) {
   const sp = await searchParams;
+  const periodo = parsePeriodo(sp.de, sp.ate);
   const mes = /^\d{4}-\d{2}$/.test(sp.mes ?? "")
     ? (sp.mes as string)
     : await mesMaisRecenteComLancamentos();
-  const pendencias = await pendentesDoMes(mes);
-  const totalDevido = pendencias.reduce((a, p) => a + p.totalDevido, 0);
+
+  // as duas visões desembocam no mesmo view-model (cada pendência com o mês)
+  const vm = periodo
+    ? {
+        pendencias: await pendentesDoPeriodo(periodo.meses),
+        comMes: periodo.meses.length > 1,
+        janela: `do período ${periodo.rotulo}`,
+        janelaCurta: "no período",
+      }
+    : {
+        pendencias: (await pendentesDoMes(mes)).map((p) => ({ ...p, mes })),
+        comMes: false,
+        janela: `de ${formatarCompetencia(mes)}`,
+        janelaCurta: `em ${formatarCompetencia(mes)}`,
+      };
+  const totalDevido = vm.pendencias.reduce((a, p) => a + p.totalDevido, 0);
 
   return (
     <div>
       <PageHeader
         titulo="Inadimplência"
-        descricao={`Lançamentos de ${formatarCompetencia(mes)} com total devido e sem recebimento registrado.`}
-        acoes={<SeletorMes base="/relatorios/inadimplencia" mes={mes} />}
+        descricao={`Lançamentos ${vm.janela} com total devido e sem recebimento registrado.`}
+        acoes={
+          <div className="flex flex-wrap items-center gap-2">
+            {!periodo ? (
+              <SeletorMes base="/relatorios/inadimplencia" mes={mes} />
+            ) : null}
+            <SeletorPeriodo base="/relatorios/inadimplencia" periodo={periodo} />
+          </div>
+        }
       />
 
       <Card>
@@ -58,6 +83,7 @@ export default async function InadimplenciaPage({
           <table className="tabela">
             <thead>
               <tr>
+                {vm.comMes ? <th>Mês</th> : null}
                 <th>Empreendimento</th>
                 <th>Locatário</th>
                 <th>Localização</th>
@@ -66,11 +92,16 @@ export default async function InadimplenciaPage({
               </tr>
             </thead>
             <tbody>
-              {pendencias.map((p) => (
+              {vm.pendencias.map((p) => (
                 <tr key={p.recebimentoId}>
+                  {vm.comMes ? (
+                    <td className="font-mono text-[12px]">
+                      {formatarCompetencia(p.mes)}
+                    </td>
+                  ) : null}
                   <td className="font-medium">{p.empreendimento}</td>
                   <td>
-                    {p.locatario ?? <span className="text-slate-400">—</span>}
+                    {p.locatario ?? <span className="text-tinta-suave/60">—</span>}
                   </td>
                   <td>{p.identificacao}</td>
                   <td className="text-right">
@@ -84,19 +115,22 @@ export default async function InadimplenciaPage({
                   </td>
                 </tr>
               ))}
-              {pendencias.length === 0 ? (
+              {vm.pendencias.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-6 text-center text-slate-500">
-                    Nenhuma pendência em {formatarCompetencia(mes)}.
+                  <td
+                    colSpan={vm.comMes ? 6 : 5}
+                    className="py-6 text-center text-tinta-suave"
+                  >
+                    Nenhuma pendência {vm.janelaCurta}.
                   </td>
                 </tr>
               ) : null}
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={3}>
-                  {pendencias.length}{" "}
-                  {pendencias.length === 1 ? "pendência" : "pendências"}
+                <td colSpan={vm.comMes ? 4 : 3}>
+                  {vm.pendencias.length}{" "}
+                  {vm.pendencias.length === 1 ? "pendência" : "pendências"}
                 </td>
                 <td className="text-right">
                   <Dinheiro centavos={totalDevido} destaque />

@@ -93,6 +93,48 @@ export async function apuracaoDoMes(mes: string): Promise<ApuracaoTemporada> {
   return calcularApuracao({ limpezas, despesas, recebimentos });
 }
 
+// ---------------------------------------------------------------------------
+// Consultas por PERÍODO (lista de competências vinda de parsePeriodo)
+// ---------------------------------------------------------------------------
+// Mesma regra canônica da apuração mensal, agregada sobre a janela
+// [meses[0], meses[fim]]. Competências "YYYY-MM" comparam certo como string,
+// então gte/lte cobre a janela inteira. Valores em centavos.
+
+export type DadosTemporadaDoPeriodo = {
+  limpezas: (Limpeza & { unidadeTemporada: { codigo: string } })[];
+  despesas: (DespesaTemporada & { unidadeTemporada: CodigoUnidade })[];
+  recebimentos: (RecebimentoTemporada & { unidadeTemporada: CodigoUnidade })[];
+};
+
+/**
+ * Lançamentos da janela (limpezas, despesas e recebimentos), cada um com a
+ * própria competência — a página mostra a coluna "Mês" a partir dela.
+ * A visão por período é analítica: não traz unidades porque não há formulários.
+ */
+export async function dadosTemporadaDoPeriodo(
+  meses: string[],
+): Promise<DadosTemporadaDoPeriodo> {
+  const janela = { gte: meses[0], lte: meses[meses.length - 1] };
+  const [limpezas, despesas, recebimentos] = await Promise.all([
+    prisma.limpeza.findMany({
+      where: { competencia: janela },
+      include: { unidadeTemporada: { select: { codigo: true } } },
+      orderBy: [{ competencia: "asc" }],
+    }),
+    prisma.despesaTemporada.findMany({
+      where: { competencia: janela },
+      include: { unidadeTemporada: { select: { codigo: true } } },
+      orderBy: [{ competencia: "asc" }, { tipo: "asc" }],
+    }),
+    prisma.recebimentoTemporada.findMany({
+      where: { competencia: janela },
+      include: { unidadeTemporada: { select: { codigo: true } } },
+      orderBy: [{ competencia: "asc" }],
+    }),
+  ]);
+  return { limpezas, despesas, recebimentos };
+}
+
 export type ConciliacaoNucleo = {
   /** Existe recebimento agregado (AIRBNB/TODOS) no núcleo para o mês? */
   existeLinhaNucleo: boolean;
@@ -104,6 +146,24 @@ export type ConciliacaoNucleo = {
   /** true quando |diferença| ≤ 1 centavo. */
   conciliado: boolean;
 };
+
+/** Agregação comum às conciliações (mês e período). */
+function montarConciliacao(
+  linhas: { recebido: number | null }[],
+  receitaModulo: number,
+): ConciliacaoNucleo {
+  const comValor = linhas.filter((l) => l.recebido !== null);
+  const recebidoNucleo =
+    comValor.length > 0 ? comValor.reduce((s, l) => s + (l.recebido ?? 0), 0) : null;
+  const diferenca = recebidoNucleo === null ? null : recebidoNucleo - receitaModulo;
+  return {
+    existeLinhaNucleo: linhas.length > 0,
+    recebidoNucleo,
+    receitaModulo,
+    diferenca,
+    conciliado: diferenca !== null && Math.abs(diferenca) <= 1,
+  };
+}
 
 /**
  * Conciliação com o núcleo: a linha agregada AIRBNB/TODOS
@@ -118,17 +178,26 @@ export async function conciliacaoComNucleo(
     where: { origemAgregada: true, mesLancamento: mes },
     select: { recebido: true },
   });
-  const comValor = linhas.filter((l) => l.recebido !== null);
-  const recebidoNucleo =
-    comValor.length > 0 ? comValor.reduce((s, l) => s + (l.recebido ?? 0), 0) : null;
-  const diferenca = recebidoNucleo === null ? null : recebidoNucleo - receitaModulo;
-  return {
-    existeLinhaNucleo: linhas.length > 0,
-    recebidoNucleo,
-    receitaModulo,
-    diferenca,
-    conciliado: diferenca !== null && Math.abs(diferenca) <= 1,
-  };
+  return montarConciliacao(linhas, receitaModulo);
+}
+
+/**
+ * Conciliação da JANELA: soma das linhas agregadas AIRBNB/TODOS do núcleo com
+ * mesLancamento dentro do período vs. a receita da temporada agregada na mesma
+ * janela — as duas pontas somadas sobre os mesmos meses.
+ */
+export async function conciliacaoComNucleoDoPeriodo(
+  meses: string[],
+  receitaModulo: number,
+): Promise<ConciliacaoNucleo> {
+  const linhas = await prisma.recebimento.findMany({
+    where: {
+      origemAgregada: true,
+      mesLancamento: { gte: meses[0], lte: meses[meses.length - 1] },
+    },
+    select: { recebido: true },
+  });
+  return montarConciliacao(linhas, receitaModulo);
 }
 
 export type MesHistorico = {

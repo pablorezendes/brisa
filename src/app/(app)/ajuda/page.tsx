@@ -1,13 +1,14 @@
 /**
  * /ajuda — "Como funciona": central de explicação do sistema.
  *
- * Página estática e editorial: o ciclo do mês em 7 passos, glossário da
- * linguagem do negócio, erros comuns e a origem dos números calculados.
- * Escrita para a família — frases curtas, exemplos com números reais e
- * sempre a dica do que fazer no lançamento.
+ * Página estática e editorial: o ciclo do mês em 7 passos, a análise por
+ * período (calendário) com o semáforo das telas, glossário da linguagem do
+ * negócio, erros comuns e a origem dos números calculados. Escrita para a
+ * família — frases curtas, exemplos com números reais e sempre a dica do
+ * que fazer no lançamento.
  */
 import Link from "next/link";
-import { Card, PageHeader } from "@/components/ui";
+import { Card, PageHeader, Selo } from "@/components/ui";
 
 export const metadata = { title: "Como funciona — Brisa" };
 
@@ -49,6 +50,24 @@ function Passo({
         </Link>
       </div>
     </li>
+  );
+}
+
+/** Tópico editorial simples: título + parágrafo, no ritmo das outras listas. */
+function Topico({
+  titulo,
+  children,
+}: {
+  titulo: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="border-b border-contorno py-3 last:border-b-0">
+      <h3 className="text-base font-semibold text-tinta">{titulo}</h3>
+      <p className="mt-0.5 text-sm leading-relaxed text-tinta-suave">
+        {children}
+      </p>
+    </div>
   );
 }
 
@@ -207,7 +226,58 @@ export default function PaginaAjuda() {
         </ol>
       </Card>
 
-      {/* ---------- 2. glossário ---------- */}
+      {/* ---------- 2. análise por período (calendário) ---------- */}
+      <h2 className="mt-10 text-xl font-bold tracking-tight text-tinta">
+        Análise por período (calendário)
+      </h2>
+      <p className="mt-1 text-sm text-tinta-suave">
+        O dia a dia é mês a mês — mas para enxergar a foto grande, toda tela
+        de análise tem o botão <strong>Período</strong>.
+      </p>
+      <Card className="mt-3 px-6 py-3">
+        <Topico titulo="O botão Período">
+          Ele fica no alto da página, ao lado do seletor de mês, em todas as
+          telas de análise. Clique e um calendário se abre: escolha a{" "}
+          <strong>data de início</strong> e a <strong>data de fim</strong> e
+          aplique. A tela passa a somar essa janela inteira, e o rótulo no
+          alto mostra as datas e quantos meses entraram na conta.
+        </Topico>
+        <Topico titulo="Regra de ouro: meses inteiros, sempre">
+          O sistema apura tudo por <strong>competência mensal</strong> — cada
+          cobrança, comissão e fechamento pertence a um mês, como cada aba da
+          planilha era um mês. Por isso o período considera os{" "}
+          <strong>meses inteiros</strong> entre as duas datas: de 15/03 a
+          10/05, a análise cobre MAR + ABR + MAI, completos. Não existe
+          &quot;meio mês&quot;: cortar um mês ao meio criaria números que não
+          batem com o fechamento de mês nenhum — e aí ninguém confia mais na
+          soma.
+        </Topico>
+        <Topico titulo="Atalhos prontos">
+          Dentro do calendário há janelas de um clique:{" "}
+          <strong>Este mês</strong>, <strong>Últimos 3, 6 ou 12 meses</strong>
+          , <strong>Este ano</strong> e <strong>Ano passado</strong>. Para
+          voltar à visão de um mês só, clique no <strong>×</strong> ao lado
+          do rótulo do período.
+        </Topico>
+        <Topico titulo="No período, a tela vira análise">
+          Com o período ativo, a tela mostra KPIs, gráficos e tabelas somando
+          a janela — e, quando são vários meses, as tabelas ganham a coluna{" "}
+          <strong>Mês</strong> para dizer de onde veio cada linha. Os
+          lançamentos (registrar pagamento, lançar caixa, fechar mês)
+          continuam sendo feitos na visão mensal: os botões de lançamento
+          levam você de volta ao mês.
+        </Topico>
+        <Topico titulo="O semáforo é o mesmo, no mês ou no período">
+          Os cartões e alertas respondem &quot;está bom ou ruim?&quot; com
+          três cores — verde <Selo nivel="otimo" /> quando está como deveria,
+          âmbar <Selo nivel="atencao" /> quando merece um olhar e vermelho{" "}
+          <Selo nivel="critico" /> quando precisa de ação agora. A cor nunca
+          vem sozinha: sempre há um selo com a palavra ao lado, para ninguém
+          depender de enxergar o tom.
+        </Topico>
+      </Card>
+
+      {/* ---------- 3. glossário ---------- */}
       <h2 className="mt-10 text-xl font-bold tracking-tight text-tinta">
         Glossário — a linguagem do negócio
       </h2>
@@ -338,7 +408,7 @@ export default function PaginaAjuda() {
         </dl>
       </Card>
 
-      {/* ---------- 3. erros comuns ---------- */}
+      {/* ---------- 4. erros comuns ---------- */}
       <h2 className="mt-10 text-xl font-bold tracking-tight text-tinta">
         Erros comuns e como evitar
       </h2>
@@ -379,7 +449,7 @@ export default function PaginaAjuda() {
         </ul>
       </Card>
 
-      {/* ---------- 4. de onde vêm os números ---------- */}
+      {/* ---------- 5. de onde vêm os números ---------- */}
       <h2 className="mt-10 text-xl font-bold tracking-tight text-tinta">
         De onde vêm os números
       </h2>

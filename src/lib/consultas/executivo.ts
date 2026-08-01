@@ -116,7 +116,9 @@ export async function dadosExecutivos(mes: string): Promise<DadosExecutivo> {
       }),
       prisma.fechamentoMensal.findUnique({ where: { mesLancamento: mes } }),
       prisma.contrato.findMany({
-        where: { status: "ativo", mesReajuste: mesNum },
+        // regra canônica (igual à home e às consultas de período): todo
+        // contrato NÃO encerrado reajusta — "acordo" também tem aniversário
+        where: { status: { not: "encerrado" }, mesReajuste: mesNum },
         include: {
           unidade: { include: { empreendimento: true } },
           locatario: true,
@@ -310,4 +312,124 @@ export async function dadosExecutivos(mes: string): Promise<DadosExecutivo> {
       valorBase: c.valorBase,
     })),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Consultas por PERÍODO (lista de competências vinda de parsePeriodo)
+// ---------------------------------------------------------------------------
+// Complementam @/lib/consultas/relatorios (kpisDoPeriodo, pendentesDoPeriodo,
+// contratosAReajustarDoPeriodo) com o que só o dashboard executivo precisa:
+// o caixa mês a mês da janela (gráfico BarrasCaixa) e o resumo por
+// empreendimento com a série de comissão para rosca, tabela e sparkline.
+// Competências "YYYY-MM" comparam certo como string (gte/lte). Centavos.
+
+/**
+ * Caixa mês a mês da janela — mesma regra do gráfico anual: ENTRADA soma na
+ * receita, SAIDA soma no centro de custo (AL/CH) e RECEB_DINHEIRO é registro
+ * paralelo de espécie (fora do saldo). Saída alinhada a `meses`.
+ */
+export async function caixaDoPeriodoPorMes(
+  meses: string[]
+): Promise<CaixaMensal[]> {
+  const idx = new Map(meses.map((m, i) => [m, i]));
+  const lancamentos = await prisma.lancamentoCaixa.findMany({
+    where: { mesReferencia: { gte: meses[0], lte: meses[meses.length - 1] } },
+    select: { mesReferencia: true, tipo: true, centroCusto: true, valor: true },
+  });
+
+  const saida: CaixaMensal[] = meses.map((mes) => ({
+    mes,
+    receita: 0,
+    despesaAL: 0,
+    despesaCH: 0,
+    dinheiro: 0,
+    saldo: 0,
+  }));
+  for (const l of lancamentos) {
+    const i = idx.get(l.mesReferencia);
+    if (i === undefined) continue; // gte/lte já filtra; guarda extra
+    const c = saida[i];
+    if (l.tipo === "ENTRADA") c.receita += l.valor;
+    else if (l.tipo === "RECEB_DINHEIRO") c.dinheiro += l.valor;
+    else if (l.tipo === "SAIDA" && l.centroCusto === "AL") c.despesaAL += l.valor;
+    else if (l.tipo === "SAIDA" && l.centroCusto === "CH") c.despesaCH += l.valor;
+  }
+  for (const c of saida) c.saldo = c.receita - c.despesaAL - c.despesaCH;
+  return saida;
+}
+
+export interface EmpreendimentoResumoPeriodo {
+  id: string;
+  nome: string;
+  /** comissão somada na janela */
+  comissaoJanela: number;
+  /** recebido somado na janela */
+  recebidoJanela: number;
+  /** média por cobrança paga na janela; null sem pagamento registrado */
+  ticketMedioJanela: number | null;
+  /** comissão por competência da janela (índice alinhado a `meses`) */
+  serieComissao: number[];
+}
+
+/**
+ * Resumo por empreendimento na janela — alimenta a rosca de composição, a
+ * tabela por empreendimento e o sparkline de evolução do modo período.
+ * Comissão SEMPRE pela regra canônica (calcularRecebimento). Ordem desc.
+ */
+export async function empreendimentosDoPeriodo(
+  meses: string[]
+): Promise<EmpreendimentoResumoPeriodo[]> {
+  const idx = new Map(meses.map((m, i) => [m, i]));
+  const recebs = await prisma.recebimento.findMany({
+    where: { mesLancamento: { gte: meses[0], lte: meses[meses.length - 1] } },
+    select: {
+      empreendimentoId: true,
+      mesLancamento: true,
+      valor: true,
+      iptu: true,
+      cond: true,
+      recebido: true,
+      taxaComissaoBps: true,
+      empreendimento: { select: { nome: true } },
+    },
+  });
+
+  interface Agregado extends EmpreendimentoResumoPeriodo {
+    linhasRecebidas: number;
+  }
+  const porEmp = new Map<string, Agregado>();
+  for (const r of recebs) {
+    const i = idx.get(r.mesLancamento);
+    if (i === undefined) continue;
+    let agg = porEmp.get(r.empreendimentoId);
+    if (!agg) {
+      agg = {
+        id: r.empreendimentoId,
+        nome: r.empreendimento.nome,
+        comissaoJanela: 0,
+        recebidoJanela: 0,
+        ticketMedioJanela: null,
+        serieComissao: meses.map(() => 0),
+        linhasRecebidas: 0,
+      };
+      porEmp.set(r.empreendimentoId, agg);
+    }
+    const { comissao } = calcularRecebimento(r);
+    agg.serieComissao[i] += comissao ?? 0;
+    agg.comissaoJanela += comissao ?? 0;
+    if (r.recebido !== null) {
+      agg.recebidoJanela += r.recebido;
+      agg.linhasRecebidas += 1;
+    }
+  }
+
+  return [...porEmp.values()]
+    .map(({ linhasRecebidas, ...e }) => ({
+      ...e,
+      ticketMedioJanela:
+        linhasRecebidas > 0
+          ? Math.round(e.recebidoJanela / linhasRecebidas)
+          : null,
+    }))
+    .sort((a, b) => b.comissaoJanela - a.comissaoJanela);
 }

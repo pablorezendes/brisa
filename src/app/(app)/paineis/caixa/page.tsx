@@ -1,6 +1,7 @@
 /**
- * /paineis/caixa — caixa analítico do ano (?ano=YYYY).
- * Camada de análise sobre o livro-caixa: KPIs anuais, evolução mensal,
+ * /paineis/caixa — caixa analítico do ano (?ano=YYYY) ou de um período
+ * (?de=YYYY-MM-DD&ate=YYYY-MM-DD, que vence o ano quando presente).
+ * Camada de análise sobre o livro-caixa: KPIs da janela, evolução mensal,
  * despesas por categoria, comparativo entre centros e maiores saídas.
  */
 import Link from "next/link";
@@ -11,6 +12,7 @@ import {
   Dinheiro,
   Kpi,
   PageHeader,
+  SeletorPeriodo,
   btnSecundario,
 } from "@/components/ui";
 import {
@@ -24,10 +26,12 @@ import {
 } from "@/components/graficos";
 import { nivelSaldo } from "@/lib/dominio/semaforo";
 import { formatarBRL } from "@/lib/dominio/dinheiro";
-import { NOME_MES_ABREV, parseCompetencia } from "@/lib/dominio/normalizacao";
+import { parsePeriodo, rotulosCompetencias } from "@/lib/dominio/periodo";
 import {
   anoPadraoCaixa,
   painelCaixa,
+  painelCaixaPeriodo,
+  type PainelCaixaPeriodo,
 } from "@/lib/consultas/painel-caixa-temporada";
 import { SeletorAno, anoDaQuery } from "../../relatorios/seletor-ano";
 
@@ -75,7 +79,7 @@ function ComparativoCentros({ al, ch }: { al: number; ch: number }) {
       viewBox={`0 0 ${LARG} ${altura}`}
       className="w-full"
       role="img"
-      aria-label="Despesa do ano por centro de custo"
+      aria-label="Despesa da janela por centro de custo"
     >
       {itens.map((item, i) => {
         const y = i * (ALT_BARRA + GAP);
@@ -116,51 +120,86 @@ function ComparativoCentros({ al, ch }: { al: number; ch: number }) {
 export default async function PaginaPainelCaixa({
   searchParams,
 }: {
-  searchParams: Promise<{ ano?: string }>;
+  searchParams: Promise<{ ano?: string; de?: string; ate?: string }>;
 }) {
   const sp = await searchParams;
-  const ano = anoDaQuery(sp.ano, await anoPadraoCaixa());
-  const d = await painelCaixa(ano);
-  const t = d.resumo.totais;
+  const periodo = parsePeriodo(sp.de, sp.ate);
+
+  // ---- os dois modos desembocam no MESMO view-model ------------------------
+  // (modo ano: 12 linhas JAN..DEZ; modo período: uma linha por competência da
+  //  janela — mesmas agregações, mesma página)
+  let ano: number | null = null;
+  let d: PainelCaixaPeriodo;
+  if (periodo) {
+    d = await painelCaixaPeriodo(periodo.meses);
+  } else {
+    ano = anoDaQuery(sp.ano, await anoPadraoCaixa());
+    const p = await painelCaixa(ano);
+    d = {
+      meses: p.resumo.linhas.map((l) => l.mes),
+      linhas: p.resumo.linhas,
+      totais: p.resumo.totais,
+      categorias: p.categorias,
+      maioresSaidas: p.maioresSaidas,
+    };
+  }
+
+  const t = d.totais;
   const despesaTotal = t.despesaAL + t.despesaCH;
   const top10 = d.categorias.slice(0, 10);
   const resto = d.categorias.slice(10);
   const restoTotal = resto.reduce((a, c) => a + c.total, 0);
 
+  // rótulos de mês da janela ("JAN" ou "JAN/26" quando cruza ano); no modo
+  // ano a lista JAN..DEZ sai igual à de sempre
+  const rotulosMeses = rotulosCompetencias(d.meses);
+  const janela = periodo ? periodo.rotulo : `${ano}`;
+  const naJanela = periodo ? "no período" : `em ${ano}`;
+  const daJanela = periodo ? "do período" : `de ${ano}`;
+
   return (
     <div className="max-w-6xl">
       <PageHeader
         titulo="Caixa analítico"
-        descricao={`O ano de ${ano} do livro-caixa em uma página: para onde o dinheiro foi e de onde veio`}
+        descricao={
+          periodo
+            ? `O livro-caixa no período ${periodo.rotulo}: para onde o dinheiro foi e de onde veio`
+            : `O ano de ${ano} do livro-caixa em uma página: para onde o dinheiro foi e de onde veio`
+        }
         acoes={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Link href="/caixa" className={btnSecundario}>
               Livro-caixa mensal
             </Link>
-            <SeletorAno base="/paineis/caixa" ano={ano} />
+            {ano !== null ? <SeletorAno base="/paineis/caixa" ano={ano} /> : null}
+            <SeletorPeriodo base="/paineis/caixa" periodo={periodo} />
           </div>
         }
       />
 
-      {/* ---------- KPIs do ano ---------- */}
+      {/* ---------- KPIs da janela ---------- */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">
         <Kpi
-          rotulo="Receita no ano"
+          rotulo={periodo ? "Receita no período" : "Receita no ano"}
           valor={<Dinheiro centavos={t.receita} destaque />}
-          detalhe={`entradas em ${ano}`}
-          ajuda="Tudo o que entrou na conta no ano (lançamentos ENTRADA). É dinheiro que caiu no caixa — não confunda com aluguel devido, que fica em Recebimentos."
+          detalhe={
+            periodo
+              ? `entradas em ${periodo.meses.length} ${periodo.meses.length === 1 ? "mês" : "meses"}`
+              : `entradas em ${ano}`
+          }
+          ajuda="Tudo o que entrou na conta na janela em análise (lançamentos ENTRADA). É dinheiro que caiu no caixa — não confunda com aluguel devido, que fica em Recebimentos."
         />
         <Kpi
           rotulo="Despesa Antonio/Laura"
           valor={<Dinheiro centavos={t.despesaAL} destaque />}
           detalhe={pctDoTotal(t.despesaAL, despesaTotal) + " das saídas"}
-          ajuda="Soma das saídas lançadas no centro AL. Ao lançar uma saída, escolha o centro certo — é isso que separa as contas de Antonio/Laura das da Chácara."
+          ajuda="Soma das saídas lançadas no centro AL na janela em análise. Ao lançar uma saída, escolha o centro certo — é isso que separa as contas de Antonio/Laura das da Chácara."
         />
         <Kpi
           rotulo="Despesa Chácara Brisa"
           valor={<Dinheiro centavos={t.despesaCH} destaque />}
           detalhe={pctDoTotal(t.despesaCH, despesaTotal) + " das saídas"}
-          ajuda="Soma das saídas lançadas no centro CH (Chácara Brisa). Se um gasto serve aos dois centros, divida em dois lançamentos e explique na descrição."
+          ajuda="Soma das saídas lançadas no centro CH (Chácara Brisa) na janela em análise. Se um gasto serve aos dois centros, divida em dois lançamentos e explique na descrição."
         />
         <Kpi
           rotulo="Saldo acumulado"
@@ -170,7 +209,7 @@ export default async function PaginaPainelCaixa({
           selo={t.saldo > 0 ? "sobrou" : t.saldo < 0 ? "faltou" : undefined}
           nota={
             t.saldo < 0
-              ? "No acumulado do ano saiu mais do que entrou pelo livro-caixa."
+              ? `No acumulado ${periodo ? "do período" : "do ano"} saiu mais do que entrou pelo livro-caixa.`
               : undefined
           }
           grafico={
@@ -184,20 +223,25 @@ export default async function PaginaPainelCaixa({
               />
             ) : undefined
           }
-          ajuda="Quanto sobrou no ano: receita menos as saídas dos dois centros, somando mês a mês. Se aparecer em vermelho, saiu mais do que entrou até aqui."
+          ajuda="Quanto sobrou na janela em análise: receita menos as saídas dos dois centros, somando mês a mês. Se aparecer em vermelho, saiu mais do que entrou até aqui."
         />
         <Kpi
           rotulo="Recebido em dinheiro"
           valor={<Dinheiro centavos={t.recebDinheiro} destaque />}
           detalhe="registro paralelo — fora do saldo"
-          ajuda="Registro paralelo do que foi recebido em espécie no ano, só para conferência — NÃO entra no saldo. Ao receber em dinheiro vivo, lance como RECEB_DINHEIRO anotando cliente e local."
+          ajuda="Registro paralelo do que foi recebido em espécie na janela, só para conferência — NÃO entra no saldo. Ao receber em dinheiro vivo, lance como RECEB_DINHEIRO anotando cliente e local."
         />
       </div>
 
       {/* ---------- evolução mensal ---------- */}
       <Card className="mt-6 p-5">
         <div className="mb-2 flex items-baseline justify-between">
-          <h2 className="text-sm font-semibold">Mês a mês — {ano}</h2>
+          <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+            Mês a mês — {janela}
+            {periodo ? (
+              <Ajuda dica="No modo período, o gráfico e a tabela mostram exatamente os meses cobertos pelas datas escolhidas no calendário — escolher 15/03 a 10/05 analisa MAR, ABR e MAI inteiros. Para lançar ou editar, use o Livro-caixa mensal." />
+            ) : null}
+          </h2>
           <Legenda
             itens={[
               { cor: COR_1, nome: "Receita (entradas)" },
@@ -207,9 +251,10 @@ export default async function PaginaPainelCaixa({
           />
         </div>
         <BarrasCaixa
-          receita={d.resumo.linhas.map((l) => l.receita)}
-          despesaAL={d.resumo.linhas.map((l) => l.despesaAL)}
-          despesaCH={d.resumo.linhas.map((l) => l.despesaCH)}
+          receita={d.linhas.map((l) => l.receita)}
+          despesaAL={d.linhas.map((l) => l.despesaAL)}
+          despesaCH={d.linhas.map((l) => l.despesaCH)}
+          rotulos={rotulosMeses}
         />
         <p className="mt-2 text-xs text-tinta-suave">
           Verde é o que entrou; a pilha ocre + índigo é o que saiu em cada
@@ -227,27 +272,32 @@ export default async function PaginaPainelCaixa({
                 <th className="text-right!">
                   <span className="inline-flex items-center gap-1.5">
                     Acumulado
-                    <Ajuda dica="Soma dos saldos de janeiro até o mês da linha — mostra como o ano foi se acumulando. O último valor é o saldo do ano inteiro." />
+                    <Ajuda
+                      dica={
+                        periodo
+                          ? "Soma dos saldos do primeiro mês do período até o mês da linha — mostra como a janela foi se acumulando. O último valor é o saldo do período inteiro."
+                          : "Soma dos saldos de janeiro até o mês da linha — mostra como o ano foi se acumulando. O último valor é o saldo do ano inteiro."
+                      }
+                    />
                   </span>
                 </th>
               </tr>
             </thead>
             <tbody>
-              {d.resumo.linhas.map((l) => {
-                const { mes } = parseCompetencia(l.mes);
+              {d.linhas.map((l, i) => {
                 const tem = l.temLancamentos;
                 return (
-                  <tr key={l.mes} className={tem ? "" : "text-slate-400"}>
+                  <tr key={l.mes} className={tem ? "" : "text-tinta-suave/60"}>
                     <td>
                       {tem ? (
                         <Link
                           href={`/caixa?mes=${l.mes}`}
                           className="font-medium hover:underline"
                         >
-                          {NOME_MES_ABREV[mes]}
+                          {rotulosMeses[i]}
                         </Link>
                       ) : (
-                        NOME_MES_ABREV[mes]
+                        rotulosMeses[i]
                       )}
                     </td>
                     <td className="text-right!">
@@ -271,7 +321,7 @@ export default async function PaginaPainelCaixa({
             </tbody>
             <tfoot>
               <tr>
-                <td>Total {ano}</td>
+                <td>{periodo ? "Total do período" : `Total ${ano}`}</td>
                 <td className="text-right!">
                   <Dinheiro centavos={t.receita} destaque />
                 </td>
@@ -296,13 +346,13 @@ export default async function PaginaPainelCaixa({
         <Card className="p-5">
           <div className="mb-2 flex items-baseline justify-between">
             <h2 className="text-sm font-semibold">
-              Despesas por categoria — top 10 de {ano}
+              Despesas por categoria — top 10 {daJanela}
             </h2>
-            <Ajuda dica="Soma das saídas do ano por categoria, juntando os dois centros. Abra 'Ver dados por centro' para ver quanto cada centro gastou em cada categoria. Saídas sem categoria aparecem como SEM CATEGORIA — vale voltar no lançamento e classificar." />
+            <Ajuda dica="Soma das saídas da janela por categoria, juntando os dois centros. Abra 'Ver dados por centro' para ver quanto cada centro gastou em cada categoria. Saídas sem categoria aparecem como SEM CATEGORIA — vale voltar no lançamento e classificar." />
           </div>
           {top10.length === 0 ? (
-            <p className="text-sm text-slate-500">
-              Nenhuma saída lançada em {ano}.
+            <p className="text-sm text-tinta-suave">
+              Nenhuma saída lançada {naJanela}.
             </p>
           ) : (
             <>
@@ -313,12 +363,12 @@ export default async function PaginaPainelCaixa({
                 }))}
               />
               {resto.length > 0 ? (
-                <p className="mt-2 text-xs text-slate-500">
+                <p className="mt-2 text-xs text-tinta-suave">
                   Outras {resto.length} categoria(s) somam{" "}
                   {formatarBRL(restoTotal)}.
                 </p>
               ) : null}
-              <details className="mt-2 text-xs text-slate-600">
+              <details className="mt-2 text-xs text-tinta-suave">
                 <summary className="cursor-pointer select-none">
                   Ver dados por centro
                 </summary>
@@ -367,7 +417,7 @@ export default async function PaginaPainelCaixa({
         <Card className="p-5">
           <div className="mb-2 flex items-baseline justify-between">
             <h2 className="text-sm font-semibold">
-              Quem gastou mais no ano — AL × CH
+              Quem gastou mais {periodo ? "no período" : "no ano"} — AL × CH
             </h2>
             <Legenda
               itens={[
@@ -378,16 +428,17 @@ export default async function PaginaPainelCaixa({
           </div>
           <ComparativoCentros al={t.despesaAL} ch={t.despesaCH} />
           <p className="mt-2 text-xs text-tinta-suave">
-            Total de saídas em {ano}: {formatarBRL(despesaTotal)} —{" "}
+            Total de saídas {naJanela}: {formatarBRL(despesaTotal)} —{" "}
             {pctDoTotal(t.despesaAL, despesaTotal)} de Antonio/Laura e{" "}
             {pctDoTotal(t.despesaCH, despesaTotal)} da Chácara Brisa.
           </p>
           <Card className="mt-4 border-l-4 border-l-ambar bg-papel px-4 py-3">
-            <p className="text-xs leading-relaxed text-slate-700">
+            <p className="text-xs leading-relaxed text-tinta">
               <strong>Transferências internas:</strong> quando um centro manda
               dinheiro para o outro, aparece uma SAÍDA no centro que enviou e
               uma ENTRADA (geral) do outro lado — <strong>não é gasto novo</strong>,
-              os dois lados se compensam no saldo do ano. Ao lançar, escreva
+              os dois lados se compensam no saldo{" "}
+              {periodo ? "do período" : "do ano"}. Ao lançar, escreva
               &quot;transferência&quot; na descrição dos dois lançamentos para
               ninguém confundir com despesa de verdade.
             </p>
@@ -399,14 +450,16 @@ export default async function PaginaPainelCaixa({
       <Card className="mt-4 p-5">
         <div className="mb-2 flex items-baseline justify-between">
           <h2 className="text-sm font-semibold">
-            Maiores saídas de {ano} — top {d.maioresSaidas.length}
+            Maiores saídas {daJanela} — top {d.maioresSaidas.length}
           </h2>
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-tinta-suave">
             {formatarBRL(d.maioresSaidas.reduce((a, l) => a + l.valor, 0))} somadas
           </span>
         </div>
         {d.maioresSaidas.length === 0 ? (
-          <p className="text-sm text-slate-500">Nenhuma saída lançada em {ano}.</p>
+          <p className="text-sm text-tinta-suave">
+            Nenhuma saída lançada {naJanela}.
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="tabela">
@@ -427,7 +480,7 @@ export default async function PaginaPainelCaixa({
               <tbody>
                 {d.maioresSaidas.map((l) => (
                   <tr key={l.id}>
-                    <td className="text-slate-500">{formatarData(l.data)}</td>
+                    <td className="text-tinta-suave">{formatarData(l.data)}</td>
                     <td>
                       <BadgeCentro centro={l.centroCusto} />
                     </td>
@@ -450,7 +503,7 @@ export default async function PaginaPainelCaixa({
         )}
       </Card>
 
-      <p className="mt-6 text-xs text-slate-400">
+      <p className="mt-6 text-xs text-tinta-suave/60">
         Fonte: lançamentos do livro-caixa CONTA_AC. Saldo = entradas − saídas
         AL − saídas CH; recebimentos em dinheiro são registro paralelo de
         espécie e não entram no saldo.

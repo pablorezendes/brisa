@@ -5,6 +5,7 @@ import {
   parseCompetencia,
   competencia as fmtCompetencia,
 } from "@/lib/dominio/normalizacao";
+import { presetsPeriodo, type Periodo } from "@/lib/dominio/periodo";
 import { NIVEL, PESO_NIVEL, type Nivel } from "@/lib/dominio/semaforo";
 
 /** Cabeçalho padrão de página. */
@@ -41,16 +42,14 @@ export function Card({
   children: React.ReactNode;
   className?: string;
   style?: React.CSSProperties;
-  /** pinta a faixa lateral e o wash de fundo com a cor do semáforo */
+  /** desenha um filete de 3px à esquerda na cor do semáforo — a única cor do card */
   nivel?: Nivel;
 }) {
-  const est = nivel ? NIVEL[nivel] : null;
+  const est = nivel && nivel !== "neutro" ? NIVEL[nivel] : null;
   return (
     <div
-      className={`rounded-xl border bg-carta ${est ? "card-sem" : ""} ${className}`}
+      className={`rounded-lg border border-contorno bg-carta ${est ? "card-sem" : ""} ${className}`}
       style={{
-        borderColor: est ? est.borda : "var(--contorno)",
-        backgroundColor: est ? est.fundo : undefined,
         ...(est ? ({ "--sem-cor": est.cor } as React.CSSProperties) : {}),
         ...style,
       }}
@@ -81,22 +80,16 @@ export function Dinheiro({
 }
 
 // ---------------------------------------------------------------------------
-// Semáforo — ponto + palavra + ícone. A cor nunca vem sozinha.
+// Semáforo — ponto colorido + palavra em tinta. A cor nunca vem sozinha.
 // ---------------------------------------------------------------------------
 
-/** Só o ponto colorido (para células de tabela apertadas). Tem título nativo. */
+/** Só o ponto colorido de 8px (células apertadas). Tem título nativo. */
 export function Ponto({ nivel, titulo }: { nivel: Nivel; titulo?: string }) {
   const est = NIVEL[nivel];
   return (
     <span
-      className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full align-middle ${
-        nivel === "critico" ? "sem-pulso" : ""
-      }`}
-      style={{
-        background: est.cor,
-        color: est.cor,
-        boxShadow: `0 0 0 2.5px ${est.fundo}`,
-      }}
+      className="inline-block h-2 w-2 shrink-0 rounded-full align-middle"
+      style={{ background: est.cor }}
       title={titulo ?? est.rotulo}
       aria-label={titulo ?? est.rotulo}
     />
@@ -104,33 +97,26 @@ export function Ponto({ nivel, titulo }: { nivel: Nivel; titulo?: string }) {
 }
 
 /**
- * Selo de nível: ponto + texto em caixa alta sobre um wash da própria cor.
- * É a peça que responde "isso está bom ou ruim?" sem obrigar a ler o número.
+ * Selo de nível no estilo editorial: ponto colorido de 8px + palavra em caixa
+ * alta em tinta-suave. A cor fica SÓ no ponto — o design system proíbe
+ * pílulas/badges preenchidos. É a peça que responde "isso está bom ou ruim?"
+ * sem obrigar a ler o número.
  */
 export function Selo({
   nivel,
   children,
-  icone = true,
+  icone,
 }: {
   nivel: Nivel;
   children?: React.ReactNode;
+  /** mantido por compatibilidade — o ponto já é o sinal visual */
   icone?: boolean;
 }) {
+  void icone;
   const est = NIVEL[nivel];
   return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.09em] whitespace-nowrap"
-      style={{
-        color: est.forte,
-        background: est.fundo,
-        border: `1px solid ${est.borda}`,
-      }}
-    >
-      {icone ? (
-        <span aria-hidden="true" className="text-[10px] leading-none">
-          {est.icone}
-        </span>
-      ) : null}
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.09em] text-tinta-suave">
+      <Ponto nivel={nivel} />
       {children ?? est.rotulo}
     </span>
   );
@@ -190,8 +176,8 @@ export function Ajuda({ dica }: { dica: string }) {
 /**
  * Cartão de indicador. Além do número, carrega:
  *  · o "i" com a explicação da métrica;
- *  · o selo do semáforo (ótimo / atenção / crítico), que também tinge a faixa
- *    lateral e o fundo do card;
+ *  · o selo do semáforo (ponto + palavra) e o filete lateral de 3px — toda a
+ *    cor que o card usa;
  *  · uma linha de recado (`nota`) dizendo o que fazer quando não está verde.
  */
 export function Kpi({
@@ -212,7 +198,7 @@ export function Kpi({
   variacao?: React.ReactNode;
   /** explicação da métrica em linguagem simples (vira o "i" com tooltip) */
   ajuda?: string;
-  /** veredito do semáforo — pinta faixa, fundo e selo */
+  /** veredito do semáforo — filete lateral + selo */
   nivel?: Nivel;
   /** o que fazer a respeito, quando há algo a fazer */
   nota?: string;
@@ -246,11 +232,10 @@ export function Kpi({
       ) : null}
       {grafico ? <div className="mt-3">{grafico}</div> : null}
       {nota && est ? (
-        <div
-          className="mt-3 flex items-start gap-1.5 border-t pt-2 text-[11px] leading-snug font-medium"
-          style={{ borderColor: est.borda, color: est.forte }}
-        >
-          <span aria-hidden="true">{est.icone}</span>
+        <div className="mt-3 flex items-start gap-1.5 border-t border-contorno pt-2 text-[11px] font-medium leading-snug text-tinta-suave">
+          <span aria-hidden="true" className="mt-[3px]">
+            <Ponto nivel={nivel!} />
+          </span>
           <span>{nota}</span>
         </div>
       ) : null}
@@ -258,7 +243,7 @@ export function Kpi({
   );
 
   const classe = `px-4 py-4 transition-colors sm:px-5 ${
-    href ? "block rounded-xl hover:bg-[#f3f1eb]" : ""
+    href ? "block rounded-lg hover:bg-[#efeee9]" : ""
   }`;
 
   if (href) {
@@ -307,14 +292,15 @@ export function Variacao({
   }
   const pct = ((atual - anterior) / Math.abs(anterior)) * 100;
   const subiu = pct > 0;
-  const est = NIVEL[subiu === bomQuandoSobe ? "otimo" : "atencao"];
+  const positivo = subiu === bomQuandoSobe;
   return (
     <span
-      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[11px] font-bold"
-      style={{ color: est.forte, background: est.fundo }}
+      className={`font-mono text-[11px] font-bold ${
+        positivo ? "text-oliva-escura" : "text-erro"
+      }`}
     >
-      {subiu ? "▲" : "▼"} {Math.abs(pct).toFixed(1).replace(".", ",")}%
-      <span className="font-normal opacity-70">vs mês anterior</span>
+      {subiu ? "▲" : "▼"} {Math.abs(pct).toFixed(1).replace(".", ",")}%{" "}
+      <span className="font-normal text-tinta-suave">vs mês anterior</span>
     </span>
   );
 }
@@ -331,37 +317,33 @@ export interface ItemAlerta {
   acao?: { rotulo: string; href: string };
 }
 
-/** Uma linha da fila de atenção. */
+/**
+ * Uma linha da fila de atenção — editorial: filete de 3px na cor do nível à
+ * esquerda, ponto + título em tinta, ação em oliva. Nenhum fundo colorido.
+ */
 export function Alerta({ item }: { item: ItemAlerta }) {
   const est = NIVEL[item.nivel];
   return (
     <div
-      className="flex items-start gap-3 rounded-lg border px-3.5 py-2.5"
-      style={{ borderColor: est.borda, background: est.fundo }}
+      className="flex items-start gap-3 rounded border border-contorno px-3.5 py-2.5"
+      style={{ borderLeft: `3px solid ${est.cor}` }}
     >
-      <span
-        className={`mt-[3px] flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
-          item.nivel === "critico" ? "sem-pulso" : ""
-        }`}
-        style={{ background: est.cor, color: "#fdfbf8" }}
-        aria-hidden="true"
-      >
-        {est.icone}
+      <span aria-hidden="true" className="mt-[5px]">
+        <Ponto nivel={item.nivel} />
       </span>
       <div className="min-w-0 flex-1">
-        <div
-          className="text-[12px] font-bold uppercase tracking-[0.06em]"
-          style={{ color: est.forte }}
-        >
+        <div className="text-[12px] font-bold uppercase tracking-[0.06em] text-tinta">
           {item.titulo}
+          <span className="ml-2 font-normal normal-case tracking-normal text-tinta-suave">
+            {est.rotulo}
+          </span>
         </div>
         <p className="mt-0.5 text-[13px] leading-snug text-tinta">{item.texto}</p>
       </div>
       {item.acao ? (
         <Link
           href={item.acao.href}
-          className="mt-0.5 shrink-0 whitespace-nowrap text-[12px] font-bold hover:underline"
-          style={{ color: est.forte }}
+          className="mt-0.5 shrink-0 whitespace-nowrap text-[12px] font-bold text-oliva-escura hover:underline"
         >
           {item.acao.rotulo} →
         </Link>
@@ -413,19 +395,10 @@ export function PainelAlertas({
       </div>
       {ordenados.length === 0 ? (
         <div
-          className="flex items-center gap-3 rounded-lg border px-3.5 py-2.5 text-[13px] text-tinta"
-          style={{
-            borderColor: NIVEL.otimo.borda,
-            background: NIVEL.otimo.fundo,
-          }}
+          className="flex items-center gap-3 rounded border border-contorno px-3.5 py-2.5 text-[13px] text-tinta"
+          style={{ borderLeft: `3px solid ${NIVEL.otimo.cor}` }}
         >
-          <span
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
-            style={{ background: NIVEL.otimo.cor, color: "#fdfbf8" }}
-            aria-hidden="true"
-          >
-            ✓
-          </span>
+          <Ponto nivel="otimo" titulo="tudo em dia" />
           {vazio}
         </div>
       ) : (
@@ -513,9 +486,144 @@ export function SeletorMes({ base, mes }: { base: string; mes: string }) {
   );
 }
 
+/**
+ * Seletor de período com calendário — sem JavaScript no cliente.
+ *
+ * Um <details> abre o painel; dentro, um formulário GET com dois
+ * <input type="date"> (o calendário é o nativo do navegador) navega com
+ * ?de=YYYY-MM-DD&ate=YYYY-MM-DD. Presets viram links prontos. Quando um
+ * período está ativo, o rótulo dele substitui o seletor de mês/ano da página
+ * e um "×" limpa a seleção.
+ *
+ * Coloque ao lado do SeletorMes/SeletorAno:
+ *   <SeletorPeriodo base="/executivo" periodo={periodo} />
+ * `extras` preserva outros parâmetros no formulário (ex.: { id: "..." }).
+ */
+export function SeletorPeriodo({
+  base,
+  periodo,
+  extras,
+}: {
+  base: string;
+  periodo: Periodo | null;
+  extras?: Record<string, string>;
+}) {
+  const presets = presetsPeriodo();
+  const qsExtras = Object.entries(extras ?? {})
+    .map(([k, v]) => `&${k}=${encodeURIComponent(v)}`)
+    .join("");
+  // o "×" limpa SÓ o período — extras (filtros da página) sobrevivem
+  const hrefLimpar = qsExtras ? `${base}?${qsExtras.slice(1)}` : base;
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {periodo ? (
+        <span className="flex items-center gap-2 rounded-lg border border-tinta bg-carta px-3 py-1.5 font-mono text-[12px] font-bold">
+          <CalendarioIcone />
+          {periodo.rotulo}
+          <Link
+            href={hrefLimpar}
+            aria-label="Limpar período e voltar ao mês"
+            title="Limpar período e voltar ao mês"
+            className="ml-1 rounded px-1 text-tinta-suave hover:bg-[#efeee9] hover:text-tinta"
+          >
+            ×
+          </Link>
+        </span>
+      ) : null}
+      <details className="relative">
+        <summary
+          className="flex h-8 cursor-pointer select-none items-center gap-1.5 rounded-lg border border-contorno bg-carta px-2.5 text-[12px] font-bold text-tinta-suave transition-colors hover:border-tinta hover:text-tinta [&::-webkit-details-marker]:hidden"
+          aria-label="Escolher período no calendário"
+        >
+          <CalendarioIcone />
+          {periodo ? "Alterar" : "Período"}
+        </summary>
+        <div className="absolute right-0 top-full z-40 mt-2 w-72 rounded-lg border border-tinta bg-carta p-4">
+          <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.1em] text-tinta-suave">
+            Analisar por período
+            <Ajuda dica="Escolha as datas de início e fim no calendário. O sistema apura tudo por mês (competência), então o período considera os meses inteiros entre as duas datas — de 15/03 a 10/05 analisa MAR, ABR e MAI. Para voltar à visão de um mês só, use o ×." />
+          </div>
+          <form method="get" action={base} className="flex flex-col gap-2.5">
+            {Object.entries(extras ?? {}).map(([k, v]) => (
+              <input key={k} type="hidden" name={k} value={v} />
+            ))}
+            <label className="flex items-center justify-between gap-2 text-[12px] font-semibold text-tinta">
+              Início
+              <input
+                type="date"
+                name="de"
+                defaultValue={periodo?.de}
+                className={`${inputBase} w-40`}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-2 text-[12px] font-semibold text-tinta">
+              Fim
+              <input
+                type="date"
+                name="ate"
+                defaultValue={periodo?.ate}
+                className={`${inputBase} w-40`}
+              />
+            </label>
+            <button type="submit" className={`${btnPrimario} justify-center`}>
+              Aplicar período
+            </button>
+          </form>
+          <div className="mt-3 border-t border-contorno pt-2.5">
+            <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-tinta-suave/80">
+              Atalhos
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {presets.map((p) => (
+                <Link
+                  key={p.rotulo}
+                  href={`${base}?de=${p.de}&ate=${p.ate}${qsExtras}`}
+                  className="rounded-full border border-contorno px-2.5 py-1 text-[11px] font-semibold text-tinta-suave transition-colors hover:border-tinta hover:text-tinta"
+                >
+                  {p.rotulo}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function CalendarioIcone() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+      className="shrink-0"
+    >
+      <rect
+        x="3"
+        y="5"
+        width="18"
+        height="16"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="2"
+      />
+      <path
+        d="M3 10h18M8 3v4M16 3v4"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export const btnPrimario =
   "inline-flex items-center gap-1.5 rounded-lg bg-oliva px-3 py-1.5 text-sm font-semibold text-white hover:bg-oliva-escura disabled:opacity-50";
 export const btnSecundario =
   "inline-flex items-center gap-1.5 rounded-lg border border-tinta bg-transparent px-3 py-1.5 text-sm font-semibold text-tinta hover:bg-[#efeee9] disabled:opacity-50";
 export const inputBase =
-  "rounded-lg border border-contorno bg-white px-2.5 py-1.5 font-mono text-sm text-tinta focus:outline-none focus:border-tinta focus:ring-1 focus:ring-tinta";
+  "rounded-lg border border-contorno bg-carta px-2.5 py-1.5 font-mono text-sm text-tinta focus:outline-none focus:border-tinta focus:ring-1 focus:ring-tinta";

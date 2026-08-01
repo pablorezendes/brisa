@@ -6,14 +6,14 @@ export function SeletorAno({ base, ano }: { base: string; ano: number }) {
     <div className="flex items-center gap-1 text-sm">
       <Link
         href={`${base}?ano=${ano - 1}`}
-        className="rounded-md border border-slate-300 bg-white px-2.5 py-1 hover:bg-slate-50"
+        className="rounded-md border border-contorno bg-carta px-2.5 py-1 hover:bg-[#f5f3ef]"
       >
         ‹
       </Link>
       <span className="min-w-16 px-2 text-center font-semibold">{ano}</span>
       <Link
         href={`${base}?ano=${ano + 1}`}
-        className="rounded-md border border-slate-300 bg-white px-2.5 py-1 hover:bg-slate-50"
+        className="rounded-md border border-contorno bg-carta px-2.5 py-1 hover:bg-[#f5f3ef]"
       >
         ›
       </Link>

@@ -1,15 +1,15 @@
 /**
  * Gráficos SVG server-side. Sem libs, sem JavaScript no cliente.
  *
- * Linguagem visual: a base editorial (papel quente, tinta azul-preta) ganhou
- * profundidade — gradiente vertical em cada série, halo suave no que está em
- * foco, grade pontilhada recessiva e moldura com eixo de valores à esquerda.
- * O realce de coluna no hover é CSS puro (.g-col:hover), então continua
- * funcionando em componente de servidor.
+ * Linguagem visual: flat editorial (stile/DESIGN.md) — sem gradientes, sem
+ * sombras, sem brilhos. A riqueza vem dos DETALHES informativos: eixo de
+ * valores à esquerda, grade pontilhada recessiva, realce da coluna no hover
+ * (CSS puro, .g-col:hover — segue server component), etiquetas de valor e as
+ * zonas do semáforo desenhadas no medidor.
  *
- * Paleta validada para daltonismo (todos os critérios PASS):
- *   1 verde #2f7d4f (dinheiro que entra) · 2 ocre #b3801a (o que era devido)
- *   3 índigo #3f5fa8 (terceira série). Texto SEMPRE em tom de tinta, nunca na
+ * Paleta "pigmentos naturais" do design editorial, validada p/ daltonismo:
+ *   1 musgo #4f7a33 (dinheiro que entra) · 2 ocre #b3801a (o que era devido)
+ *   3 índigo #4a68a8 (terceira série). Texto SEMPRE em tom de tinta, nunca na
  *   cor da série. Todo gráfico traz <title> (tooltip nativo) e a página oferece
  *   a mesma informação em tabela.
  */
@@ -17,15 +17,15 @@ import { abreviarBRL, formatarBRL } from "@/lib/dominio/dinheiro";
 import { NOME_MES_ABREV } from "@/lib/dominio/normalizacao";
 import { NIVEL, type Nivel } from "@/lib/dominio/semaforo";
 
-export const COR_1 = "#2f7d4f"; // verde — série principal (dinheiro que entra)
-export const COR_1_FORTE = "#1b5733"; // passo escuro do mesmo matiz (destaque)
-export const COR_2 = "#b3801a"; // ocre — devido / atenção
-export const COR_3 = "#3f5fa8"; // índigo — terceira série
+export const COR_1 = "#4f7a33"; // musgo — série principal (dinheiro que entra)
+export const COR_1_FORTE = "#33511f"; // passo escuro do mesmo matiz (destaque)
+export const COR_2 = "#b3801a"; // ocre — devido / atenção (--ambar)
+export const COR_3 = "#4a68a8"; // índigo — terceira série
 
-const GRADE = "#e0dcd2"; // grade recessiva
-const EIXO = "#b9b4a8";
-const ROTULO = "#5c6058";
-const TINTA = "#1c2430";
+const GRADE = "#e5e1d8"; // --contorno
+const EIXO = "#75786f"; // --contorno-forte
+const ROTULO = "#444840"; // --tinta-suave
+const TINTA = "#1c2430"; // --tinta
 
 // ---------------------------------------------------------------------------
 // geometria comum das molduras verticais
@@ -39,73 +39,6 @@ const BASE = TOPO + ALT;
 const ROD = 24; // faixa dos nomes de mês, embaixo
 const PLOT_W = LARG - EIXO_W;
 const VIEWBOX = `0 0 ${LARG} ${BASE + ROD}`;
-
-/** Clareia um hex em direção ao branco (0 = igual, 1 = branco). */
-function clarear(hex: string, f: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  const canal = (c: number) => Math.round(c + (255 - c) * f);
-  const r = canal((n >> 16) & 255);
-  const g = canal((n >> 8) & 255);
-  const b = canal(n & 255);
-  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
-}
-
-/** id determinístico por cor: mesma cor ⇒ mesma definição, colisão inofensiva. */
-function gid(cor: string): string {
-  return `gr${cor.replace("#", "")}`;
-}
-
-/**
- * Gradientes e halo de cada gráfico. Como o id deriva da cor, dois gráficos na
- * mesma página compartilham definições idênticas sem conflito visual.
- */
-function Defs({ cores }: { cores: string[] }) {
-  const unicas = [...new Set(cores)];
-  return (
-    <defs>
-      {unicas.map((c) => (
-        <linearGradient key={c} id={gid(c)} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={clarear(c, 0.38)} />
-          <stop offset="55%" stopColor={clarear(c, 0.08)} />
-          <stop offset="100%" stopColor={c} />
-        </linearGradient>
-      ))}
-      {unicas.map((c) => (
-        <linearGradient
-          key={`x${c}`}
-          id={`${gid(c)}x`}
-          x1="0"
-          y1="0"
-          x2="1"
-          y2="0"
-        >
-          <stop offset="0%" stopColor={c} />
-          <stop offset="100%" stopColor={clarear(c, 0.34)} />
-        </linearGradient>
-      ))}
-      {unicas.map((c) => (
-        <linearGradient
-          key={`a${c}`}
-          id={`${gid(c)}a`}
-          x1="0"
-          y1="0"
-          x2="0"
-          y2="1"
-        >
-          <stop offset="0%" stopColor={c} stopOpacity={0.3} />
-          <stop offset="100%" stopColor={c} stopOpacity={0.02} />
-        </linearGradient>
-      ))}
-      <filter id="halo" x="-60%" y="-60%" width="220%" height="220%">
-        <feGaussianBlur stdDeviation="3.5" result="b" />
-        <feMerge>
-          <feMergeNode in="b" />
-          <feMergeNode in="SourceGraphic" />
-        </feMerge>
-      </filter>
-    </defs>
-  );
-}
 
 /** Barra vertical com topo arredondado, ancorada na base. Cresce ao carregar. */
 function Barra({
@@ -136,24 +69,16 @@ function Barra({
     );
   const r = Math.min(5, w / 2, h);
   const d = `M${x},${y + h} v${-(h - r)} q0,${-r} ${r},${-r} h${w - 2 * r} q${r},0 ${r},${r} v${h - r} z`;
+  void foco; // o destaque visual é o passo escuro do matiz, não um efeito
   return (
-    <g
+    <path
+      d={d}
+      fill={cor}
       className="g-barra"
       style={{ animationDelay: `${delayMs}ms` }}
-      filter={foco ? "url(#halo)" : undefined}
     >
-      <path d={d} fill={`url(#${gid(cor)})`}>
-        <title>{titulo}</title>
-      </path>
-      {/* fio de luz no topo: dá relevo sem sombra */}
-      <path
-        d={`M${x + 0.6},${y + r} q0,${-r + 0.6} ${r - 0.6},${-r + 0.6} h${w - 2 * r + 1.2} q${r - 0.6},0 ${r - 0.6},${r - 0.6}`}
-        fill="none"
-        stroke={clarear(cor, 0.62)}
-        strokeWidth={1.1}
-        strokeLinecap="round"
-      />
-    </g>
+      <title>{titulo}</title>
+    </path>
   );
 }
 
@@ -238,24 +163,15 @@ function Etiqueta({
   texto: string;
   cor: string;
 }) {
-  const w = texto.length * 5.4 + 12;
+  void cor; // rótulo em tinta — cor fica só na barra
   return (
     <g className="g-surgir" style={{ animationDelay: "0.6s" }}>
-      <rect
-        x={x - w / 2}
-        y={y - 15}
-        width={w}
-        height={15}
-        rx={7.5}
-        fill={cor}
-        opacity={0.12}
-      />
       <text
         x={x}
-        y={y - 4.5}
+        y={y - 5}
         fontSize={9.5}
         fontWeight={700}
-        fill={cor}
+        fill={TINTA}
         textAnchor="middle"
         style={{ fontFamily: "var(--font-jetbrains), monospace" }}
       >
@@ -269,27 +185,47 @@ function Etiqueta({
 // Gráficos de coluna
 // ---------------------------------------------------------------------------
 
-/** Série única mensal (comissão). Mês selecionado com halo e etiqueta. */
+/** Rótulos default de eixo: posição i → NOME_MES_ABREV[i+1] (JAN..DEZ). */
+function rotuloEixo(rotulos: string[] | undefined, i: number): string {
+  return rotulos?.[i] ?? NOME_MES_ABREV[i + 1] ?? String(i + 1);
+}
+
+/**
+ * Em janelas longas (período de vários anos) não cabe um rótulo por mês:
+ * mostra 1 a cada k posições (k cresce com n), mantendo o primeiro. A posição
+ * em destaque é sempre rotulada por quem chama (forcar).
+ */
+function mostrarRotulo(n: number, i: number, forcar = false): boolean {
+  if (forcar || n <= 16) return true;
+  return i % Math.ceil(n / 16) === 0;
+}
+
+/**
+ * Série única mensal (comissão). Posição selecionada com halo e etiqueta.
+ * `mesSelecionado` é a POSIÇÃO 1-based na série (no ano JAN..DEZ coincide com
+ * o número do mês); `rotulos` troca o eixo quando o período cruza anos.
+ */
 export function BarrasMensais({
   valores,
   mesSelecionado,
   rotuloAcessivel = "Comissão mês a mês",
   cor = COR_1,
+  rotulos,
 }: {
-  valores: number[]; // índice 0 = JAN (centavos)
-  mesSelecionado: number; // 1..12
+  valores: number[]; // índice 0 = primeiro mês da janela (centavos)
+  mesSelecionado?: number; // posição 1-based na série
   rotuloAcessivel?: string;
   cor?: string;
+  rotulos?: string[];
 }) {
   const max = Math.max(...valores, 1);
   const n = valores.length;
   const passo = PLOT_W / n;
-  const larguraBarra = Math.min(30, passo - 10);
+  const larguraBarra = Math.max(2, Math.min(30, passo - 10));
   const maxIdx = valores.indexOf(Math.max(...valores));
 
   return (
     <svg viewBox={VIEWBOX} className="w-full" role="img" aria-label={rotuloAcessivel}>
-      <Defs cores={[cor, COR_1_FORTE]} />
       <Moldura max={max} />
       {valores.map((v, i) => {
         const h = (v / max) * ALT;
@@ -305,7 +241,7 @@ export function BarrasMensais({
               w={larguraBarra}
               h={h}
               cor={selecionado ? COR_1_FORTE : cor}
-              titulo={`${NOME_MES_ABREV[i + 1]}: ${formatarBRL(v)}`}
+              titulo={`${rotuloEixo(rotulos, i)}: ${formatarBRL(v)}`}
               delayMs={i * 45}
               foco={selecionado}
             />
@@ -317,17 +253,19 @@ export function BarrasMensais({
                 cor={selecionado ? COR_1_FORTE : ROTULO}
               />
             ) : null}
-            <text
-              x={centro}
-              y={BASE + 15}
-              fontSize={9.5}
-              fill={selecionado ? TINTA : ROTULO}
-              fontWeight={selecionado ? 700 : 400}
-              textAnchor="middle"
-              style={{ fontFamily: "var(--font-jetbrains), monospace" }}
-            >
-              {NOME_MES_ABREV[i + 1]}
-            </text>
+            {mostrarRotulo(n, i, selecionado) ? (
+              <text
+                x={centro}
+                y={BASE + 15}
+                fontSize={9.5}
+                fill={selecionado ? TINTA : ROTULO}
+                fontWeight={selecionado ? 700 : 400}
+                textAnchor="middle"
+                style={{ fontFamily: "var(--font-jetbrains), monospace" }}
+              >
+                {rotuloEixo(rotulos, i)}
+              </text>
+            ) : null}
             {selecionado ? (
               <line
                 x1={centro - larguraBarra / 2}
@@ -355,6 +293,7 @@ export function BarrasDuplas({
   corA = COR_2,
   corB = COR_1,
   mesSelecionado,
+  rotulos,
 }: {
   serieA: number[];
   serieB: number[];
@@ -362,13 +301,15 @@ export function BarrasDuplas({
   nomeB: string;
   corA?: string;
   corB?: string;
-  /** 1..12 — recebe marcação embaixo, se informado */
+  /** posição 1-based na série — recebe marcação embaixo, se informado */
   mesSelecionado?: number;
+  /** rótulos do eixo (default JAN..DEZ) */
+  rotulos?: string[];
 }) {
   const max = Math.max(...serieA, ...serieB, 1);
   const n = serieA.length;
   const passo = PLOT_W / n;
-  const larguraBarra = Math.min(14, (passo - 12) / 2);
+  const larguraBarra = Math.max(1.5, Math.min(14, (passo - 12) / 2));
 
   return (
     <svg
@@ -377,7 +318,6 @@ export function BarrasDuplas({
       role="img"
       aria-label={`${nomeA} e ${nomeB} por mês`}
     >
-      <Defs cores={[corA, corB]} />
       <Moldura max={max} />
       {serieA.map((a, i) => {
         const b = serieB[i] ?? 0;
@@ -393,7 +333,7 @@ export function BarrasDuplas({
               w={larguraBarra}
               h={hA}
               cor={corA}
-              titulo={`${NOME_MES_ABREV[i + 1]} — ${nomeA}: ${formatarBRL(a)}`}
+              titulo={`${rotuloEixo(rotulos, i)} — ${nomeA}: ${formatarBRL(a)}`}
               delayMs={i * 45}
             />
             <Barra
@@ -402,21 +342,23 @@ export function BarrasDuplas({
               w={larguraBarra}
               h={hB}
               cor={corB}
-              titulo={`${NOME_MES_ABREV[i + 1]} — ${nomeB}: ${formatarBRL(b)}`}
+              titulo={`${rotuloEixo(rotulos, i)} — ${nomeB}: ${formatarBRL(b)}`}
               delayMs={i * 45 + 20}
               foco={selecionado}
             />
-            <text
-              x={centro}
-              y={BASE + 15}
-              fontSize={9.5}
-              fill={selecionado ? TINTA : ROTULO}
-              fontWeight={selecionado ? 700 : 400}
-              textAnchor="middle"
-              style={{ fontFamily: "var(--font-jetbrains), monospace" }}
-            >
-              {NOME_MES_ABREV[i + 1]}
-            </text>
+            {mostrarRotulo(n, i, selecionado) ? (
+              <text
+                x={centro}
+                y={BASE + 15}
+                fontSize={9.5}
+                fill={selecionado ? TINTA : ROTULO}
+                fontWeight={selecionado ? 700 : 400}
+                textAnchor="middle"
+                style={{ fontFamily: "var(--font-jetbrains), monospace" }}
+              >
+                {rotuloEixo(rotulos, i)}
+              </text>
+            ) : null}
           </ColunaHover>
         );
       })}
@@ -429,10 +371,13 @@ export function BarrasCaixa({
   receita,
   despesaAL,
   despesaCH,
+  rotulos,
 }: {
   receita: number[];
   despesaAL: number[];
   despesaCH: number[];
+  /** rótulos do eixo (default JAN..DEZ) */
+  rotulos?: string[];
 }) {
   const max = Math.max(
     ...receita,
@@ -441,7 +386,7 @@ export function BarrasCaixa({
   );
   const n = receita.length;
   const passo = PLOT_W / n;
-  const larguraBarra = Math.min(14, (passo - 12) / 2);
+  const larguraBarra = Math.max(1.5, Math.min(14, (passo - 12) / 2));
 
   return (
     <svg
@@ -450,7 +395,6 @@ export function BarrasCaixa({
       role="img"
       aria-label="Receita e despesas do caixa por mês"
     >
-      <Defs cores={[COR_1, COR_2, COR_3]} />
       <Moldura max={max} />
       {receita.map((rec, i) => {
         const al = despesaAL[i] ?? 0;
@@ -460,7 +404,7 @@ export function BarrasCaixa({
         const hR = (rec / max) * ALT;
         const hAL = (al / max) * ALT;
         const hCH = (ch / max) * ALT;
-        const mes = NOME_MES_ABREV[i + 1];
+        const mes = rotuloEixo(rotulos, i);
         return (
           <ColunaHover key={i} x={EIXO_W + i * passo + 2} w={passo - 4}>
             <Barra
@@ -480,7 +424,7 @@ export function BarrasCaixa({
                   y={BASE - hAL}
                   width={larguraBarra}
                   height={hAL}
-                  fill={`url(#${gid(COR_2)})`}
+                  fill={COR_2}
                 >
                   <title>{`${mes} — Despesa Antonio/Laura: ${formatarBRL(al)}`}</title>
                 </rect>
@@ -497,16 +441,18 @@ export function BarrasCaixa({
                 delayMs={i * 45 + 40}
               />
             ) : null}
-            <text
-              x={centro}
-              y={BASE + 15}
-              fontSize={9.5}
-              fill={ROTULO}
-              textAnchor="middle"
-              style={{ fontFamily: "var(--font-jetbrains), monospace" }}
-            >
-              {mes}
-            </text>
+            {mostrarRotulo(n, i) ? (
+              <text
+                x={centro}
+                y={BASE + 15}
+                fontSize={9.5}
+                fill={ROTULO}
+                textAnchor="middle"
+                style={{ fontFamily: "var(--font-jetbrains), monospace" }}
+              >
+                {mes}
+              </text>
+            ) : null}
           </ColunaHover>
         );
       })}
@@ -523,12 +469,15 @@ export function AreaTendencia({
   cor = COR_1,
   destaque,
   rotuloAcessivel = "Tendência mensal",
+  rotulos,
 }: {
   valores: number[];
   cor?: string;
-  /** 1..12 — ponto marcado com anel */
+  /** posição 1-based na série — ponto marcado com anel */
   destaque?: number;
   rotuloAcessivel?: string;
+  /** rótulos do eixo (default JAN..DEZ) */
+  rotulos?: string[];
 }) {
   const n = valores.length;
   if (n === 0) return null;
@@ -545,9 +494,8 @@ export function AreaTendencia({
 
   return (
     <svg viewBox={VIEWBOX} className="w-full" role="img" aria-label={rotuloAcessivel}>
-      <Defs cores={[cor]} />
       <Moldura max={max} />
-      <path d={area} fill={`url(#${gid(cor)}a)`} className="g-surgir" />
+      <path d={area} fill={cor} fillOpacity={0.08} className="g-surgir" />
       <path
         d={linha}
         fill="none"
@@ -557,7 +505,6 @@ export function AreaTendencia({
         strokeLinecap="round"
         pathLength={1}
         className="g-linha"
-        filter="url(#halo)"
       />
       {pontos.map(([x, y], i) => {
         const marcado = i + 1 === destaque;
@@ -585,19 +532,21 @@ export function AreaTendencia({
               className="g-surgir"
               style={{ animationDelay: `${0.7 + i * 0.04}s` }}
             >
-              <title>{`${NOME_MES_ABREV[i + 1]}: ${formatarBRL(valores[i])}`}</title>
+              <title>{`${rotuloEixo(rotulos, i)}: ${formatarBRL(valores[i])}`}</title>
             </circle>
-            <text
-              x={x}
-              y={BASE + 15}
-              fontSize={9.5}
-              fill={marcado ? TINTA : ROTULO}
-              fontWeight={marcado ? 700 : 400}
-              textAnchor="middle"
-              style={{ fontFamily: "var(--font-jetbrains), monospace" }}
-            >
-              {NOME_MES_ABREV[i + 1]}
-            </text>
+            {mostrarRotulo(n, i, marcado) ? (
+              <text
+                x={x}
+                y={BASE + 15}
+                fontSize={9.5}
+                fill={marcado ? TINTA : ROTULO}
+                fontWeight={marcado ? 700 : 400}
+                textAnchor="middle"
+                style={{ fontFamily: "var(--font-jetbrains), monospace" }}
+              >
+                {rotuloEixo(rotulos, i)}
+              </text>
+            ) : null}
           </g>
         );
       })}
@@ -640,7 +589,6 @@ export function BarrasHorizontais({
       role="img"
       aria-label="Ranking"
     >
-      <Defs cores={[...cores, cor]} />
       {itens.map((item, i) => {
         const y = i * (ALT_BARRA + GAP);
         const w = Math.max((item.valor / max) * plotW, 3);
@@ -665,7 +613,7 @@ export function BarrasHorizontais({
               y={y + 1}
               width={plotW}
               height={ALT_BARRA - 2}
-              rx={(ALT_BARRA - 2) / 2}
+              rx={4}
               fill={GRADE}
               opacity={0.55}
             />
@@ -674,8 +622,8 @@ export function BarrasHorizontais({
               y={y + 1}
               width={w}
               height={ALT_BARRA - 2}
-              rx={(ALT_BARRA - 2) / 2}
-              fill={`url(#${gid(c)}x)`}
+              rx={4}
+              fill={c}
               className="g-barra-x"
               style={{ animationDelay: `${i * 60}ms` }}
             >
@@ -686,7 +634,7 @@ export function BarrasHorizontais({
               y={y + ALT_BARRA / 2 + 3.5}
               fontSize={10.5}
               fontWeight={700}
-              fill={item.nivel ? NIVEL[item.nivel].forte : "#3f423b"}
+              fill={ROTULO}
               style={{ fontFamily: "var(--font-jetbrains), monospace" }}
             >
               {formatarBRL(item.valor)}
@@ -702,9 +650,12 @@ export function BarrasHorizontais({
 export function Sparkline({
   valores,
   cor = COR_1,
+  rotulos,
 }: {
   valores: number[];
   cor?: string;
+  /** rótulos do tooltip (default JAN..DEZ) */
+  rotulos?: string[];
 }) {
   const L = 118;
   const A = 30;
@@ -721,8 +672,7 @@ export function Sparkline({
   const ultimo = valores[n - 1];
   return (
     <svg viewBox={`0 0 ${L} ${A}`} width={L} height={A} role="img" aria-label="Evolução mensal">
-      <Defs cores={[cor]} />
-      <path d={`${linha} L${px(n - 1)},${A} L${px(0)},${A} Z`} fill={`url(#${gid(cor)}a)`} />
+      <path d={`${linha} L${px(n - 1)},${A} L${px(0)},${A} Z`} fill={cor} fillOpacity={0.08} />
       <path
         d={linha}
         fill="none"
@@ -744,7 +694,7 @@ export function Sparkline({
         style={{ animationDelay: "0.9s" }}
       />
       <title>
-        {valores.map((v, i) => `${NOME_MES_ABREV[i + 1]} ${formatarBRL(v)}`).join(" · ")}
+        {valores.map((v, i) => `${rotuloEixo(rotulos, i)} ${formatarBRL(v)}`).join(" · ")}
       </title>
     </svg>
   );
@@ -834,7 +784,6 @@ export function Medidor({
       role="img"
       aria-label={`${rotulo ?? "medidor"}: ${pct.toFixed(0)}% — ${est.rotulo}`}
     >
-      <Defs cores={[est.cor]} />
       {/* trilho com as três zonas do semáforo, bem esmaecidas */}
       <path
         d={arcoMedidor(cx, cy, R, 0, faixaAtencao)}
@@ -887,7 +836,6 @@ export function Medidor({
             strokeLinecap="round"
             pathLength={1}
             className="g-linha"
-            filter="url(#halo)"
           >
             <title>{`${rotulo ?? ""}: ${pct.toFixed(1).replace(".", ",")}%`}</title>
           </path>
@@ -922,9 +870,9 @@ export function Medidor({
         fontSize={11}
         fontWeight={700}
         letterSpacing="0.12em"
-        fill={est.forte}
+        fill={ROTULO}
       >
-        {`${est.icone}  ${est.rotulo.toUpperCase()}`}
+        {est.rotulo.toUpperCase()}
       </text>
       {/* âncoras 0% e 100% */}
       <text x={cx - R} y={cy + 17} textAnchor="middle" fontSize={9} fill={ROTULO}>
@@ -951,7 +899,7 @@ export function Rosca({
   centroTitulo?: string;
   centroValor?: string;
 }) {
-  const CORES = [COR_1, COR_2, COR_3, "#8a8578", "#5c6058"];
+  const CORES = [COR_1, COR_2, COR_3, "#a9a7ad", "#75786f"];
   const total = fatias.reduce((s, f) => s + f.valor, 0);
   const cx = 96;
   const cy = 96;
@@ -972,7 +920,7 @@ export function Rosca({
       a0,
       a1,
       delay: partidas[i] * 0.7,
-      cor: CORES[i] ?? "#5c6058",
+      cor: CORES[i] ?? "#75786f",
     };
   });
 
@@ -986,7 +934,6 @@ export function Rosca({
         role="img"
         aria-label="Composição"
       >
-        <Defs cores={segs.map((s) => s.cor)} />
         <circle
           cx={cx}
           cy={cy}
@@ -1016,7 +963,7 @@ export function Rosca({
               fill="none"
               stroke={s.cor}
               strokeWidth={esp}
-              strokeLinecap="round"
+              strokeLinecap="butt"
               pathLength={1}
               className="g-linha"
               style={{ animationDelay: `${s.delay}s` }}
@@ -1055,10 +1002,8 @@ export function Rosca({
         {segs.map((s, i) => (
           <div key={i} className="flex items-center gap-2.5 text-xs">
             <span
-              className="inline-block h-3 w-3 shrink-0 rounded-full"
-              style={{
-                background: `linear-gradient(135deg, ${clarear(s.cor, 0.3)}, ${s.cor})`,
-              }}
+              className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+              style={{ backgroundColor: s.cor }}
             />
             <span className="min-w-0 flex-1 truncate text-tinta">{s.rotulo}</span>
             <span className="font-mono tabular-nums font-semibold text-tinta-suave">
@@ -1091,7 +1036,7 @@ export function BarraComposicao({
   return (
     <div className="w-full">
       <div
-        className="flex w-full overflow-hidden rounded-full"
+        className="flex w-full overflow-hidden rounded"
         style={{ height: altura, background: GRADE }}
       >
         {partes.map((p, i) => {
@@ -1104,7 +1049,7 @@ export function BarraComposicao({
               className="g-fita h-full"
               style={{
                 width: `${frac * 100}%`,
-                background: `linear-gradient(90deg, ${p.cor}, ${clarear(p.cor, 0.28)})`,
+                background: p.cor,
                 animationDelay: `${partidas[i] * 0.5}s`,
               }}
             />
@@ -1115,8 +1060,8 @@ export function BarraComposicao({
         {partes.map((p, i) => (
           <span key={i} className="inline-flex items-center gap-1.5">
             <span
-              className="inline-block h-2.5 w-2.5 rounded-full"
-              style={{ background: p.cor }}
+              className="inline-block h-2.5 w-2.5 rounded-sm"
+              style={{ backgroundColor: p.cor }}
             />
             {p.rotulo}
             <span className="font-mono font-semibold text-tinta">
@@ -1136,10 +1081,8 @@ export function Legenda({ itens }: { itens: { cor: string; nome: string }[] }) {
       {itens.map((i) => (
         <span key={i.nome} className="inline-flex items-center gap-1.5">
           <span
-            className="inline-block h-2.5 w-2.5 rounded-full"
-            style={{
-              background: `linear-gradient(135deg, ${clarear(i.cor, 0.3)}, ${i.cor})`,
-            }}
+            className="inline-block h-2.5 w-2.5 rounded-sm"
+            style={{ backgroundColor: i.cor }}
           />
           {i.nome}
         </span>

@@ -45,7 +45,7 @@ function centavosParaTexto(centavos: number): string {
 function Campo({ rotulo, children }: { rotulo: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1 text-sm">
-      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+      <span className="text-xs font-semibold uppercase tracking-wide text-tinta-suave">
         {rotulo}
       </span>
       {children}
@@ -197,12 +197,12 @@ export function FormLancamento({
       </div>
 
       {tipo === "RECEB_DINHEIRO" ? (
-        <p className="text-xs text-amber-700">
+        <p className="text-xs text-tinta-suave">
           Recebimento em dinheiro é registro paralelo de espécie — não entra no saldo do mês.
         </p>
       ) : null}
 
-      {estado.erro ? <p className="text-sm text-red-600">{estado.erro}</p> : null}
+      {estado.erro ? <p className="text-sm text-erro">{estado.erro}</p> : null}
 
       <div className="flex items-center gap-2">
         <button type="submit" disabled={pendente} className={btnPrimario}>

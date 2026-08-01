@@ -37,7 +37,7 @@ function hojeLocal(): string {
 function Item({ rotulo, children }: { rotulo: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+      <div className="text-xs font-semibold uppercase tracking-wide text-tinta-suave">
         {rotulo}
       </div>
       <div className="mt-0.5 text-sm">{children}</div>
@@ -93,18 +93,18 @@ export default async function PaginaDetalheContrato({
       />
 
       {sp.erro ? (
-        <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+        <div className="mb-4 rounded-md border border-erro/25 bg-erro/5 px-4 py-2.5 text-sm text-erro">
           {sp.erro}
         </div>
       ) : null}
       {sp.ok ? (
-        <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">
+        <div className="mb-4 rounded-md border border-oliva/30 bg-oliva/10 px-4 py-2.5 text-sm text-oliva-escura">
           {sp.ok}
         </div>
       ) : null}
 
       {confirmarEncerrar ? (
-        <Card className="mb-4 border-amber-300 bg-amber-50 p-4">
+        <Card className="mb-4 border-ambar/40 bg-ambar/10 p-4">
           <p className="text-sm">
             Encerrar este contrato? Ele deixará de gerar devidos mensais em
             “Gerar devidos do mês”.
@@ -114,7 +114,7 @@ export default async function PaginaDetalheContrato({
             className="mt-3 flex flex-wrap items-end gap-3"
           >
             <input type="hidden" name="id" value={contrato.id} />
-            <label className="block text-xs font-medium text-slate-600">
+            <label className="block text-xs font-medium text-tinta-suave">
               Data de encerramento
               <input
                 type="date"
@@ -126,7 +126,7 @@ export default async function PaginaDetalheContrato({
             </label>
             <button
               type="submit"
-              className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-500"
+              className="inline-flex items-center gap-1.5 rounded-md bg-erro px-3 py-1.5 text-sm font-medium text-white hover:bg-erro/85"
             >
               Confirmar encerramento
             </button>
@@ -197,7 +197,7 @@ export default async function PaginaDetalheContrato({
           <Item rotulo="Fim">{formatarDataBR(contrato.fim)}</Item>
         </div>
         {contrato.observacao ? (
-          <div className="mt-4 border-t border-slate-100 pt-3 text-sm text-slate-600">
+          <div className="mt-4 border-t border-contorno/60 pt-3 text-sm text-tinta-suave">
             <span className="font-semibold">Observação:</span>{" "}
             {contrato.observacao}
           </div>
@@ -229,7 +229,7 @@ export default async function PaginaDetalheContrato({
             <tbody>
               {linhas.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-6 text-center text-slate-400">
+                  <td colSpan={12} className="py-6 text-center text-tinta-suave/60">
                     Nenhum recebimento lançado para este contrato.
                   </td>
                 </tr>
@@ -237,7 +237,7 @@ export default async function PaginaDetalheContrato({
                 linhas.map(({ r, calc }) => (
                   <tr
                     key={r.id}
-                    className={r.recebido === null ? "bg-amber-50/60" : ""}
+                    className={r.recebido === null ? "bg-ambar/5" : ""}
                   >
                     <td>{formatarCompetencia(r.mesLancamento)}</td>
                     <td>

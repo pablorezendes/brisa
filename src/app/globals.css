@@ -18,16 +18,14 @@
   --background: var(--papel);
   --foreground: var(--tinta);
 
-  /* semáforo — espelha src/lib/dominio/semaforo.ts. Cor nunca vem sozinha:
-     sempre acompanha ícone + palavra (daltonismo e impressão P&B). */
-  --sem-otimo: #1f7a4b;
-  --sem-otimo-forte: #125c37;
-  --sem-atencao: #a8760f;
-  --sem-atencao-forte: #7d570a;
-  --sem-critico: #c0271d;
-  --sem-critico-forte: #8f1811;
-  --sem-info: #3a6ea8;
-  --sem-neutro: #6b6e65;
+  /* semáforo — espelha src/lib/dominio/semaforo.ts e usa SÓ a paleta do site.
+     Cor aparece em ponto/filete/barra; texto é sempre tinta. A cor nunca vem
+     sozinha: sempre acompanha a palavra (daltonismo e impressão P&B). */
+  --sem-otimo: var(--oliva);
+  --sem-atencao: var(--ambar);
+  --sem-critico: var(--erro);
+  --sem-info: #4a68a8; /* índigo da paleta de dados */
+  --sem-neutro: var(--contorno-forte);
 }
 
 @theme inline {
@@ -38,6 +36,7 @@
   --color-tinta: var(--tinta);
   --color-tinta-suave: var(--tinta-suave);
   --color-contorno: var(--contorno);
+  --color-contorno-forte: var(--contorno-forte);
   --color-oliva: var(--oliva);
   --color-oliva-escura: var(--oliva-escura);
   --color-erro: var(--erro);
@@ -127,28 +126,12 @@ h3 {
 .g-col {
   cursor: default;
 }
-/* pulso lento do ponto crítico: chama o olho sem piscar agressivo */
-@keyframes sem-pulso {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 currentColor;
-    opacity: 1;
-  }
-  50% {
-    box-shadow: 0 0 0 4px transparent;
-    opacity: 0.75;
-  }
-}
-.sem-pulso {
-  animation: sem-pulso 2.4s ease-in-out infinite;
-}
 @media (prefers-reduced-motion: reduce) {
   .g-barra,
   .g-barra-x,
   .g-linha,
   .g-surgir,
-  .g-fita,
-  .sem-pulso {
+  .g-fita {
     animation: none !important;
     stroke-dashoffset: 0 !important;
     transform: none !important;
@@ -182,39 +165,35 @@ h3 {
 }
 
 /* "i" de informação — o mesmo botão em todo card, cabeçalho e coluna.
-   CSS puro (hover/foco), sem JS. O ícone é serifado e itálico para ler como
-   "informação" mesmo em 16px. */
+   CSS puro (hover/foco), sem JS. Neutro (tinta sobre papel), serifado e
+   itálico para ler como "informação" mesmo em 16px; a cor fica reservada
+   ao semáforo. Tooltip editorial: borda de tinta, sem sombra. */
 .dica {
-  @apply relative inline-flex h-[17px] w-[17px] shrink-0 cursor-help items-center justify-center rounded-full border align-middle text-[11px] font-bold leading-none;
+  @apply relative inline-flex h-4 w-4 shrink-0 cursor-help items-center justify-center rounded-full border align-middle text-[11px] font-bold leading-none;
   font-family: var(--font-source-serif), Georgia, serif;
   font-style: italic;
-  border-color: color-mix(in srgb, var(--sem-info) 40%, transparent);
-  background: color-mix(in srgb, var(--sem-info) 8%, transparent);
-  color: var(--sem-info);
+  border-color: var(--contorno-forte);
+  color: var(--tinta-suave);
   transition:
-    background-color 0.15s ease,
     border-color 0.15s ease,
     color 0.15s ease;
 }
 .dica:hover,
 .dica:focus-visible {
-  border-color: var(--sem-info);
-  background: color-mix(in srgb, var(--sem-info) 16%, transparent);
-  color: #2a5280;
+  border-color: var(--tinta);
+  color: var(--tinta);
   outline: none;
 }
 .dica::after {
   content: attr(data-dica);
   position: absolute;
   left: 50%;
-  bottom: calc(100% + 10px);
-  transform: translateX(-50%) translateY(3px);
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
   width: 288px;
-  padding: 11px 13px;
-  border-radius: 10px;
+  padding: 10px 12px;
   background: var(--carta);
   border: 1px solid var(--tinta);
-  box-shadow: 0 10px 28px -12px rgba(28, 36, 48, 0.45);
   color: var(--tinta);
   font-family: var(--font-public-sans), sans-serif;
   font-size: 12px;
@@ -228,18 +207,16 @@ h3 {
   z-index: 50;
   opacity: 0;
   pointer-events: none;
-  transition:
-    opacity 0.14s ease,
-    transform 0.14s ease;
+  transition: opacity 0.12s ease;
 }
 .dica:hover::after,
 .dica:focus-visible::after {
   opacity: 1;
-  transform: translateX(-50%) translateY(0);
 }
 
 /* ---------- cartões com semáforo ---------- */
-/* faixa de cor à esquerda + wash de fundo: o card inteiro fala o nível */
+/* um filete de 3px à esquerda é TODA a cor que o card carrega — o resto do
+   veredito vai em palavra (ponto + rótulo). Sem wash, sem borda colorida. */
 .card-sem {
   position: relative;
   overflow: hidden;
@@ -250,14 +227,6 @@ h3 {
   inset: 0 auto 0 0;
   width: 3px;
   background: var(--sem-cor, transparent);
-}
-/* brilho diagonal muito sutil — profundidade sem sair do papel */
-.card-brilho {
-  background-image: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.65) 0%,
-    rgba(255, 255, 255, 0) 45%
-  );
 }
 /* Em cabeçalhos de tabelas com rolagem horizontal, o contêiner corta o que
    sobe: a dica abre para BAIXO e, nas colunas das pontas, alinha-se à borda

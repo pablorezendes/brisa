@@ -1,25 +1,42 @@
 /**
- * /paineis/temporada — visão anual do Airbnb.
+ * /paineis/temporada — visão anual do Airbnb, ou recorte por período
+ * (?de=YYYY-MM-DD&ate=YYYY-MM-DD, que vence a visão anual quando presente).
  * Compara a receita mês a mês de todos os anos: 2023–2025 vêm da apuração
  * histórica importada da planilha; o ano corrente vem das linhas agregadas
  * do núcleo (recebimento.origemAgregada) até o módulo Temporada assumir.
+ * No modo período, cada competência da janela usa a melhor fonte disponível
+ * (planilha ou núcleo) e a origem fica visível na tabela e no "i".
  */
 import Link from "next/link";
 import {
   Ajuda,
+  Badge,
   Card,
   Dinheiro,
   Kpi,
   PageHeader,
+  SeletorPeriodo,
   btnPrimario,
   btnSecundario,
 } from "@/components/ui";
 import { BarrasMensais } from "@/components/graficos";
 import { formatarBRL } from "@/lib/dominio/dinheiro";
-import { NOME_MES_ABREV, NOME_MES_COMPLETO } from "@/lib/dominio/normalizacao";
+import {
+  NOME_MES_ABREV,
+  NOME_MES_COMPLETO,
+  formatarCompetencia,
+} from "@/lib/dominio/normalizacao";
+import {
+  parsePeriodo,
+  rotulosCompetencias,
+  type Periodo,
+} from "@/lib/dominio/periodo";
 import {
   painelTemporada,
+  painelTemporadaPeriodo,
   type AnoTemporada,
+  type OrigemAnoTemporada,
+  type PainelTemporadaPeriodo,
 } from "@/lib/consultas/painel-caixa-temporada";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +52,38 @@ function dicaOrigem(a: AnoTemporada): string {
   return `Números importados da planilha AIRBNB de ${a.ano}: receita e despesa mês a mês, ano já fechado.`;
 }
 
+/** Origem dos números no modo período — vira o "i" da receita e do gráfico. */
+function dicaOrigemJanela(d: PainelTemporadaPeriodo): string {
+  const plural = (n: number) => (n === 1 ? "mês" : "meses");
+  const partes: string[] = [];
+  if (d.mesesHistorico > 0) {
+    partes.push(
+      `${d.mesesHistorico} ${plural(d.mesesHistorico)} da planilha AIRBNB importada (anos fechados)`,
+    );
+  }
+  if (d.mesesNucleo > 0) {
+    partes.push(
+      `${d.mesesNucleo} ${plural(d.mesesNucleo)} das linhas agregadas lançadas em Recebimentos, o núcleo — só o que já foi marcado como recebido`,
+    );
+  }
+  const base =
+    partes.length > 0
+      ? `Cada mês da janela usa a melhor fonte disponível: ${partes.join(" e ")}.`
+      : "Nenhuma fonte tem lançamentos para os meses da janela — tudo aparece zerado.";
+  const semDado =
+    d.mesesSemDado > 0
+      ? ` ${d.mesesSemDado} ${plural(d.mesesSemDado)} sem lançamento em nenhuma fonte ${d.mesesSemDado === 1 ? "entra" : "entram"} como zero.`
+      : "";
+  return `${base}${semDado} Quando as duas fontes têm o mesmo mês, vale a planilha (ano fechado). A coluna Origem da tabela mostra a fonte de cada mês.`;
+}
+
+/** Badge da fonte de cada mês no modo período. */
+function BadgeOrigem({ origem }: { origem: OrigemAnoTemporada | null }) {
+  if (origem === "historico") return <Badge cor="azul">planilha</Badge>;
+  if (origem === "nucleo") return <Badge cor="ambar">núcleo</Badge>;
+  return <Badge cor="slate">sem dado</Badge>;
+}
+
 /** Variação percentual da receita vs ano anterior (▲ verde / ▼ vermelho). */
 function VariacaoAnual({
   atual,
@@ -44,11 +93,11 @@ function VariacaoAnual({
   anterior: number | null;
 }) {
   if (anterior === null || anterior === 0) {
-    return <span className="text-xs text-slate-400">sem base</span>;
+    return <span className="text-xs text-tinta-suave/60">sem base</span>;
   }
   const pct = ((atual - anterior) / Math.abs(anterior)) * 100;
   if (Math.abs(pct) < 0.05) {
-    return <span className="text-xs text-slate-400">estável</span>;
+    return <span className="text-xs text-tinta-suave/60">estável</span>;
   }
   const subiu = pct > 0;
   return (
@@ -63,7 +112,235 @@ function VariacaoAnual({
   );
 }
 
-export default async function PaginaPainelTemporada() {
+/** Modo PERÍODO: a janela escolhida no calendário, mês a mês. */
+async function TemporadaDoPeriodo({ periodo }: { periodo: Periodo }) {
+  const d = await painelTemporadaPeriodo(periodo.meses);
+  const rotulos = rotulosCompetencias(periodo.meses);
+  const dicaJanela = dicaOrigemJanela(d);
+  const fontes =
+    [
+      d.mesesHistorico > 0 ? `${d.mesesHistorico} da planilha` : null,
+      d.mesesNucleo > 0 ? `${d.mesesNucleo} do núcleo` : null,
+      d.mesesSemDado > 0 ? `${d.mesesSemDado} sem dado` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ") || "sem lançamentos na janela";
+
+  return (
+    <div className="max-w-6xl">
+      <PageHeader
+        titulo="Temporada — análise do período"
+        descricao={`O Airbnb no período ${periodo.rotulo}: receita mês a mês combinando a planilha histórica e o núcleo`}
+        acoes={
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/temporada/historico" className={btnSecundario}>
+              Histórico da planilha
+            </Link>
+            <Link href="/temporada" className={btnSecundario}>
+              Módulo Temporada
+            </Link>
+            <SeletorPeriodo base="/paineis/temporada" periodo={periodo} />
+          </div>
+        }
+      />
+
+      {/* ---------- KPIs do período ---------- */}
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <Kpi
+          rotulo="Receita no período"
+          valor={<Dinheiro centavos={d.totalReceita} destaque />}
+          detalhe={fontes}
+          ajuda={dicaJanela}
+        />
+        <Kpi
+          rotulo="Comissão AIRBNB no período"
+          valor={<Dinheiro centavos={d.comissaoAirbnb} destaque />}
+          detalhe="só meses lançados no núcleo"
+          ajuda="O que a administradora ganhou com o Airbnb na janela: a taxa do lançamento (padrão 10%) sobre o recebido, descontando IPTU e condomínio — a mesma regra canônica dos aluguéis. Vale só para os meses lançados em Recebimentos (o núcleo): a planilha histórica não tem recebimentos individuais para aplicar a regra, então meses antigos entram como zero aqui."
+        />
+        <Kpi
+          rotulo="Melhor mês do período"
+          valor={
+            d.melhorMes ? (
+              <Dinheiro centavos={d.melhorMes.receita} destaque />
+            ) : (
+              "—"
+            )
+          }
+          detalhe={
+            d.melhorMes ? formatarCompetencia(d.melhorMes.mes) : "sem receita"
+          }
+          ajuda="O mês de maior receita dentro da janela escolhida. Bom para enxergar o pico da temporada no recorte e planejar reservas e limpezas nos meses fortes."
+        />
+        <Kpi
+          rotulo="Lucro no período"
+          valor={
+            d.totalLucro !== null ? (
+              <Dinheiro centavos={d.totalLucro} destaque />
+            ) : (
+              "—"
+            )
+          }
+          detalhe={
+            d.mesesComDespesa > 0
+              ? `${d.mesesComDespesa} de ${periodo.meses.length} ${periodo.meses.length === 1 ? "mês" : "meses"} com despesa conhecida`
+              : "sem despesa conhecida na janela"
+          }
+          nivel={
+            d.totalLucro === null
+              ? "neutro"
+              : d.totalLucro > 0
+                ? "otimo"
+                : d.totalLucro < 0
+                  ? "critico"
+                  : "neutro"
+          }
+          selo={
+            d.totalLucro !== null && d.totalLucro !== 0
+              ? d.totalLucro > 0
+                ? "no azul"
+                : "no vermelho"
+              : undefined
+          }
+          ajuda='Lucro = receita − despesa, somando SÓ os meses da janela em que a despesa é conhecida (planilha com despesa rotulada). Meses do núcleo e da planilha de 2025 não têm despesa aqui, por isso ficam de fora da conta — melhor admitir que não se sabe do que inventar número. Para o lucro real do ano corrente, lance limpezas e contas no módulo Temporada.'
+        />
+      </div>
+
+      {/* ---------- chamada para ação (formulários continuam mensais) ---------- */}
+      {d.mesesNucleo > 0 ? (
+        <Card className="mt-6 border-l-4 border-l-ambar px-6 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm leading-relaxed text-tinta">
+              <strong>Para ver o lucro real dos meses do núcleo</strong>, lance
+              as limpezas e as despesas (energia, condomínio, IPTU) no módulo
+              Temporada, mês a mês. A receita já entra pelo núcleo; sem as
+              despesas, o lucro fica como &quot;—&quot;.
+            </p>
+            <Link href="/temporada" className={btnPrimario}>
+              Lançar no módulo Temporada
+            </Link>
+          </div>
+        </Card>
+      ) : null}
+
+      {/* ---------- receita mês a mês da janela ---------- */}
+      <Card className="mt-6 p-5">
+        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            Receita mês a mês — {periodo.rotulo}
+            <Ajuda dica={dicaJanela} />
+          </h2>
+          <span className="text-xs text-tinta-suave">
+            receita do período:{" "}
+            <strong className="font-serif text-sm text-tinta">
+              {formatarBRL(d.totalReceita)}
+            </strong>
+          </span>
+        </div>
+        <BarrasMensais
+          valores={d.linhas.map((l) => l.receita)}
+          rotulos={rotulos}
+          rotuloAcessivel={`Receita da temporada mês a mês — ${periodo.rotulo}`}
+        />
+        <p className="mt-2 text-xs text-tinta-suave">
+          O eixo mostra exatamente os meses cobertos pelas datas escolhidas no
+          calendário — escolher 15/03 a 10/05 analisa MAR, ABR e MAI inteiros.
+        </p>
+        <div className="mt-3 overflow-x-auto">
+          <table className="tabela">
+            <thead>
+              <tr>
+                <th>Mês</th>
+                <th>
+                  <span className="inline-flex items-center gap-1.5">
+                    Origem
+                    <Ajuda dica='De onde veio o número do mês: "planilha" é a apuração histórica importada (ano fechado); "núcleo" são as linhas agregadas do AIRBNB em Recebimentos; "sem dado" é mês sem lançamento em nenhuma fonte — entra como zero, não como prejuízo.' />
+                  </span>
+                </th>
+                <th className="text-right!">Receita</th>
+                <th className="text-right!">
+                  <span className="inline-flex items-center gap-1.5">
+                    Despesa
+                    <Ajuda dica='"—" significa despesa desconhecida, não zero: meses do núcleo (apuração no módulo Temporada) e a planilha de 2025 não trazem despesa rotulada.' />
+                  </span>
+                </th>
+                <th className="text-right!">
+                  <span className="inline-flex items-center gap-1.5">
+                    Lucro
+                    <Ajuda dica='Lucro = receita − despesa. Quando a despesa é desconhecida, o lucro também fica "—" — melhor admitir que não se sabe do que inventar número.' />
+                  </span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.linhas.map((l, i) => (
+                <tr
+                  key={l.mes}
+                  className={l.origem === null ? "text-tinta-suave/60" : ""}
+                >
+                  <td className="font-medium">{rotulos[i]}</td>
+                  <td>
+                    <BadgeOrigem origem={l.origem} />
+                  </td>
+                  <td className="text-right!">
+                    <Dinheiro centavos={l.origem !== null ? l.receita : null} />
+                  </td>
+                  <td className="text-right!">
+                    <Dinheiro centavos={l.despesa} />
+                  </td>
+                  <td className="text-right!">
+                    <Dinheiro centavos={l.lucro} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan={2}>Total do período</td>
+                <td className="text-right!">
+                  <Dinheiro centavos={d.totalReceita} destaque />
+                </td>
+                <td className="text-right!">
+                  <Dinheiro centavos={d.totalDespesa} destaque={d.totalDespesa !== null} />
+                </td>
+                <td className="text-right!">
+                  <Dinheiro centavos={d.totalLucro} destaque={d.totalLucro !== null} />
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        {d.mesesComDespesa > 0 && d.mesesComDespesa < periodo.meses.length ? (
+          <p className="mt-2 text-xs text-tinta-suave">
+            Atenção: a despesa e o lucro do total somam só{" "}
+            {d.mesesComDespesa === 1
+              ? "o único mês com despesa conhecida"
+              : `os ${d.mesesComDespesa} meses com despesa conhecida`}{" "}
+            — a receita soma a janela inteira, então não compare lucro com
+            receita diretamente.
+          </p>
+        ) : null}
+      </Card>
+
+      <p className="mt-6 text-xs text-tinta-suave/60">
+        Fontes: apuração histórica importada da planilha AIRBNB (anos fechados)
+        e linhas agregadas do núcleo para o ano corrente — no período, cada mês
+        usa a melhor fonte disponível. Os lançamentos continuam mensais: use o
+        módulo Temporada para lançar e o calendário só para analisar.
+      </p>
+    </div>
+  );
+}
+
+export default async function PaginaPainelTemporada({
+  searchParams,
+}: {
+  searchParams: Promise<{ de?: string; ate?: string }>;
+}) {
+  const sp = await searchParams;
+  const periodo = parsePeriodo(sp.de, sp.ate);
+  if (periodo) return <TemporadaDoPeriodo periodo={periodo} />;
+
   const d = await painelTemporada();
   const anosDesc = [...d.anos].sort((a, b) => b.ano - a.ano);
   const rotuloAnos =
@@ -77,13 +354,14 @@ export default async function PaginaPainelTemporada() {
         titulo="Temporada — visão anual"
         descricao="O Airbnb ano a ano: quanto rendeu, quando rendeu e o que ainda falta lançar"
         acoes={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Link href="/temporada/historico" className={btnSecundario}>
               Histórico da planilha
             </Link>
             <Link href="/temporada" className={btnSecundario}>
               Módulo Temporada
             </Link>
+            <SeletorPeriodo base="/paineis/temporada" periodo={null} />
           </div>
         }
       />
@@ -151,7 +429,7 @@ export default async function PaginaPainelTemporada() {
       {/* ---------- chamada para ação ---------- */}
       <Card className="mt-6 border-l-4 border-l-ambar px-6 py-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm leading-relaxed text-slate-700">
+          <p className="text-sm leading-relaxed text-tinta">
             <strong>Para ver o lucro real de {d.anoNucleo ?? "do ano"}</strong>,
             lance as limpezas e as despesas (energia, condomínio, IPTU) no
             módulo Temporada, mês a mês. A receita já entra pelo núcleo; sem as
@@ -167,7 +445,7 @@ export default async function PaginaPainelTemporada() {
       <div className="mt-6 space-y-4">
         {d.anos.length === 0 ? (
           <Card className="px-6 py-8">
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-tinta-suave">
               Sem apuração histórica importada nem linhas agregadas do Airbnb no
               núcleo.
             </p>
@@ -180,7 +458,7 @@ export default async function PaginaPainelTemporada() {
                   Receita mês a mês — {a.ano}
                   <Ajuda dica={dicaOrigem(a)} />
                 </h2>
-                <div className="flex items-baseline gap-4 text-xs text-slate-600">
+                <div className="flex items-baseline gap-4 text-xs text-tinta-suave">
                   <span>
                     receita do ano:{" "}
                     <strong className="font-serif text-sm text-tinta">
@@ -196,7 +474,7 @@ export default async function PaginaPainelTemporada() {
                 </div>
               </div>
               <BarrasMensais valores={a.receitaPorMes} mesSelecionado={0} />
-              <details className="mt-2 text-xs text-slate-600">
+              <details className="mt-2 text-xs text-tinta-suave">
                 <summary className="cursor-pointer select-none">Ver dados</summary>
                 <div className="mt-2 overflow-x-auto">
                   <table className="tabela">
@@ -284,14 +562,14 @@ export default async function PaginaPainelTemporada() {
           </table>
         </div>
         {d.anoNucleo !== null ? (
-          <p className="mt-2 text-xs text-slate-500">
+          <p className="mt-2 text-xs text-tinta-suave">
             Atenção ao comparar {d.anoNucleo} com anos fechados: o ano corrente
             ainda está em andamento — a receita só cobre os meses já recebidos.
           </p>
         ) : null}
       </Card>
 
-      <p className="mt-6 text-xs text-slate-400">
+      <p className="mt-6 text-xs text-tinta-suave/60">
         Fontes: apuração histórica importada da planilha AIRBNB (2023–2025) e
         linhas agregadas do núcleo para o ano corrente. A receita do módulo
         Temporada deve conciliar mês a mês com a linha agregada do núcleo.

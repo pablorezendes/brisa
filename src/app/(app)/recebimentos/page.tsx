@@ -5,7 +5,9 @@ import {
   Card,
   Dinheiro,
   Badge,
+  Kpi,
   SeletorMes,
+  SeletorPeriodo,
   btnPrimario,
   btnSecundario,
   inputBase,
@@ -13,13 +15,20 @@ import {
 import { calcularRecebimento, comissaoTotal } from "@/lib/dominio/comissao";
 import { formatarBRL } from "@/lib/dominio/dinheiro";
 import { formatarCompetencia } from "@/lib/dominio/normalizacao";
+import { parsePeriodo } from "@/lib/dominio/periodo";
+import {
+  nivelInadimplencia,
+  nivelTaxaRecebimento,
+} from "@/lib/dominio/semaforo";
 import {
   RE_MES,
   VIAS_PAGAMENTO,
   formatarDataBR,
   recebimentosDoMes,
+  recebimentosDoPeriodo,
   mesPadraoRecebimentos,
   fechamentoDoMes,
+  mesesFechadosNoPeriodo,
   contratosParaSelecao,
   type RecebimentoComRelacoes,
   type ContratoComRelacoes,
@@ -36,6 +45,8 @@ import {
 
 type SearchParams = Promise<{
   mes?: string;
+  de?: string;
+  ate?: string;
   emp?: string;
   editar?: string;
   excluir?: string;
@@ -46,7 +57,12 @@ type SearchParams = Promise<{
 }>;
 
 const btnPerigo =
-  "inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-500";
+  "inline-flex items-center gap-1.5 rounded-md bg-erro px-3 py-1.5 text-sm font-medium text-white hover:bg-erro/85";
+
+const fmtPercentual = new Intl.NumberFormat("pt-BR", {
+  style: "percent",
+  maximumFractionDigits: 1,
+});
 
 export default async function PaginaRecebimentos({
   searchParams,
@@ -54,16 +70,30 @@ export default async function PaginaRecebimentos({
   searchParams: SearchParams;
 }) {
   const sp = await searchParams;
+  // ?de/?ate válidos ligam o modo PERÍODO (conferência); sem eles, modo mês.
+  const periodo = parsePeriodo(sp.de, sp.ate);
   const mes =
     sp.mes && RE_MES.test(sp.mes)
       ? sp.mes
       : ((await mesPadraoRecebimentos()) ?? "2026-01");
 
-  const [recebimentos, fechamento] = await Promise.all([
-    recebimentosDoMes(mes),
-    fechamentoDoMes(mes),
-  ]);
+  const [recebimentos, fechamento, mesesFechados] = periodo
+    ? await Promise.all([
+        recebimentosDoPeriodo(periodo.meses),
+        null,
+        mesesFechadosNoPeriodo(periodo.meses),
+      ])
+    : await Promise.all([
+        recebimentosDoMes(mes),
+        fechamentoDoMes(mes),
+        new Set<string>(),
+      ]);
   const fechado = fechamento !== null;
+  // No modo período o travamento é por LINHA: mês fechado trava só as linhas dele.
+  const linhaTravada = (r: RecebimentoComRelacoes) =>
+    periodo ? mesesFechados.has(r.mesLancamento) : fechado;
+  // Coluna "Mês" só quando a janela cobre mais de um mês.
+  const comMes = periodo !== null && periodo.meses.length > 1;
 
   // Filtro por empreendimento (?emp=id)
   const empreendimentos = Array.from(
@@ -90,20 +120,48 @@ export default async function PaginaRecebimentos({
   const totalComissao = comissaoTotal(exibidos);
   const pendentes = recebimentos.filter((r) => r.recebido === null).length;
 
-  const editando = !fechado && sp.editar
-    ? (recebimentos.find((r) => r.id === sp.editar) ?? null)
+  // Totais da janela para a conferência (respeitam o filtro de empreendimento).
+  const pendentesExibidos = linhas.filter(({ r }) => r.recebido === null);
+  const valorPendente = pendentesExibidos.reduce(
+    (s, { calc }) => s + (calc.totalDevido ?? 0),
+    0
+  );
+  const taxaJanela = totais.total > 0 ? totais.recebido / totais.total : null;
+  const nivelTaxaJanela = nivelTaxaRecebimento(taxaJanela);
+
+  const editando = sp.editar
+    ? (recebimentos.find((r) => r.id === sp.editar && !linhaTravada(r)) ?? null)
     : null;
-  const excluindo = !fechado && sp.excluir
-    ? (recebimentos.find((r) => r.id === sp.excluir) ?? null)
+  const excluindo = sp.excluir
+    ? (recebimentos.find((r) => r.id === sp.excluir && !linhaTravada(r)) ?? null)
     : null;
-  const mostrarAvulso = !fechado && sp.avulso === "1";
-  const confirmarReabrir = fechado && sp.reabrir === "1";
+  const mostrarAvulso = !periodo && !fechado && sp.avulso === "1";
+  const confirmarReabrir = !periodo && fechado && sp.reabrir === "1";
   const contratosSelecao = mostrarAvulso ? await contratosParaSelecao() : [];
 
   const urlBase = (extras?: Record<string, string>) => {
-    const p = new URLSearchParams({ mes });
+    const p = new URLSearchParams();
+    if (periodo) {
+      p.set("de", periodo.de);
+      p.set("ate", periodo.ate);
+    } else {
+      p.set("mes", mes);
+    }
     if (empFiltro) p.set("emp", empFiltro);
     for (const [k, v] of Object.entries(extras ?? {})) p.set(k, v);
+    return `/recebimentos?${p.toString()}`;
+  };
+
+  /** Link do filtro de empreendimento preservando o modo (mês ou período). */
+  const urlComFiltro = (empId?: string) => {
+    const p = new URLSearchParams();
+    if (periodo) {
+      p.set("de", periodo.de);
+      p.set("ate", periodo.ate);
+    } else {
+      p.set("mes", mes);
+    }
+    if (empId) p.set("emp", empId);
     return `/recebimentos?${p.toString()}`;
   };
 
@@ -111,73 +169,123 @@ export default async function PaginaRecebimentos({
     <div>
       <PageHeader
         titulo="Recebimentos"
-        descricao={`${recebimentos.length} lançamento(s) em ${formatarCompetencia(mes)} — ${pendentes} pendente(s)`}
-        acoes={<SeletorMes base="/recebimentos" mes={mes} />}
+        descricao={
+          periodo
+            ? `Conferência do período ${periodo.rotulo} — ${recebimentos.length} lançamento(s), ${pendentes} pendente(s)`
+            : `${recebimentos.length} lançamento(s) em ${formatarCompetencia(mes)} — ${pendentes} pendente(s)`
+        }
+        acoes={
+          <div className="flex flex-wrap items-center gap-2">
+            {periodo === null ? (
+              <SeletorMes base="/recebimentos" mes={mes} />
+            ) : null}
+            <SeletorPeriodo
+              base="/recebimentos"
+              periodo={periodo}
+              extras={empFiltro ? { emp: empFiltro } : undefined}
+            />
+          </div>
+        }
       />
 
       {sp.erro ? (
-        <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+        <div className="mb-4 rounded-md border border-erro/25 bg-erro/5 px-4 py-2.5 text-sm text-erro">
           {sp.erro}
         </div>
       ) : null}
       {sp.ok ? (
-        <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">
+        <div className="mb-4 rounded-md border border-oliva/30 bg-oliva/10 px-4 py-2.5 text-sm text-oliva-escura">
           {sp.ok}
         </div>
       ) : null}
 
-      {/* Barra de ações do mês */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        {fechado ? (
-          <>
-            <Badge cor="vermelho">Mês fechado</Badge>
-            <span className="text-sm text-slate-500">
-              Comissão fechada:{" "}
-              <Dinheiro centavos={fechamento.comissaoTotal} destaque /> em{" "}
-              {fechamento.fechadoEm.toLocaleDateString("pt-BR")}
-            </span>
-            <Link href={urlBase({ reabrir: "1" })} className={btnSecundario}>
-              Reabrir
-            </Link>
-          </>
-        ) : (
-          <>
-            <form action={gerarDevidosDoMes}>
-              <input type="hidden" name="mes" value={mes} />
-              <button type="submit" className={btnSecundario}>
-                Gerar devidos do mês
-              </button>
-            </form>
-            <Link href={urlBase({ avulso: "1" })} className={btnSecundario}>
-              Lançamento avulso
-            </Link>
-            <form action={fecharMes}>
-              <input type="hidden" name="mes" value={mes} />
-              <button type="submit" className={btnPrimario}>
-                Fechar mês
-              </button>
-            </form>
-          </>
-        )}
-      </div>
+      {/* Modo período: conferência — geração e fechamento ficam na visão mensal */}
+      {periodo ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <Badge cor="azul">Conferência</Badge>
+          <span className="text-sm text-tinta-suave">
+            Você está vendo todos os lançamentos da janela, mês a mês. Dá para
+            registrar pagamentos linha a linha; gerar devidos, lançar avulso e
+            fechar/reabrir mês só na visão mensal.
+          </span>
+          <Link href={`/recebimentos?mes=${mes}`} className={btnSecundario}>
+            Abrir visão mensal
+          </Link>
+        </div>
+      ) : null}
+
+      {periodo && mesesFechados.size > 0 ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-tinta-suave">
+          <Badge cor="vermelho">
+            {mesesFechados.size === 1
+              ? "1 mês fechado"
+              : `${mesesFechados.size} meses fechados`}
+          </Badge>
+          <span>
+            {[...mesesFechados]
+              .sort()
+              .map((m) => formatarCompetencia(m))
+              .join(", ")}{" "}
+            — as linhas desses meses estão travadas; para alterar, reabra o mês
+            na visão mensal.
+          </span>
+        </div>
+      ) : null}
+
+      {/* Barra de ações do mês — geração e fechamento só existem no modo mês */}
+      {periodo === null ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {fechado ? (
+            <>
+              <Badge cor="vermelho">Mês fechado</Badge>
+              <span className="text-sm text-tinta-suave">
+                Comissão fechada:{" "}
+                <Dinheiro centavos={fechamento.comissaoTotal} destaque /> em{" "}
+                {fechamento.fechadoEm.toLocaleDateString("pt-BR")}
+              </span>
+              <Link href={urlBase({ reabrir: "1" })} className={btnSecundario}>
+                Reabrir
+              </Link>
+            </>
+          ) : (
+            <>
+              <form action={gerarDevidosDoMes}>
+                <input type="hidden" name="mes" value={mes} />
+                <button type="submit" className={btnSecundario}>
+                  Gerar devidos do mês
+                </button>
+              </form>
+              <Link href={urlBase({ avulso: "1" })} className={btnSecundario}>
+                Lançamento avulso
+              </Link>
+              <form action={fecharMes}>
+                <input type="hidden" name="mes" value={mes} />
+                <button type="submit" className={btnPrimario}>
+                  Fechar mês
+                </button>
+              </form>
+            </>
+          )}
+        </div>
+      ) : null}
 
       {/* Filtro por empreendimento */}
       {empreendimentos.length > 1 ? (
         <div className="mb-4 flex flex-wrap items-center gap-1.5 text-sm">
-          <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-tinta-suave">
             Empreendimento:
           </span>
           <Link
-            href={`/recebimentos?mes=${mes}`}
-            className={`rounded-full px-2.5 py-0.5 ${!empFiltro ? "bg-slate-900 text-white" : "bg-slate-100 hover:bg-slate-200"}`}
+            href={urlComFiltro()}
+            className={`rounded-full px-2.5 py-0.5 ${!empFiltro ? "bg-tinta text-white" : "bg-[#efeee9] hover:bg-[#e5e1d8]"}`}
           >
             Todos
           </Link>
           {empreendimentos.map((e) => (
             <Link
               key={e.id}
-              href={`/recebimentos?mes=${mes}&emp=${e.id}`}
-              className={`rounded-full px-2.5 py-0.5 ${empFiltro === e.id ? "bg-slate-900 text-white" : "bg-slate-100 hover:bg-slate-200"}`}
+              href={urlComFiltro(e.id)}
+              className={`rounded-full px-2.5 py-0.5 ${empFiltro === e.id ? "bg-tinta text-white" : "bg-[#efeee9] hover:bg-[#e5e1d8]"}`}
             >
               {e.nome}
             </Link>
@@ -185,8 +293,60 @@ export default async function PaginaRecebimentos({
         </div>
       ) : null}
 
+      {/* Totais da janela — só no modo período (conferência) */}
+      {periodo ? (
+        <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Kpi
+            rotulo="Devido no período"
+            valor={<Dinheiro centavos={totais.total} />}
+            detalhe={`${linhas.length} ${linhas.length === 1 ? "lançamento" : "lançamentos"} em ${periodo.meses.length} ${periodo.meses.length === 1 ? "mês" : "meses"}${empFiltro ? " (filtro ativo)" : ""}`}
+            nivel="info"
+            selo="total da janela"
+            ajuda="Soma de valor + IPTU + condomínio de todos os lançamentos da janela — o que os locatários deviam pagar no total. Se parecer baixo, confira na visão mensal se algum mês ficou sem gerar os devidos."
+          />
+          <Kpi
+            rotulo="Recebido no período"
+            valor={<Dinheiro centavos={totais.recebido} />}
+            detalhe={
+              taxaJanela !== null
+                ? `${fmtPercentual.format(taxaJanela)} do devido`
+                : "sem cobranças na janela"
+            }
+            nivel={nivelTaxaJanela}
+            nota={
+              nivelTaxaJanela === "critico"
+                ? "Abaixo de 80% do devido: passe a lista de cobrança ainda hoje."
+                : nivelTaxaJanela === "atencao"
+                  ? "Entre 80% e 95%: veja quem segue pendente nas linhas em âmbar."
+                  : undefined
+            }
+            ajuda="O que de fato entrou na janela inteira. Pode passar de 100% quando alguém quita atrasos de meses anteriores junto — a Observação da linha conta a história."
+          />
+          <Kpi
+            rotulo="Pendente no período"
+            valor={<Dinheiro centavos={valorPendente} />}
+            detalhe={`${pendentesExibidos.length} ${pendentesExibidos.length === 1 ? "lançamento sem pagamento" : "lançamentos sem pagamento"}`}
+            nivel={nivelInadimplencia(valorPendente, totais.total)}
+            nota={
+              pendentesExibidos.length > 0
+                ? "Quando o dinheiro cair, registre na própria linha — o valor sai daqui na hora."
+                : undefined
+            }
+            ajuda="Cobranças da janela ainda sem recebimento registrado — são as linhas em âmbar da tabela. Use o link Registrar da linha para dar baixa."
+          />
+          <Kpi
+            rotulo="Comissão no período"
+            valor={<Dinheiro centavos={totalComissao} />}
+            detalhe="taxa de cada lançamento sobre a base recebida"
+            nivel="info"
+            selo="total da janela"
+            ajuda="Soma das comissões de todos os lançamentos da janela: base de cálculo (recebido − IPTU − condomínio) × taxa do lançamento, centavo a centavo. É a mesma conta da coluna Comissão."
+          />
+        </div>
+      ) : null}
+
       {confirmarReabrir && fechamento ? (
-        <Card className="mb-4 border-amber-300 bg-amber-50 p-4">
+        <Card className="mb-4 border-ambar/40 bg-ambar/10 p-4">
           <p className="text-sm">
             Reabrir <strong>{formatarCompetencia(mes)}</strong>? O fechamento de{" "}
             <Dinheiro centavos={fechamento.comissaoTotal} destaque /> será
@@ -207,7 +367,7 @@ export default async function PaginaRecebimentos({
       ) : null}
 
       {excluindo ? (
-        <Card className="mb-4 border-red-300 bg-red-50 p-4">
+        <Card className="mb-4 border-erro/30 bg-erro/5 p-4">
           <p className="text-sm">
             Excluir o lançamento de{" "}
             <strong>{excluindo.empreendimento.nome}</strong> —{" "}
@@ -220,6 +380,11 @@ export default async function PaginaRecebimentos({
           <div className="mt-3 flex gap-2">
             <form action={excluirRecebimento}>
               <input type="hidden" name="id" value={excluindo.id} />
+              <input
+                type="hidden"
+                name="retorno"
+                value={urlBase({ excluir: excluindo.id })}
+              />
               <button type="submit" className={btnPerigo}>
                 Confirmar exclusão
               </button>
@@ -231,7 +396,13 @@ export default async function PaginaRecebimentos({
         </Card>
       ) : null}
 
-      {editando ? <FormRegistrar lancamento={editando} urlVoltar={urlBase()} /> : null}
+      {editando ? (
+        <FormRegistrar
+          lancamento={editando}
+          urlVoltar={urlBase()}
+          retorno={urlBase({ editar: editando.id })}
+        />
+      ) : null}
 
       {mostrarAvulso ? (
         <FormAvulso mes={mes} contratos={contratosSelecao} urlVoltar={urlBase()} />
@@ -242,6 +413,12 @@ export default async function PaginaRecebimentos({
           <table className="tabela">
             <thead>
               <tr>
+                {comMes ? (
+                  <th>
+                    Mês{" "}
+                    <Ajuda dica="Mês operacional em que a cobrança foi lançada — a 'aba' a que a linha pertence. No modo período a tabela junta vários meses; esta coluna diz de qual mês cada linha veio." />
+                  </th>
+                ) : null}
                 <th>Empreendimento</th>
                 <th>Locatário</th>
                 <th>Localização</th>
@@ -289,19 +466,29 @@ export default async function PaginaRecebimentos({
             <tbody>
               {linhas.length === 0 ? (
                 <tr>
-                  <td colSpan={15} className="py-6 text-center text-slate-400">
-                    Nenhum lançamento em {formatarCompetencia(mes)}. Use
+                  <td
+                    colSpan={comMes ? 16 : 15}
+                    className="py-6 text-center text-tinta-suave/60"
+                  >
+                    {periodo
+                      ? `Nenhum lançamento no período ${periodo.rotulo}.`
+                      : `Nenhum lançamento em ${formatarCompetencia(mes)}. Use
                     “Gerar devidos do mês” para criar os devidos dos contratos
-                    ativos.
+                    ativos.`}
                   </td>
                 </tr>
               ) : (
                 linhas.map(({ r, calc }) => (
-                  <tr key={r.id} className={r.recebido === null ? "bg-amber-50/60" : ""}>
+                  <tr key={r.id} className={r.recebido === null ? "bg-ambar/5" : ""}>
+                    {comMes ? (
+                      <td className="font-mono text-[12px]">
+                        {formatarCompetencia(r.mesLancamento)}
+                      </td>
+                    ) : null}
                     <td>{r.empreendimento.nome}</td>
                     <td>
                       {r.contrato.locatario?.nome ?? (
-                        <span className="text-slate-400">Desocupado</span>
+                        <span className="text-tinta-suave/60">Desocupado</span>
                       )}{" "}
                       {r.origemAgregada ? <Badge cor="azul">Agregado</Badge> : null}
                     </td>
@@ -332,7 +519,7 @@ export default async function PaginaRecebimentos({
                       {r.observacao ?? "—"}
                     </td>
                     <td>
-                      {!fechado ? (
+                      {!linhaTravada(r) ? (
                         <span className="flex gap-2 text-xs">
                           <Link
                             href={urlBase({ editar: r.id })}
@@ -342,7 +529,7 @@ export default async function PaginaRecebimentos({
                           </Link>
                           <Link
                             href={urlBase({ excluir: r.id })}
-                            className="text-red-600 hover:underline"
+                            className="text-erro hover:underline"
                           >
                             Excluir
                           </Link>
@@ -356,8 +543,13 @@ export default async function PaginaRecebimentos({
             {linhas.length > 0 ? (
               <tfoot>
                 <tr>
-                  <td colSpan={3}>
-                    Totais {empFiltro ? "(empreendimento filtrado)" : "do mês"}
+                  <td colSpan={comMes ? 4 : 3}>
+                    Totais{" "}
+                    {empFiltro
+                      ? "(empreendimento filtrado)"
+                      : periodo
+                        ? "do período"
+                        : "do mês"}
                   </td>
                   <td className="text-right"><Dinheiro centavos={totais.valor} /></td>
                   <td className="text-right"><Dinheiro centavos={totais.iptu} /></td>
@@ -381,9 +573,12 @@ export default async function PaginaRecebimentos({
 function FormRegistrar({
   lancamento,
   urlVoltar,
+  retorno,
 }: {
   lancamento: RecebimentoComRelacoes;
   urlVoltar: string;
+  /** URL desta visão (com período/filtro) — a action volta para cá */
+  retorno: string;
 }) {
   const calc = calcularRecebimento(lancamento);
   const sugerido = lancamento.recebido ?? calc.totalDevido;
@@ -394,14 +589,15 @@ function FormRegistrar({
         {lancamento.empreendimento.nome} · {lancamento.contrato.unidade.identificacao} ·{" "}
         {lancamento.contrato.locatario?.nome ?? "Desocupado"}
       </h2>
-      <p className="mb-3 text-xs text-slate-500">
+      <p className="mb-3 text-xs text-tinta-suave">
         Total devido: {formatarBRL(calc.totalDevido)} (valor {formatarBRL(lancamento.valor)}
         {" + "}IPTU {formatarBRL(lancamento.iptu)} + cond. {formatarBRL(lancamento.cond)})
         — IPTU e condomínio são repasses e não entram na comissão.
       </p>
       <form action={registrarRecebimento} className="flex flex-wrap items-end gap-3">
         <input type="hidden" name="id" value={lancamento.id} />
-        <label className="block text-xs font-medium text-slate-600">
+        <input type="hidden" name="retorno" value={retorno} />
+        <label className="block text-xs font-medium text-tinta-suave">
           Recebido
           <input
             name="recebido"
@@ -411,7 +607,7 @@ function FormRegistrar({
             required
           />
         </label>
-        <label className="block text-xs font-medium text-slate-600">
+        <label className="block text-xs font-medium text-tinta-suave">
           Data do pagamento
           <input
             type="date"
@@ -420,7 +616,7 @@ function FormRegistrar({
             className={`${inputBase} mt-1 block`}
           />
         </label>
-        <label className="block text-xs font-medium text-slate-600">
+        <label className="block text-xs font-medium text-tinta-suave">
           Competência
           <input
             type="month"
@@ -429,7 +625,7 @@ function FormRegistrar({
             className={`${inputBase} mt-1 block`}
           />
         </label>
-        <label className="block text-xs font-medium text-slate-600">
+        <label className="block text-xs font-medium text-tinta-suave">
           Via
           <select name="via" defaultValue={lancamento.via ?? ""} className={`${inputBase} mt-1 block`}>
             <option value="">—</option>
@@ -438,7 +634,7 @@ function FormRegistrar({
             ))}
           </select>
         </label>
-        <label className="block grow text-xs font-medium text-slate-600">
+        <label className="block grow text-xs font-medium text-tinta-suave">
           Observação
           <input
             name="observacao"
@@ -452,7 +648,8 @@ function FormRegistrar({
       {lancamento.recebido !== null ? (
         <form action={limparRecebimento} className="mt-3">
           <input type="hidden" name="id" value={lancamento.id} />
-          <button type="submit" className="text-xs text-red-600 hover:underline">
+          <input type="hidden" name="retorno" value={retorno} />
+          <button type="submit" className="text-xs text-erro hover:underline">
             Limpar recebimento (voltar a pendente)
           </button>
         </form>
@@ -483,13 +680,13 @@ function FormAvulso({
       <h2 className="mb-1 text-sm font-semibold">
         Lançamento avulso em {formatarCompetencia(mes)}
       </h2>
-      <p className="mb-3 text-xs text-slate-500">
+      <p className="mb-3 text-xs text-tinta-suave">
         Para atrasos, a competência pode ser um mês anterior ao lançamento.
         Valor/IPTU/Cond. em branco herdam os valores do contrato.
       </p>
       <form action={criarLancamentoAvulso} className="flex flex-wrap items-end gap-3">
         <input type="hidden" name="mes" value={mes} />
-        <label className="block text-xs font-medium text-slate-600">
+        <label className="block text-xs font-medium text-tinta-suave">
           Contrato
           <select name="contratoId" className={`${inputBase} mt-1 block max-w-96`} required defaultValue="">
             <option value="" disabled>— selecione —</option>
@@ -505,31 +702,31 @@ function FormAvulso({
             ))}
           </select>
         </label>
-        <label className="block text-xs font-medium text-slate-600">
+        <label className="block text-xs font-medium text-tinta-suave">
           Competência
           <input type="month" name="competencia" defaultValue={mes} className={`${inputBase} mt-1 block`} />
         </label>
-        <label className="block text-xs font-medium text-slate-600">
+        <label className="block text-xs font-medium text-tinta-suave">
           Valor
           <input name="valor" placeholder="do contrato" className={`${inputBase} mt-1 block w-28`} />
         </label>
-        <label className="block text-xs font-medium text-slate-600">
+        <label className="block text-xs font-medium text-tinta-suave">
           IPTU
           <input name="iptu" placeholder="do contrato" className={`${inputBase} mt-1 block w-24`} />
         </label>
-        <label className="block text-xs font-medium text-slate-600">
+        <label className="block text-xs font-medium text-tinta-suave">
           Cond.
           <input name="cond" placeholder="do contrato" className={`${inputBase} mt-1 block w-24`} />
         </label>
-        <label className="block text-xs font-medium text-slate-600">
+        <label className="block text-xs font-medium text-tinta-suave">
           Recebido (opcional)
           <input name="recebido" placeholder="pendente" className={`${inputBase} mt-1 block w-28`} />
         </label>
-        <label className="block text-xs font-medium text-slate-600">
+        <label className="block text-xs font-medium text-tinta-suave">
           Data do pagamento
           <input type="date" name="dataPagamento" className={`${inputBase} mt-1 block`} />
         </label>
-        <label className="block text-xs font-medium text-slate-600">
+        <label className="block text-xs font-medium text-tinta-suave">
           Via
           <select name="via" defaultValue="" className={`${inputBase} mt-1 block`}>
             <option value="">—</option>
@@ -538,7 +735,7 @@ function FormAvulso({
             ))}
           </select>
         </label>
-        <label className="block grow text-xs font-medium text-slate-600">
+        <label className="block grow text-xs font-medium text-tinta-suave">
           Observação
           <input name="observacao" className={`${inputBase} mt-1 block w-full`} />
         </label>

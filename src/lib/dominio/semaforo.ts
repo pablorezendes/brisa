@@ -2,73 +2,75 @@
  * Semáforo — a linguagem de atenção do sistema.
  *
  * Todo número que a família precisa julgar ("isso está bom ou está ruim?")
- * passa por aqui e volta com um NÍVEL. O nível manda na cor, no ícone, no
- * texto do selo e no wash de fundo do card. Regra de ouro: a cor NUNCA é a
- * única pista — sempre acompanha ícone + palavra, para quem enxerga cores de
- * forma diferente (e para quem imprime em preto e branco).
+ * passa por aqui e volta com um NÍVEL. Disciplina editorial (stile/DESIGN.md):
+ * a cor aparece SÓ no ponto, no filete lateral do card e nas barras de
+ * gráfico — texto é sempre tinta. E a cor nunca é a única pista: sempre
+ * acompanha a palavra do nível, para quem enxerga cores de forma diferente
+ * (e para quem imprime em preto e branco).
  *
- *   verde  ÓTIMO    — nada a fazer
- *   âmbar  ATENÇÃO  — olhe hoje, ainda dá tempo
- *   verm.  CRÍTICO  — aja agora
- *   azul   INFO     — contexto, sem julgamento
- *   cinza  —        — sem dado suficiente
+ * As cinco cores são EXATAMENTE as da paleta do site — nenhum tom novo:
+ *   oliva   #5e6e52  ÓTIMO    — nada a fazer
+ *   âmbar   #b3801a  ATENÇÃO  — olhe hoje, ainda dá tempo
+ *   terrac. #ba1a1a  CRÍTICO  — aja agora
+ *   índigo  #4a68a8  INFO     — contexto, sem julgamento
+ *   cinza   #75786f  —        — sem dado suficiente
  */
 
 export type Nivel = "otimo" | "atencao" | "critico" | "info" | "neutro";
 
 export interface EstiloNivel {
-  /** traço/texto — contraste ≥ 4.5:1 sobre o papel */
+  /** cor da paleta — usada APENAS em ponto/filete/barra, nunca em texto */
   cor: string;
-  /** passo escuro do mesmo matiz (destaques, hover) */
+  /** passo escuro do mesmo matiz quando existe na paleta (senão = cor) */
   forte: string;
-  /** wash de fundo do card/linha */
+  /** tinta muito diluída da própria cor — raríssimo, só linha de alerta */
   fundo: string;
-  /** borda sutil no mesmo matiz */
+  /** borda sutil no mesmo matiz — raríssimo */
   borda: string;
-  /** palavra que aparece no selo */
+  /** palavra que aparece ao lado do ponto */
   rotulo: string;
-  /** glifo redundante à cor */
+  /** glifo redundante à cor (uso pontual) */
   icone: string;
 }
 
 export const NIVEL: Record<Nivel, EstiloNivel> = {
   otimo: {
-    cor: "#1f7a4b",
-    forte: "#125c37",
-    fundo: "rgba(31,122,75,0.07)",
-    borda: "rgba(31,122,75,0.30)",
+    cor: "#5e6e52", // --oliva
+    forte: "#46563b", // --oliva-escura
+    fundo: "rgba(94,110,82,0.06)",
+    borda: "rgba(94,110,82,0.25)",
     rotulo: "ótimo",
     icone: "✓",
   },
   atencao: {
-    cor: "#a8760f",
-    forte: "#7d570a",
-    fundo: "rgba(179,128,26,0.09)",
-    borda: "rgba(179,128,26,0.34)",
+    cor: "#b3801a", // --ambar
+    forte: "#b3801a",
+    fundo: "rgba(179,128,26,0.06)",
+    borda: "rgba(179,128,26,0.25)",
     rotulo: "atenção",
     icone: "!",
   },
   critico: {
-    cor: "#c0271d",
-    forte: "#8f1811",
-    fundo: "rgba(192,39,29,0.07)",
-    borda: "rgba(192,39,29,0.30)",
+    cor: "#ba1a1a", // --erro (terracota)
+    forte: "#ba1a1a",
+    fundo: "rgba(186,26,26,0.05)",
+    borda: "rgba(186,26,26,0.25)",
     rotulo: "crítico",
     icone: "▲",
   },
   info: {
-    cor: "#3a6ea8",
-    forte: "#2a5280",
-    fundo: "rgba(58,110,168,0.07)",
-    borda: "rgba(58,110,168,0.28)",
+    cor: "#4a68a8", // índigo da paleta de dados
+    forte: "#4a68a8",
+    fundo: "rgba(74,104,168,0.05)",
+    borda: "rgba(74,104,168,0.25)",
     rotulo: "informativo",
     icone: "i",
   },
   neutro: {
-    cor: "#6b6e65",
-    forte: "#4c4f47",
-    fundo: "rgba(107,110,101,0.06)",
-    borda: "rgba(107,110,101,0.26)",
+    cor: "#75786f", // --contorno-forte
+    forte: "#444840", // --tinta-suave
+    fundo: "rgba(117,120,111,0.05)",
+    borda: "rgba(117,120,111,0.25)",
     rotulo: "sem dado",
     icone: "·",
   },

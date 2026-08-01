@@ -15,7 +15,7 @@ export function BotaoExcluir({ id, resumo }: { id: string; resumo: string }) {
       <input type="hidden" name="id" value={id} />
       <button
         type="submit"
-        className="text-xs font-medium text-red-600 hover:underline"
+        className="text-xs font-medium text-erro hover:underline"
         title="Excluir lançamento"
       >
         Excluir

@@ -50,6 +50,42 @@ export async function recebimentosDoMes(
   });
 }
 
+/**
+ * Lançamentos de TODOS os meses de uma janela de competências (modo período
+ * da tela de Recebimentos). `meses` vem de parsePeriodo — "YYYY-MM" compara
+ * certo como string, então a janela é [meses[0], meses[fim]] com gte/lte.
+ * Ordena por mês primeiro para a conferência ler em ordem cronológica.
+ */
+export async function recebimentosDoPeriodo(
+  meses: string[]
+): Promise<RecebimentoComRelacoes[]> {
+  if (meses.length === 0) return [];
+  return prisma.recebimento.findMany({
+    where: { mesLancamento: { gte: meses[0], lte: meses[meses.length - 1] } },
+    include: incluirRelacoesRecebimento,
+    orderBy: [
+      { mesLancamento: "asc" },
+      { empreendimento: { nome: "asc" } },
+      { contrato: { unidade: { identificacao: "asc" } } },
+    ],
+  });
+}
+
+/**
+ * Meses fechados dentro da janela (Set p/ travar linha a linha no modo
+ * período: linha de mês fechado não mostra Registrar/Editar/Excluir).
+ */
+export async function mesesFechadosNoPeriodo(
+  meses: string[]
+): Promise<Set<string>> {
+  if (meses.length === 0) return new Set();
+  const fechados = await prisma.fechamentoMensal.findMany({
+    where: { mesLancamento: { gte: meses[0], lte: meses[meses.length - 1] } },
+    select: { mesLancamento: true },
+  });
+  return new Set(fechados.map((f) => f.mesLancamento));
+}
+
 /** Histórico de lançamentos de um contrato (todas as abas/meses). */
 export async function recebimentosDoContrato(
   contratoId: string

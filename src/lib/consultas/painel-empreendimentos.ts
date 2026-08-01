@@ -1,14 +1,20 @@
 /**
  * Consultas do PAINEL POR EMPREENDIMENTO (/paineis/empreendimentos).
- * Visões DERIVADAS dos recebimentos do ano — nada é mantido à mão.
+ * Visões DERIVADAS dos recebimentos — nada é mantido à mão.
  * Toda comissão vem da regra canônica de "@/lib/dominio/comissao"
  * (base = recebido − IPTU − condomínio; repasses nunca entram).
- * Valores sempre em CENTAVOS (Int); ano é a dimensão (mesLancamento "YYYY-MM").
+ * Valores sempre em CENTAVOS (Int).
+ *
+ * A dimensão é uma JANELA de competências ("YYYY-MM", em ordem):
+ *  - modo ano: as 12 competências do ano (painelEmpreendimentos/detalheEmpreendimento);
+ *  - modo período: a lista vinda de parsePeriodo (…DoPeriodo).
+ * Competências comparam certo como string, então a janela vira
+ * { gte: meses[0], lte: meses[último] } no Prisma.
  */
 
 import { prisma } from "@/lib/db";
 import { calcularRecebimento } from "@/lib/dominio/comissao";
-import { parseCompetencia } from "@/lib/dominio/normalizacao";
+import { competencia } from "@/lib/dominio/normalizacao";
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -26,13 +32,18 @@ export interface OcupacaoEmpreendimento {
 export interface CartaoEmpreendimento {
   id: string;
   nome: string;
-  comissaoAno: number;
-  recebidoAno: number;
-  /** recebido ÷ nº de lançamentos pagos no ano; null sem pagamento */
+  /** comissão somada na janela (ano ou período) */
+  comissaoJanela: number;
+  /** recebido somado na janela */
+  recebidoJanela: number;
+  /** recebido ÷ nº de lançamentos pagos na janela; null sem pagamento */
   ticketMedio: number | null;
   lancamentosPagos: number;
   ocupacao: OcupacaoEmpreendimento;
-  /** comissão JAN..último mês com dados do ano (índice 0 = JAN) */
+  /**
+   * comissão do sparkline — modo ano: JAN..último mês com dados (índice 0 =
+   * JAN); modo período: uma posição por competência da janela.
+   */
   serieComissao: number[];
 }
 
@@ -40,8 +51,16 @@ export interface PainelEmpreendimentos {
   ano: number;
   /** 1..12 — último mês do ano com devido ou recebido em algum empreendimento */
   ultimoMesComDados: number;
-  totalComissaoAno: number;
-  totalRecebidoAno: number;
+  totalComissao: number;
+  totalRecebido: number;
+  cartoes: CartaoEmpreendimento[];
+}
+
+export interface PainelEmpreendimentosPeriodo {
+  /** competências "YYYY-MM" da janela, em ordem (mesma das séries) */
+  meses: string[];
+  totalComissao: number;
+  totalRecebido: number;
   cartoes: CartaoEmpreendimento[];
 }
 
@@ -57,34 +76,34 @@ export interface UnidadeDoPainel {
   /** valorBase do contrato vigente (sem IPTU/cond — repasses); null sem contrato */
   aluguelContratado: number | null;
   mesReajuste: number | null;
-  comissaoAno: number;
+  /** comissão que os lançamentos pagos da unidade geraram na janela */
+  comissaoJanela: number;
 }
 
 export interface LocatarioDoPainel {
   nome: string;
-  recebidoAno: number;
-  /** Σ totalDevido dos lançamentos do ano ainda sem recebido */
-  pendenteAno: number;
+  recebidoJanela: number;
+  /** Σ totalDevido dos lançamentos da janela ainda sem recebido */
+  pendenteJanela: number;
   lancamentosPendentes: number;
-  /** maior dataPagamento registrada no ano ("YYYY-MM-DD"); null sem registro */
+  /** maior dataPagamento registrada na janela ("YYYY-MM-DD"); null sem registro */
   ultimoPagamento: string | null;
 }
 
-export interface DetalheEmpreendimento {
+/** Núcleo do detalhe, comum aos dois modos — séries alinhadas à janela. */
+export interface DetalheEmpreendimentoJanela {
   id: string;
   nome: string;
-  ano: number;
-  ultimoMesComDados: number;
-  comissaoAno: number;
-  devidoAno: number;
-  recebidoAno: number;
-  /** Σ recebido ÷ Σ devido no ano (0..1); null sem cobrança */
+  comissaoTotal: number;
+  devidoTotal: number;
+  recebidoTotal: number;
+  /** Σ recebido ÷ Σ devido na janela (0..1); null sem cobrança */
   taxaRecebimento: number | null;
-  /** Σ totalDevido dos lançamentos do ano sem recebido */
+  /** Σ totalDevido dos lançamentos da janela sem recebido */
   pendenteAberto: number;
   pendentesQtde: number;
   ocupacao: OcupacaoEmpreendimento;
-  /** índice 0 = JAN, sempre 12 posições */
+  /** modo ano: índice 0 = JAN, 12 posições; período: uma por competência */
   comissaoPorMes: number[];
   devidoPorMes: number[];
   recebidoPorMes: number[];
@@ -92,9 +111,24 @@ export interface DetalheEmpreendimento {
   locatarios: LocatarioDoPainel[];
 }
 
+export interface DetalheEmpreendimento extends DetalheEmpreendimentoJanela {
+  ano: number;
+  ultimoMesComDados: number;
+}
+
+export interface DetalheEmpreendimentoPeriodo
+  extends DetalheEmpreendimentoJanela {
+  meses: string[];
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** As 12 competências de um ano — a "janela" do modo ano. */
+function mesesDoAno(ano: number): string[] {
+  return Array.from({ length: 12 }, (_, i) => competencia(ano, i + 1));
+}
 
 interface ContratoParaOcupacao {
   status: string;
@@ -118,25 +152,34 @@ function contratoVigente<T extends ContratoParaOcupacao>(
   )[0];
 }
 
-/** último índice (1..12) com devido ou recebido > 0; mínimo 1. */
+/** última posição (1..n) com devido ou recebido > 0; mínimo 1. */
 function ultimoMesComMovimento(devido: number[], recebido: number[]): number {
   let ultimo = 1;
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < devido.length; i++) {
     if ((devido[i] ?? 0) > 0 || (recebido[i] ?? 0) > 0) ultimo = i + 1;
   }
   return ultimo;
 }
 
 // ---------------------------------------------------------------------------
-// Índice: um cartão por empreendimento com movimento no ano
+// Índice: um cartão por empreendimento com movimento na janela
 // ---------------------------------------------------------------------------
 
-export async function painelEmpreendimentos(
-  ano: number
-): Promise<PainelEmpreendimentos> {
+interface AgregadoJanela {
+  comissaoPorMes: number[];
+  devidoPorMes: number[];
+  recebidoPorMes: number[];
+  recebidoTotal: number;
+  lancamentosPagos: number;
+}
+
+/** Agrega os recebimentos da janela por empreendimento + ocupação + nomes. */
+async function agregadosPorEmpreendimento(meses: string[]) {
   const [recebs, unidades, empreendimentos] = await Promise.all([
     prisma.recebimento.findMany({
-      where: { mesLancamento: { startsWith: `${ano}-` } },
+      where: {
+        mesLancamento: { gte: meses[0], lte: meses[meses.length - 1] },
+      },
       select: {
         empreendimentoId: true,
         mesLancamento: true,
@@ -160,35 +203,28 @@ export async function painelEmpreendimentos(
     prisma.empreendimento.findMany({ select: { id: true, nome: true } }),
   ]);
 
-  const nomePorId = new Map(empreendimentos.map((e) => [e.id, e.nome]));
-
-  interface Agregado {
-    comissaoPorMes: number[];
-    devidoPorMes: number[];
-    recebidoPorMes: number[];
-    recebidoAno: number;
-    lancamentosPagos: number;
-  }
-  const porEmp = new Map<string, Agregado>();
+  const idx = new Map(meses.map((m, i) => [m, i]));
+  const porEmp = new Map<string, AgregadoJanela>();
   for (const r of recebs) {
-    const { mes } = parseCompetencia(r.mesLancamento);
+    const i = idx.get(r.mesLancamento);
+    if (i === undefined) continue; // gte/lte já filtra; guarda extra
     let agg = porEmp.get(r.empreendimentoId);
     if (!agg) {
       agg = {
-        comissaoPorMes: Array(12).fill(0),
-        devidoPorMes: Array(12).fill(0),
-        recebidoPorMes: Array(12).fill(0),
-        recebidoAno: 0,
+        comissaoPorMes: Array(meses.length).fill(0),
+        devidoPorMes: Array(meses.length).fill(0),
+        recebidoPorMes: Array(meses.length).fill(0),
+        recebidoTotal: 0,
         lancamentosPagos: 0,
       };
       porEmp.set(r.empreendimentoId, agg);
     }
     const calc = calcularRecebimento(r);
-    agg.comissaoPorMes[mes - 1] += calc.comissao ?? 0;
-    agg.devidoPorMes[mes - 1] += calc.totalDevido ?? 0;
-    agg.recebidoPorMes[mes - 1] += r.recebido ?? 0;
+    agg.comissaoPorMes[i] += calc.comissao ?? 0;
+    agg.devidoPorMes[i] += calc.totalDevido ?? 0;
+    agg.recebidoPorMes[i] += r.recebido ?? 0;
     if (r.recebido !== null) {
-      agg.recebidoAno += r.recebido;
+      agg.recebidoTotal += r.recebido;
       agg.lancamentosPagos += 1;
     }
   }
@@ -207,9 +243,50 @@ export async function painelEmpreendimentos(
     else o.desocupadas += 1;
   }
 
+  const nomePorId = new Map(empreendimentos.map((e) => [e.id, e.nome]));
+  return { porEmp, ocupPorEmp, nomePorId };
+}
+
+/** Monta e ordena os cartões; corteSerie = quantas posições vão ao sparkline. */
+function montarCartoes(
+  porEmp: Map<string, AgregadoJanela>,
+  ocupPorEmp: Map<string, OcupacaoEmpreendimento>,
+  nomePorId: Map<string, string>,
+  corteSerie: number
+): CartaoEmpreendimento[] {
+  return [...porEmp.entries()]
+    .map(([id, agg]) => ({
+      id,
+      nome: nomePorId.get(id) ?? "?",
+      comissaoJanela: agg.comissaoPorMes.reduce((a, v) => a + v, 0),
+      recebidoJanela: agg.recebidoTotal,
+      ticketMedio:
+        agg.lancamentosPagos > 0
+          ? Math.round(agg.recebidoTotal / agg.lancamentosPagos)
+          : null,
+      lancamentosPagos: agg.lancamentosPagos,
+      ocupacao:
+        ocupPorEmp.get(id) ?? { ativas: 0, ocupadas: 0, desocupadas: 0 },
+      serieComissao: agg.comissaoPorMes.slice(0, corteSerie),
+    }))
+    .sort(
+      (a, b) =>
+        b.comissaoJanela - a.comissaoJanela ||
+        a.nome.localeCompare(b.nome, "pt-BR")
+    );
+}
+
+/** Modo ano: janela = 12 competências; sparkline cortado no último mês com dados. */
+export async function painelEmpreendimentos(
+  ano: number
+): Promise<PainelEmpreendimentos> {
+  const meses = mesesDoAno(ano);
+  const { porEmp, ocupPorEmp, nomePorId } =
+    await agregadosPorEmpreendimento(meses);
+
   // último mês com movimento GLOBAL (mantém sparklines comparáveis entre cartões)
-  const devidoGlobal = Array(12).fill(0);
-  const recebidoGlobal = Array(12).fill(0);
+  const devidoGlobal = Array(12).fill(0) as number[];
+  const recebidoGlobal = Array(12).fill(0) as number[];
   for (const agg of porEmp.values()) {
     for (let i = 0; i < 12; i++) {
       devidoGlobal[i] += agg.devidoPorMes[i];
@@ -218,44 +295,46 @@ export async function painelEmpreendimentos(
   }
   const ultimoMesComDados = ultimoMesComMovimento(devidoGlobal, recebidoGlobal);
 
-  const cartoes: CartaoEmpreendimento[] = [...porEmp.entries()]
-    .map(([id, agg]) => ({
-      id,
-      nome: nomePorId.get(id) ?? "?",
-      comissaoAno: agg.comissaoPorMes.reduce((a, v) => a + v, 0),
-      recebidoAno: agg.recebidoAno,
-      ticketMedio:
-        agg.lancamentosPagos > 0
-          ? Math.round(agg.recebidoAno / agg.lancamentosPagos)
-          : null,
-      lancamentosPagos: agg.lancamentosPagos,
-      ocupacao:
-        ocupPorEmp.get(id) ?? { ativas: 0, ocupadas: 0, desocupadas: 0 },
-      serieComissao: agg.comissaoPorMes.slice(0, ultimoMesComDados),
-    }))
-    .sort(
-      (a, b) =>
-        b.comissaoAno - a.comissaoAno ||
-        a.nome.localeCompare(b.nome, "pt-BR")
-    );
+  const cartoes = montarCartoes(
+    porEmp,
+    ocupPorEmp,
+    nomePorId,
+    ultimoMesComDados
+  );
 
   return {
     ano,
     ultimoMesComDados,
-    totalComissaoAno: cartoes.reduce((a, c) => a + c.comissaoAno, 0),
-    totalRecebidoAno: cartoes.reduce((a, c) => a + c.recebidoAno, 0),
+    totalComissao: cartoes.reduce((a, c) => a + c.comissaoJanela, 0),
+    totalRecebido: cartoes.reduce((a, c) => a + c.recebidoJanela, 0),
+    cartoes,
+  };
+}
+
+/** Modo período: janela = competências de parsePeriodo; série inteira no sparkline. */
+export async function painelEmpreendimentosDoPeriodo(
+  meses: string[]
+): Promise<PainelEmpreendimentosPeriodo> {
+  const { porEmp, ocupPorEmp, nomePorId } =
+    await agregadosPorEmpreendimento(meses);
+  const cartoes = montarCartoes(porEmp, ocupPorEmp, nomePorId, meses.length);
+
+  return {
+    meses,
+    totalComissao: cartoes.reduce((a, c) => a + c.comissaoJanela, 0),
+    totalRecebido: cartoes.reduce((a, c) => a + c.recebidoJanela, 0),
     cartoes,
   };
 }
 
 // ---------------------------------------------------------------------------
-// Detalhe de um empreendimento no ano
+// Detalhe de um empreendimento na janela
 // ---------------------------------------------------------------------------
 
-export async function detalheEmpreendimento(
+async function detalheDaJanela(
   id: string,
-  ano: number
-): Promise<DetalheEmpreendimento | null> {
+  meses: string[]
+): Promise<DetalheEmpreendimentoJanela | null> {
   const empreendimento = await prisma.empreendimento.findUnique({
     where: { id },
     select: { id: true, nome: true },
@@ -264,7 +343,10 @@ export async function detalheEmpreendimento(
 
   const [recebs, unidades] = await Promise.all([
     prisma.recebimento.findMany({
-      where: { empreendimentoId: id, mesLancamento: { startsWith: `${ano}-` } },
+      where: {
+        empreendimentoId: id,
+        mesLancamento: { gte: meses[0], lte: meses[meses.length - 1] },
+      },
       include: {
         contrato: { include: { unidade: true, locatario: true } },
       },
@@ -280,28 +362,23 @@ export async function detalheEmpreendimento(
     }),
   ]);
 
-  const comissaoPorMes = Array(12).fill(0) as number[];
-  const devidoPorMes = Array(12).fill(0) as number[];
-  const recebidoPorMes = Array(12).fill(0) as number[];
+  const idx = new Map(meses.map((m, i) => [m, i]));
+  const comissaoPorMes = Array(meses.length).fill(0) as number[];
+  const devidoPorMes = Array(meses.length).fill(0) as number[];
+  const recebidoPorMes = Array(meses.length).fill(0) as number[];
   let pendenteAberto = 0;
   let pendentesQtde = 0;
   const comissaoPorUnidade = new Map<string, number>();
 
-  interface AggLocatario {
-    nome: string;
-    recebidoAno: number;
-    pendenteAno: number;
-    lancamentosPendentes: number;
-    ultimoPagamento: string | null;
-  }
-  const porLocatario = new Map<string, AggLocatario>();
+  const porLocatario = new Map<string, LocatarioDoPainel>();
 
   for (const r of recebs) {
-    const { mes } = parseCompetencia(r.mesLancamento);
+    const i = idx.get(r.mesLancamento);
+    if (i === undefined) continue; // gte/lte já filtra; guarda extra
     const calc = calcularRecebimento(r);
-    comissaoPorMes[mes - 1] += calc.comissao ?? 0;
-    devidoPorMes[mes - 1] += calc.totalDevido ?? 0;
-    recebidoPorMes[mes - 1] += r.recebido ?? 0;
+    comissaoPorMes[i] += calc.comissao ?? 0;
+    devidoPorMes[i] += calc.totalDevido ?? 0;
+    recebidoPorMes[i] += r.recebido ?? 0;
 
     const pendente = calc.totalDevido !== null && r.recebido === null;
     if (pendente) {
@@ -320,16 +397,16 @@ export async function detalheEmpreendimento(
     if (!loc) {
       loc = {
         nome: r.contrato.locatario?.nome ?? "(sem locatário no contrato)",
-        recebidoAno: 0,
-        pendenteAno: 0,
+        recebidoJanela: 0,
+        pendenteJanela: 0,
         lancamentosPendentes: 0,
         ultimoPagamento: null,
       };
       porLocatario.set(chave, loc);
     }
-    loc.recebidoAno += r.recebido ?? 0;
+    loc.recebidoJanela += r.recebido ?? 0;
     if (pendente) {
-      loc.pendenteAno += calc.totalDevido ?? 0;
+      loc.pendenteJanela += calc.totalDevido ?? 0;
       loc.lancamentosPendentes += 1;
     }
     if (
@@ -355,8 +432,8 @@ export async function detalheEmpreendimento(
       if (ocupada) ocupacao.ocupadas += 1;
       else ocupacao.desocupadas += 1;
     }
-    const comissaoAno = comissaoPorUnidade.get(u.id) ?? 0;
-    if (!u.ativo && comissaoAno === 0) continue; // inativa sem movimento no ano
+    const comissaoJanela = comissaoPorUnidade.get(u.id) ?? 0;
+    if (!u.ativo && comissaoJanela === 0) continue; // inativa sem movimento na janela
     linhasUnidade.push({
       unidadeId: u.id,
       identificacao: u.identificacao,
@@ -366,7 +443,7 @@ export async function detalheEmpreendimento(
       statusContrato: vigente?.status ?? null,
       aluguelContratado: vigente ? vigente.valorBase : null,
       mesReajuste: vigente?.mesReajuste ?? null,
-      comissaoAno,
+      comissaoJanela,
     });
   }
   linhasUnidade.sort((a, b) =>
@@ -375,23 +452,21 @@ export async function detalheEmpreendimento(
 
   const locatarios = [...porLocatario.values()].sort(
     (a, b) =>
-      b.pendenteAno - a.pendenteAno ||
-      b.recebidoAno - a.recebidoAno ||
+      b.pendenteJanela - a.pendenteJanela ||
+      b.recebidoJanela - a.recebidoJanela ||
       a.nome.localeCompare(b.nome, "pt-BR")
   );
 
-  const devidoAno = devidoPorMes.reduce((a, v) => a + v, 0);
-  const recebidoAno = recebidoPorMes.reduce((a, v) => a + v, 0);
+  const devidoTotal = devidoPorMes.reduce((a, v) => a + v, 0);
+  const recebidoTotal = recebidoPorMes.reduce((a, v) => a + v, 0);
 
   return {
     id: empreendimento.id,
     nome: empreendimento.nome,
-    ano,
-    ultimoMesComDados: ultimoMesComMovimento(devidoPorMes, recebidoPorMes),
-    comissaoAno: comissaoPorMes.reduce((a, v) => a + v, 0),
-    devidoAno,
-    recebidoAno,
-    taxaRecebimento: devidoAno > 0 ? recebidoAno / devidoAno : null,
+    comissaoTotal: comissaoPorMes.reduce((a, v) => a + v, 0),
+    devidoTotal,
+    recebidoTotal,
+    taxaRecebimento: devidoTotal > 0 ? recebidoTotal / devidoTotal : null,
     pendenteAberto,
     pendentesQtde,
     ocupacao,
@@ -401,4 +476,31 @@ export async function detalheEmpreendimento(
     unidades: linhasUnidade,
     locatarios,
   };
+}
+
+/** Modo ano: séries JAN..DEZ (12 posições) + último mês com movimento. */
+export async function detalheEmpreendimento(
+  id: string,
+  ano: number
+): Promise<DetalheEmpreendimento | null> {
+  const base = await detalheDaJanela(id, mesesDoAno(ano));
+  if (!base) return null;
+  return {
+    ...base,
+    ano,
+    ultimoMesComDados: ultimoMesComMovimento(
+      base.devidoPorMes,
+      base.recebidoPorMes
+    ),
+  };
+}
+
+/** Modo período: séries alinhadas às competências de parsePeriodo. */
+export async function detalheEmpreendimentoDoPeriodo(
+  id: string,
+  meses: string[]
+): Promise<DetalheEmpreendimentoPeriodo | null> {
+  const base = await detalheDaJanela(id, meses);
+  if (!base) return null;
+  return { ...base, meses };
 }

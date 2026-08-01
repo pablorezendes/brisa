@@ -1,9 +1,17 @@
-import { Card, Dinheiro, PageHeader, btnSecundario } from "@/components/ui";
+import {
+  Card,
+  Dinheiro,
+  PageHeader,
+  SeletorPeriodo,
+  btnSecundario,
+} from "@/components/ui";
 import {
   mesMaisRecenteComLancamentos,
   resultadoConsolidado,
+  resultadoConsolidadoPeriodo,
 } from "@/lib/consultas/relatorios";
 import { parseCompetencia } from "@/lib/dominio/normalizacao";
+import { parsePeriodo } from "@/lib/dominio/periodo";
 import { SeletorAno, anoDaQuery } from "../seletor-ano";
 
 export const metadata = { title: "Resultado consolidado — Brisa" };
@@ -11,28 +19,42 @@ export const metadata = { title: "Resultado consolidado — Brisa" };
 export default async function ResultadoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ ano?: string }>;
+  searchParams: Promise<{ ano?: string; de?: string; ate?: string }>;
 }) {
   const sp = await searchParams;
+  const periodo = parsePeriodo(sp.de, sp.ate);
   const mesRecente = await mesMaisRecenteComLancamentos();
   const ano = anoDaQuery(sp.ano, parseCompetencia(mesRecente).ano);
-  const resultado = await resultadoConsolidado(ano);
+
+  // mesmas linhas e totais nos dois modos — muda só a janela apurada
+  const resultado = periodo
+    ? await resultadoConsolidadoPeriodo(periodo.meses)
+    : await resultadoConsolidado(ano);
+  const janelaCurta = periodo ? "no período" : `em ${ano}`;
+
+  const exportarHref = periodo
+    ? `/relatorios/exportar?tipo=resultado&de=${periodo.de}&ate=${periodo.ate}`
+    : `/relatorios/exportar?tipo=resultado&ano=${ano}`;
 
   return (
     <div>
       <PageHeader
         titulo="Resultado consolidado"
-        descricao={`Totais acumulados de ${ano} por unidade: recebidos, repasses, base de cálculo e comissão.`}
+        descricao={
+          periodo
+            ? `Totais acumulados no período ${periodo.rotulo} por unidade: recebidos, repasses, base de cálculo e comissão.`
+            : `Totais acumulados de ${ano} por unidade: recebidos, repasses, base de cálculo e comissão.`
+        }
         acoes={
-          <>
-            <SeletorAno base="/relatorios/resultado" ano={ano} />
-            <a
-              href={`/relatorios/exportar?tipo=resultado&ano=${ano}`}
-              className={btnSecundario}
-            >
+          <div className="flex flex-wrap items-center gap-2">
+            {!periodo ? (
+              <SeletorAno base="/relatorios/resultado" ano={ano} />
+            ) : null}
+            <SeletorPeriodo base="/relatorios/resultado" periodo={periodo} />
+            <a href={exportarHref} className={btnSecundario}>
               Exportar Excel
             </a>
-          </>
+          </div>
         }
       />
 
@@ -57,7 +79,7 @@ export default async function ResultadoPage({
                   <td className="font-medium">{l.empreendimento}</td>
                   <td>{l.identificacao}</td>
                   <td>
-                    {l.locatario ?? <span className="text-slate-400">—</span>}
+                    {l.locatario ?? <span className="text-tinta-suave/60">—</span>}
                   </td>
                   <td className="text-right">
                     <Dinheiro centavos={l.recebidos} />
@@ -78,8 +100,8 @@ export default async function ResultadoPage({
               ))}
               {resultado.linhas.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-6 text-center text-slate-500">
-                    Nenhum recebimento lançado em {ano}.
+                  <td colSpan={8} className="py-6 text-center text-tinta-suave">
+                    Nenhum recebimento lançado {janelaCurta}.
                   </td>
                 </tr>
               ) : null}

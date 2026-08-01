@@ -33,8 +33,38 @@ function revalidarLocacao() {
   revalidatePath("/contratos", "layout");
 }
 
-/** Redireciona de volta para a tela do mês com aviso (erro ou ok). Nunca retorna. */
-function voltar(mes: string, aviso: { erro?: string; ok?: string }): never {
+/**
+ * URL de retorno enviada pelo formulário — preserva o contexto de navegação
+ * (período ?de/?ate, filtro ?emp) na conferência por período. Só aceita a
+ * própria tela, para não virar redirect aberto.
+ */
+function retornoSeguro(fd: FormData): string | null {
+  const r = campo(fd, "retorno");
+  if (!r.startsWith("/recebimentos") || r.includes("//")) return null;
+  return r;
+}
+
+/**
+ * Redireciona de volta com aviso (erro ou ok). Com `retorno`, volta para a
+ * MESMA visão de onde o usuário veio (período + filtro); no sucesso, fecha o
+ * formulário (remove editar/excluir); no erro, mantém o formulário aberto
+ * para corrigir. Nunca retorna.
+ */
+function voltar(
+  mes: string,
+  aviso: { erro?: string; ok?: string },
+  retorno?: string | null
+): never {
+  if (retorno) {
+    const url = new URL(retorno, "http://interno");
+    if (aviso.erro) url.searchParams.set("erro", aviso.erro);
+    if (aviso.ok) {
+      url.searchParams.set("ok", aviso.ok);
+      url.searchParams.delete("editar");
+      url.searchParams.delete("excluir");
+    }
+    redirect(`${url.pathname}?${url.searchParams.toString()}`);
+  }
   const p = new URLSearchParams();
   if (RE_MES.test(mes)) p.set("mes", mes);
   if (aviso.erro) p.set("erro", aviso.erro);
@@ -43,14 +73,21 @@ function voltar(mes: string, aviso: { erro?: string; ok?: string }): never {
 }
 
 /** Recusa mutação em mês fechado (verificação NO SERVIDOR). */
-async function exigirMesAberto(mes: string): Promise<void> {
+async function exigirMesAberto(
+  mes: string,
+  retorno?: string | null
+): Promise<void> {
   const fechamento = await prisma.fechamentoMensal.findUnique({
     where: { mesLancamento: mes },
   });
   if (fechamento) {
-    voltar(mes, {
-      erro: "Mês fechado — reabra o fechamento antes de alterar lançamentos.",
-    });
+    voltar(
+      mes,
+      {
+        erro: "Mês fechado — reabra o fechamento antes de alterar lançamentos.",
+      },
+      retorno
+    );
   }
 }
 
@@ -113,24 +150,25 @@ export async function gerarDevidosDoMes(formData: FormData): Promise<void> {
 // ---------- 2. Registrar / editar recebimento ----------
 
 export async function registrarRecebimento(formData: FormData): Promise<void> {
+  const retorno = retornoSeguro(formData);
   const id = campo(formData, "id");
   const lancamento = await prisma.recebimento.findUnique({ where: { id } });
-  if (!lancamento) voltar("", { erro: "Lançamento não encontrado." });
+  if (!lancamento) voltar("", { erro: "Lançamento não encontrado." }, retorno);
   const mes = lancamento.mesLancamento;
-  await exigirMesAberto(mes);
+  await exigirMesAberto(mes, retorno);
 
   const recebido = parseBRL(campo(formData, "recebido"));
   if (recebido === null) {
-    voltar(mes, { erro: "Informe o valor recebido (ex.: 1.234,56)." });
+    voltar(mes, { erro: "Informe o valor recebido (ex.: 1.234,56)." }, retorno);
   }
 
   const dataPagamento = campo(formData, "dataPagamento");
   if (dataPagamento && !RE_DATA.test(dataPagamento)) {
-    voltar(mes, { erro: "Data de pagamento inválida." });
+    voltar(mes, { erro: "Data de pagamento inválida." }, retorno);
   }
   const competencia = campo(formData, "competencia") || lancamento.competencia;
   if (!RE_MES.test(competencia)) {
-    voltar(mes, { erro: "Competência inválida (use AAAA-MM)." });
+    voltar(mes, { erro: "Competência inválida (use AAAA-MM)." }, retorno);
   }
 
   await prisma.recebimento.update({
@@ -144,37 +182,41 @@ export async function registrarRecebimento(formData: FormData): Promise<void> {
     },
   });
   revalidarLocacao();
-  voltar(mes, { ok: "Recebimento registrado." });
+  voltar(mes, { ok: "Recebimento registrado." }, retorno);
 }
 
 /** Limpa o recebimento (volta a pendente); mantém os insumos do devido. */
 export async function limparRecebimento(formData: FormData): Promise<void> {
+  const retorno = retornoSeguro(formData);
   const id = campo(formData, "id");
   const lancamento = await prisma.recebimento.findUnique({ where: { id } });
-  if (!lancamento) voltar("", { erro: "Lançamento não encontrado." });
-  await exigirMesAberto(lancamento.mesLancamento);
+  if (!lancamento) voltar("", { erro: "Lançamento não encontrado." }, retorno);
+  await exigirMesAberto(lancamento.mesLancamento, retorno);
 
   await prisma.recebimento.update({
     where: { id },
     data: { recebido: null, dataPagamento: null, via: null },
   });
   revalidarLocacao();
-  voltar(lancamento.mesLancamento, {
-    ok: "Recebimento limpo — lançamento voltou a pendente.",
-  });
+  voltar(
+    lancamento.mesLancamento,
+    { ok: "Recebimento limpo — lançamento voltou a pendente." },
+    retorno
+  );
 }
 
 // ---------- 3. Excluir lançamento ----------
 
 export async function excluirRecebimento(formData: FormData): Promise<void> {
+  const retorno = retornoSeguro(formData);
   const id = campo(formData, "id");
   const lancamento = await prisma.recebimento.findUnique({ where: { id } });
-  if (!lancamento) voltar("", { erro: "Lançamento não encontrado." });
-  await exigirMesAberto(lancamento.mesLancamento);
+  if (!lancamento) voltar("", { erro: "Lançamento não encontrado." }, retorno);
+  await exigirMesAberto(lancamento.mesLancamento, retorno);
 
   await prisma.recebimento.delete({ where: { id } });
   revalidarLocacao();
-  voltar(lancamento.mesLancamento, { ok: "Lançamento excluído." });
+  voltar(lancamento.mesLancamento, { ok: "Lançamento excluído." }, retorno);
 }
 
 // ---------- Lançamento avulso ----------

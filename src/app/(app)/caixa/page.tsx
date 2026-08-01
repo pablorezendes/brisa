@@ -1,9 +1,14 @@
 /**
- * /caixa — livro-caixa CONTA_AC, visão mensal (?mes=YYYY-MM).
+ * /caixa — livro-caixa CONTA_AC, visão mensal (?mes=YYYY-MM) ou por período
+ * (?de=YYYY-MM-DD&ate=YYYY-MM-DD — quando presente, vence o ?mes).
  *
  * 4 blocos (grid 2×2 em telas grandes): saídas AL, saídas CH, entradas e
  * recebimentos em dinheiro (registro paralelo — fora do saldo).
  * Consolidação derivada nos KPIs: saldo = receita − despesa AL − despesa CH.
+ *
+ * No modo período a tela fica ANALÍTICA: KPIs agregados na janela e os 4
+ * blocos listam a janela inteira com uma coluna "Mês" a mais. Lançar/editar
+ * continua mensal — o botão "Novo lançamento" leva à competência corrente.
  */
 import Link from "next/link";
 import type { LancamentoCaixa } from "@prisma/client";
@@ -14,10 +19,15 @@ import {
   Kpi,
   PageHeader,
   SeletorMes,
+  SeletorPeriodo,
   btnPrimario,
   btnSecundario,
 } from "@/components/ui";
-import { parseCompetencia } from "@/lib/dominio/normalizacao";
+import {
+  formatarCompetencia,
+  parseCompetencia,
+} from "@/lib/dominio/normalizacao";
+import { parsePeriodo } from "@/lib/dominio/periodo";
 import { nivelSaldo } from "@/lib/dominio/semaforo";
 import {
   BarraComposicao,
@@ -27,7 +37,9 @@ import {
 } from "@/components/graficos";
 import {
   consolidacaoDoMes,
+  consolidacaoDoPeriodo,
   lancamentosDoMes,
+  lancamentosDoPeriodo,
   mesMaisRecente,
   type BlocoLista,
   type BlocoSaidas,
@@ -53,7 +65,7 @@ function CelulaAcoes({ l }: { l: LancamentoCaixa }) {
       <span className="inline-flex items-center gap-2">
         <Link
           href={`/caixa/${l.id}/editar`}
-          className="text-xs font-medium text-slate-500 hover:underline"
+          className="text-xs font-medium text-tinta-suave hover:underline"
         >
           Editar
         </Link>
@@ -63,15 +75,33 @@ function CelulaAcoes({ l }: { l: LancamentoCaixa }) {
   );
 }
 
-function TabelaSaidas({ bloco }: { bloco: BlocoSaidas }) {
+/** Coluna extra do modo período: a competência ("YYYY-MM") do lançamento. */
+function CelulaMes({ l }: { l: LancamentoCaixa }) {
+  return (
+    <td className="font-mono text-[12px] text-tinta-suave">
+      {formatarCompetencia(l.mesReferencia)}
+    </td>
+  );
+}
+
+function TabelaSaidas({
+  bloco,
+  comMes,
+  vazio,
+}: {
+  bloco: BlocoSaidas;
+  comMes: boolean;
+  vazio: string;
+}) {
   if (bloco.grupos.length === 0) {
-    return <p className="px-5 pb-5 text-sm text-slate-500">Sem saídas neste mês.</p>;
+    return <p className="px-5 pb-5 text-sm text-tinta-suave">{vazio}</p>;
   }
   return (
     <div className="overflow-x-auto">
       <table className="tabela">
         <thead>
           <tr>
+            {comMes ? <th>Mês</th> : null}
             <th>Data</th>
             <th>Descrição</th>
             <th className="text-right!">Valor</th>
@@ -80,12 +110,12 @@ function TabelaSaidas({ bloco }: { bloco: BlocoSaidas }) {
         </thead>
         <tbody>
           {bloco.grupos.map((g) => (
-            <FragmentoCategoria key={g.categoria} grupo={g} />
+            <FragmentoCategoria key={g.categoria} grupo={g} comMes={comMes} />
           ))}
         </tbody>
         <tfoot>
           <tr>
-            <td colSpan={2}>Total do centro</td>
+            <td colSpan={comMes ? 3 : 2}>Total do centro</td>
             <td className="text-right!">
               <Dinheiro centavos={bloco.total} destaque />
             </td>
@@ -99,21 +129,27 @@ function TabelaSaidas({ bloco }: { bloco: BlocoSaidas }) {
 
 function FragmentoCategoria({
   grupo,
+  comMes,
 }: {
   grupo: BlocoSaidas["grupos"][number];
+  comMes: boolean;
 }) {
   return (
     <>
-      <tr className="bg-slate-50 hover:bg-slate-50">
-        <td colSpan={4} className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+      <tr className="bg-[#f5f3ef] hover:bg-[#f5f3ef]">
+        <td
+          colSpan={comMes ? 5 : 4}
+          className="text-xs font-semibold uppercase tracking-wide text-tinta-suave"
+        >
           {grupo.categoria}
         </td>
       </tr>
       {grupo.lancamentos.map((l) => (
         <tr key={l.id}>
-          <td className="text-slate-500">{formatarData(l.data)}</td>
+          {comMes ? <CelulaMes l={l} /> : null}
+          <td className="text-tinta-suave">{formatarData(l.data)}</td>
           <td className="max-w-64 whitespace-normal!">
-            {l.descricao ?? <span className="text-slate-400">—</span>}
+            {l.descricao ?? <span className="text-tinta-suave/60">—</span>}
           </td>
           <td className="text-right!">
             <Dinheiro centavos={l.valor} />
@@ -121,8 +157,11 @@ function FragmentoCategoria({
           <CelulaAcoes l={l} />
         </tr>
       ))}
-      <tr className="hover:bg-white">
-        <td colSpan={2} className="text-right! text-xs text-slate-500">
+      <tr className="hover:bg-[#f5f3ef]">
+        <td
+          colSpan={comMes ? 3 : 2}
+          className="text-right! text-xs text-tinta-suave"
+        >
           Subtotal {grupo.categoria}
         </td>
         <td className="text-right!">
@@ -134,15 +173,24 @@ function FragmentoCategoria({
   );
 }
 
-function TabelaEntradas({ bloco }: { bloco: BlocoLista }) {
+function TabelaEntradas({
+  bloco,
+  comMes,
+  vazio,
+}: {
+  bloco: BlocoLista;
+  comMes: boolean;
+  vazio: string;
+}) {
   if (bloco.lancamentos.length === 0) {
-    return <p className="px-5 pb-5 text-sm text-slate-500">Sem entradas neste mês.</p>;
+    return <p className="px-5 pb-5 text-sm text-tinta-suave">{vazio}</p>;
   }
   return (
     <div className="overflow-x-auto">
       <table className="tabela">
         <thead>
           <tr>
+            {comMes ? <th>Mês</th> : null}
             <th>Data</th>
             <th>Descrição</th>
             <th className="text-right!">Valor</th>
@@ -152,9 +200,10 @@ function TabelaEntradas({ bloco }: { bloco: BlocoLista }) {
         <tbody>
           {bloco.lancamentos.map((l) => (
             <tr key={l.id}>
-              <td className="text-slate-500">{formatarData(l.data)}</td>
+              {comMes ? <CelulaMes l={l} /> : null}
+              <td className="text-tinta-suave">{formatarData(l.data)}</td>
               <td className="max-w-64 whitespace-normal!">
-                {l.descricao ?? <span className="text-slate-400">—</span>}
+                {l.descricao ?? <span className="text-tinta-suave/60">—</span>}
               </td>
               <td className="text-right!">
                 <Dinheiro centavos={l.valor} />
@@ -165,7 +214,7 @@ function TabelaEntradas({ bloco }: { bloco: BlocoLista }) {
         </tbody>
         <tfoot>
           <tr>
-            <td colSpan={2}>Total de entradas</td>
+            <td colSpan={comMes ? 3 : 2}>Total de entradas</td>
             <td className="text-right!">
               <Dinheiro centavos={bloco.total} destaque />
             </td>
@@ -177,19 +226,24 @@ function TabelaEntradas({ bloco }: { bloco: BlocoLista }) {
   );
 }
 
-function TabelaRecebDinheiro({ bloco }: { bloco: BlocoLista }) {
+function TabelaRecebDinheiro({
+  bloco,
+  comMes,
+  vazio,
+}: {
+  bloco: BlocoLista;
+  comMes: boolean;
+  vazio: string;
+}) {
   if (bloco.lancamentos.length === 0) {
-    return (
-      <p className="px-5 pb-5 text-sm text-slate-500">
-        Sem recebimentos em dinheiro neste mês.
-      </p>
-    );
+    return <p className="px-5 pb-5 text-sm text-tinta-suave">{vazio}</p>;
   }
   return (
     <div className="overflow-x-auto">
       <table className="tabela">
         <thead>
           <tr>
+            {comMes ? <th>Mês</th> : null}
             <th>Data</th>
             <th>Cliente</th>
             <th>Local</th>
@@ -200,12 +254,13 @@ function TabelaRecebDinheiro({ bloco }: { bloco: BlocoLista }) {
         <tbody>
           {bloco.lancamentos.map((l) => (
             <tr key={l.id}>
-              <td className="text-slate-500">{formatarData(l.data)}</td>
+              {comMes ? <CelulaMes l={l} /> : null}
+              <td className="text-tinta-suave">{formatarData(l.data)}</td>
               <td className="max-w-48 whitespace-normal!">
-                {l.cliente ?? <span className="text-slate-400">—</span>}
+                {l.cliente ?? <span className="text-tinta-suave/60">—</span>}
               </td>
               <td className="max-w-40 whitespace-normal!">
-                {l.local ?? <span className="text-slate-400">—</span>}
+                {l.local ?? <span className="text-tinta-suave/60">—</span>}
               </td>
               <td className="text-right!">
                 <Dinheiro centavos={l.valor} />
@@ -216,7 +271,7 @@ function TabelaRecebDinheiro({ bloco }: { bloco: BlocoLista }) {
         </tbody>
         <tfoot>
           <tr>
-            <td colSpan={3}>Total em espécie</td>
+            <td colSpan={comMes ? 4 : 3}>Total em espécie</td>
             <td className="text-right!">
               <Dinheiro centavos={bloco.total} destaque />
             </td>
@@ -243,7 +298,7 @@ function CabecalhoBloco({
     <div className="flex items-start justify-between gap-3 px-5 pb-2 pt-4">
       <div>
         <h2 className="text-sm font-bold">{titulo}</h2>
-        {nota ? <p className="mt-0.5 text-xs text-amber-700">{nota}</p> : null}
+        {nota ? <p className="mt-0.5 text-xs text-tinta-suave">{nota}</p> : null}
       </div>
       <Badge cor={cor}>{badge}</Badge>
     </div>
@@ -253,31 +308,52 @@ function CabecalhoBloco({
 export default async function PaginaCaixa({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string }>;
+  searchParams: Promise<{ mes?: string; de?: string; ate?: string }>;
 }) {
   const sp = await searchParams;
+  const periodo = parsePeriodo(sp.de, sp.ate);
   const mes = sp.mes && RE_MES.test(sp.mes) ? sp.mes : await mesMaisRecente();
   const { ano } = parseCompetencia(mes);
 
-  const [blocos, consolidacao] = await Promise.all([
-    lancamentosDoMes(mes),
-    consolidacaoDoMes(mes),
-  ]);
+  const [blocos, consolidacao] = periodo
+    ? await Promise.all([
+        lancamentosDoPeriodo(periodo.meses),
+        consolidacaoDoPeriodo(periodo.meses),
+      ])
+    : await Promise.all([lancamentosDoMes(mes), consolidacaoDoMes(mes)]);
+
+  // coluna "Mês" nos blocos só quando a janela tem mais de uma competência
+  const comMes = periodo !== null && periodo.meses.length > 1;
+  const nomeJanela = periodo ? "no período" : "neste mês";
 
   return (
     <>
       <PageHeader
         titulo="Caixa"
-        descricao="Livro-caixa CONTA_AC — saídas por centro de custo, entradas e recebimentos em dinheiro"
+        descricao={
+          periodo
+            ? `Livro-caixa CONTA_AC no período ${periodo.rotulo} — totais e lançamentos da janela inteira`
+            : "Livro-caixa CONTA_AC — saídas por centro de custo, entradas e recebimentos em dinheiro"
+        }
         acoes={
           <>
-            <Link href={`/caixa/ano?ano=${ano}`} className={btnSecundario}>
-              Resumo anual
-            </Link>
+            {periodo ? (
+              <Link
+                href={`/caixa/ano?de=${periodo.de}&ate=${periodo.ate}`}
+                className={btnSecundario}
+              >
+                Mês a mês
+              </Link>
+            ) : (
+              <Link href={`/caixa/ano?ano=${ano}`} className={btnSecundario}>
+                Resumo anual
+              </Link>
+            )}
             <Link href={`/caixa/novo?mes=${mes}`} className={btnPrimario}>
               Novo lançamento
             </Link>
-            <SeletorMes base="/caixa" mes={mes} />
+            {!periodo ? <SeletorMes base="/caixa" mes={mes} /> : null}
+            <SeletorPeriodo base="/caixa" periodo={periodo} />
           </>
         }
       />
@@ -286,20 +362,23 @@ export default async function PaginaCaixa({
         <Kpi
           rotulo="Despesa Antonio/Laura"
           valor={<Dinheiro centavos={consolidacao.despesaAL} destaque />}
-          ajuda="Soma das saídas do centro de custo AL (Antonio/Laura) no mês, agrupadas por categoria no bloco abaixo. Ao lançar uma saída, escolha o centro certo — é isso que separa as contas de cada núcleo da família."
+          detalhe={periodo ? periodo.rotulo : undefined}
+          ajuda="Soma das saídas do centro de custo AL (Antonio/Laura) na janela em análise, agrupadas por categoria no bloco abaixo. Ao lançar uma saída, escolha o centro certo — é isso que separa as contas de cada núcleo da família."
         />
         <Kpi
           rotulo="Despesa Chácara Brisa"
           valor={<Dinheiro centavos={consolidacao.despesaCH} destaque />}
-          ajuda="Soma das saídas do centro de custo CH (Chácara Brisa) no mês. Gastos da chácara entram aqui; gastos pessoais de Antonio/Laura vão no centro AL."
+          detalhe={periodo ? periodo.rotulo : undefined}
+          ajuda="Soma das saídas do centro de custo CH (Chácara Brisa) na janela em análise. Gastos da chácara entram aqui; gastos pessoais de Antonio/Laura vão no centro AL."
         />
         <Kpi
           rotulo="Receita (entradas)"
           valor={<Dinheiro centavos={consolidacao.receita} destaque />}
-          ajuda="Tudo o que entrou na conta no mês (tipo ENTRADA, centro GERAL). Recebimentos em dinheiro NÃO estão aqui — são registro paralelo de espécie e ficam no bloco próprio."
+          detalhe={periodo ? periodo.rotulo : undefined}
+          ajuda="Tudo o que entrou na conta na janela em análise (tipo ENTRADA, centro GERAL). Recebimentos em dinheiro NÃO estão aqui — são registro paralelo de espécie e ficam no bloco próprio."
         />
         <Kpi
-          rotulo="Saldo do mês"
+          rotulo={periodo ? "Saldo do período" : "Saldo do mês"}
           valor={<Dinheiro centavos={consolidacao.saldo} destaque />}
           detalhe="receita − despesa AL − despesa CH"
           nivel={nivelSaldo(consolidacao.saldo)}
@@ -328,24 +407,36 @@ export default async function PaginaCaixa({
               />
             ) : undefined
           }
-          ajuda="Entradas menos as saídas dos dois centros. Positivo: sobrou dinheiro no mês; negativo: as saídas superaram as entradas. O registro de espécie não entra nesta conta."
+          ajuda="Entradas menos as saídas dos dois centros, na janela em análise. Positivo: sobrou dinheiro; negativo: as saídas superaram as entradas. O registro de espécie não entra nesta conta."
         />
       </div>
 
       <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
         <Card>
           <CabecalhoBloco titulo="Saídas — Antonio/Laura" badge="AL" cor="vermelho" />
-          <TabelaSaidas bloco={blocos.saidasAL} />
+          <TabelaSaidas
+            bloco={blocos.saidasAL}
+            comMes={comMes}
+            vazio={`Sem saídas ${nomeJanela}.`}
+          />
         </Card>
 
         <Card>
           <CabecalhoBloco titulo="Saídas — Chácara Brisa" badge="CH" cor="vermelho" />
-          <TabelaSaidas bloco={blocos.saidasCH} />
+          <TabelaSaidas
+            bloco={blocos.saidasCH}
+            comMes={comMes}
+            vazio={`Sem saídas ${nomeJanela}.`}
+          />
         </Card>
 
         <Card>
           <CabecalhoBloco titulo="Entradas" badge="GERAL" cor="verde" />
-          <TabelaEntradas bloco={blocos.entradas} />
+          <TabelaEntradas
+            bloco={blocos.entradas}
+            comMes={comMes}
+            vazio={`Sem entradas ${nomeJanela}.`}
+          />
         </Card>
 
         <Card>
@@ -353,15 +444,22 @@ export default async function PaginaCaixa({
             titulo="Recebimentos em dinheiro"
             badge="GERAL"
             cor="ambar"
-            nota="Registro paralelo de espécie — não entra no saldo do mês."
+            nota="Registro paralelo de espécie — não entra no saldo."
           />
-          <TabelaRecebDinheiro bloco={blocos.recebimentosDinheiro} />
+          <TabelaRecebDinheiro
+            bloco={blocos.recebimentosDinheiro}
+            comMes={comMes}
+            vazio={`Sem recebimentos em dinheiro ${nomeJanela}.`}
+          />
         </Card>
       </div>
 
-      <p className="mt-4 text-xs text-slate-400">
+      <p className="mt-4 text-xs text-tinta-suave/60">
         Transferências internas entre centros aparecem como saída no centro de origem e
         entrada geral; ressarcimentos são saídas normais identificadas na descrição.
+        {periodo
+          ? " No modo período os subtotais por categoria somam a janela inteira; lançamentos novos continuam sendo feitos mês a mês."
+          : ""}
       </p>
     </>
   );

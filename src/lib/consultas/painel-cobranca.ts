@@ -17,6 +17,9 @@
  * - Dias de atraso comparados ao diaVencimento do contrato dentro do mês
  *   selecionado; contrato sem diaVencimento cai na faixa "no prazo".
  *
+ * Duas portas de entrada: dadosPainelCobranca(mes) para o modo mensal e
+ * dadosPainelCobrancaPeriodo(meses) para a análise por período (?de/?ate).
+ *
  * Valores sempre em CENTAVOS (Int). Meses "YYYY-MM".
  */
 import { prisma } from "@/lib/db";
@@ -26,6 +29,7 @@ import {
   NOME_MES_ABREV,
   parseCompetencia,
 } from "@/lib/dominio/normalizacao";
+import { rotulosCompetencias } from "@/lib/dominio/periodo";
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -281,6 +285,176 @@ export async function dadosPainelCobranca(
     pendentesAnoQtde: consideradas.length,
     pendentesAnoValor,
     mesesOperacionaisConsiderados,
+    maiorDevedor: devedores[0] ?? null,
+    listaCobranca,
+    aging,
+    porMes,
+    topDevedores: devedores.slice(0, 8),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Consulta por PERÍODO (lista de competências vinda de parsePeriodo)
+// ---------------------------------------------------------------------------
+// Mesmas regras do modo mês, aplicadas à janela [meses[0], meses[fim]]:
+// - a lista de cobrança traz os pendentes de TODOS os meses da janela, cada
+//   item com sua competência;
+// - o aging conta os dias a partir do vencimento DA COMPETÊNCIA de cada item
+//   (uma cobrança de MAR continua envelhecendo mesmo olhando ABR–JUN);
+// - taxa/devido/recebido e o ranking de devedores consideram só a janela.
+// mesLancamento é "YYYY-MM", então gte/lte de string compara certo.
+
+export interface ItemCobrancaPeriodo extends ItemCobranca {
+  /** competência "YYYY-MM" do lançamento */
+  mes: string;
+}
+
+export interface DadosPainelCobrancaPeriodo {
+  /** competências da janela, em ordem crescente */
+  meses: string[];
+  // ---- KPIs da janela ----
+  pendentesQtde: number;
+  pendentesValor: number;
+  devido: number;
+  recebido: number;
+  taxaRecebimento: number | null;
+  maiorDevedor: DevedorAno | null;
+  // ---- seções ----
+  /** pendentes de todos os meses da janela, por valor desc */
+  listaCobranca: ItemCobrancaPeriodo[];
+  /** valor pendente da janela por faixa de atraso (5 faixas, na ordem) */
+  aging: FaixaAging[];
+  /** uma linha por competência da janela (índice alinhado a `meses`) */
+  porMes: PendenciaMensal[];
+  /** top 8 locatários por Σ pendente dentro da janela */
+  topDevedores: DevedorAno[];
+}
+
+export async function dadosPainelCobrancaPeriodo(
+  meses: string[]
+): Promise<DadosPainelCobrancaPeriodo> {
+  const idx = new Map(meses.map((m, i) => [m, i]));
+  const rotulos = rotulosCompetencias(meses);
+
+  const recebimentos = await prisma.recebimento.findMany({
+    where: { mesLancamento: { gte: meses[0], lte: meses[meses.length - 1] } },
+    include: {
+      empreendimento: true,
+      contrato: { include: { unidade: true, locatario: true } },
+    },
+  });
+
+  // "Hoje" em UTC — as datas do domínio são strings, só contamos dias corridos.
+  const agora = new Date();
+  const hojeUTC = Date.UTC(
+    agora.getFullYear(),
+    agora.getMonth(),
+    agora.getDate()
+  );
+
+  const porMes: PendenciaMensal[] = meses.map((m) => ({
+    mes: m,
+    mesNum: parseCompetencia(m).mes,
+    devido: 0,
+    recebido: 0,
+    pendentes: 0,
+    pendenteValor: 0,
+    taxaRecebimento: null,
+    operacional: false,
+  }));
+
+  const listaCobranca: ItemCobrancaPeriodo[] = [];
+  const aging: FaixaAging[] = FAIXAS_AGING.map((faixa) => ({
+    faixa,
+    quantidade: 0,
+    valor: 0,
+  }));
+  const porLocatario = new Map<
+    string,
+    { valor: number; quantidade: number; meses: Set<number> /* índice na janela */ }
+  >();
+
+  for (const r of recebimentos) {
+    const i = idx.get(r.mesLancamento);
+    if (i === undefined) continue; // gte/lte já filtra; guarda extra
+    const linha = porMes[i];
+
+    const calc = calcularRecebimento(r);
+    linha.devido += calc.totalDevido ?? 0;
+    if (r.recebido !== null) {
+      linha.recebido += r.recebido;
+      linha.operacional = true;
+    }
+
+    const pendente = calc.totalDevido !== null && r.recebido === null;
+    if (!pendente) continue;
+    const devido = calc.totalDevido ?? 0;
+
+    linha.pendentes += 1;
+    linha.pendenteValor += devido;
+
+    // Atraso contado do vencimento da COMPETÊNCIA do próprio item.
+    const { ano, mes: mesNum } = parseCompetencia(r.mesLancamento);
+    const dia = r.contrato.diaVencimento;
+    const diasDesdeVencimento =
+      dia === null
+        ? null
+        : Math.floor((hojeUTC - Date.UTC(ano, mesNum - 1, dia)) / 86_400_000);
+
+    listaCobranca.push({
+      recebimentoId: r.id,
+      mes: r.mesLancamento,
+      empreendimento: r.empreendimento.nome,
+      locatario: r.contrato.locatario?.nome ?? null,
+      localizacao: r.contrato.unidade.identificacao,
+      totalDevido: devido,
+      diaVencimento: dia,
+      diasDesdeVencimento,
+      observacao: r.observacao,
+    });
+    const faixa = aging[indiceFaixaAging(diasDesdeVencimento)];
+    faixa.quantidade += 1;
+    faixa.valor += devido;
+
+    const nome = r.contrato.locatario?.nome ?? "(sem locatário)";
+    let d = porLocatario.get(nome);
+    if (!d) {
+      porLocatario.set(
+        nome,
+        (d = { valor: 0, quantidade: 0, meses: new Set() })
+      );
+    }
+    d.valor += devido;
+    d.quantidade += 1;
+    d.meses.add(i);
+  }
+
+  for (const linha of porMes) {
+    linha.taxaRecebimento =
+      linha.devido > 0 ? linha.recebido / linha.devido : null;
+  }
+
+  listaCobranca.sort((a, b) => b.totalDevido - a.totalDevido);
+
+  const devedores: DevedorAno[] = [...porLocatario.entries()]
+    .map(([locatario, d]) => ({
+      locatario,
+      valor: d.valor,
+      quantidade: d.quantidade,
+      meses: [...d.meses].sort((a, b) => a - b).map((i) => rotulos[i]),
+    }))
+    .sort((a, b) => b.valor - a.valor);
+
+  const devido = porMes.reduce((a, l) => a + l.devido, 0);
+  const recebido = porMes.reduce((a, l) => a + l.recebido, 0);
+
+  return {
+    meses,
+    pendentesQtde: listaCobranca.length,
+    pendentesValor: porMes.reduce((a, l) => a + l.pendenteValor, 0),
+    devido,
+    recebido,
+    taxaRecebimento: devido > 0 ? recebido / devido : null,
     maiorDevedor: devedores[0] ?? null,
     listaCobranca,
     aging,

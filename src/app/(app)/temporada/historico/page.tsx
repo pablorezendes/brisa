@@ -23,13 +23,13 @@ export default async function PaginaHistoricoTemporada() {
 
       {anos.length === 0 ? (
         <Card className="px-6 py-8">
-          <p className="text-sm text-slate-500">Nenhuma apuração histórica importada.</p>
+          <p className="text-sm text-tinta-suave">Nenhuma apuração histórica importada.</p>
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           {anos.map((a) => (
             <Card key={a.ano} className="overflow-hidden">
-              <div className="border-b border-slate-200 px-5 py-3">
+              <div className="border-b border-contorno px-5 py-3">
                 <h2 className="text-sm font-semibold">Apuração {a.ano}</h2>
               </div>
               <div className="overflow-x-auto">
