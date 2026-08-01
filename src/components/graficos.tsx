@@ -32,15 +32,39 @@ const TINTA = "#1c2430"; // --tinta
 // ---------------------------------------------------------------------------
 
 const LARG = 620;
-const EIXO_W = 56; // faixa dos rótulos de valor, à esquerda
-const TOPO = 20;
+const EIXO_W = 66; // canaleta dos rótulos de valor — cabe "200 mil" com folga
+const TOPO = 22;
 const ALT = 168;
 const BASE = TOPO + ALT;
-const ROD = 24; // faixa dos nomes de mês, embaixo
+const ROD = 26; // faixa dos nomes de mês, embaixo
 const PLOT_W = LARG - EIXO_W;
 const VIEWBOX = `0 0 ${LARG} ${BASE + ROD}`;
 
-/** Barra vertical com topo arredondado, ancorada na base. Cresce ao carregar. */
+/**
+ * Escala com números REDONDOS (1 · 2 · 2,5 · 5 × 10ⁿ).
+ *
+ * Sem isto o topo do eixo é o próprio máximo da série e as marcas viram
+ * frações quebradas — "171,3 mil", "128,5 mil" — que além de ilegíveis não
+ * cabiam na canaleta e saíam cortadas pela borda do SVG. Com escala redonda,
+ * o rótulo mais longo é curto e a leitura vira instantânea.
+ */
+export function escalaAgradavel(
+  maxBruto: number,
+  divisoes = 4
+): { max: number; ticks: number[] } {
+  if (!(maxBruto > 0)) return { max: 1, ticks: [] };
+  const mag = Math.pow(10, Math.floor(Math.log10(maxBruto / divisoes)));
+  const norm = maxBruto / divisoes / mag;
+  const passo =
+    (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10) *
+    mag;
+  const max = Math.ceil(maxBruto / passo) * passo;
+  const ticks: number[] = [];
+  for (let v = passo; v <= max * 1.0001; v += passo) ticks.push(v);
+  return { max, ticks };
+}
+
+/** Barra vertical de canto vivo suave, ancorada na base. Cresce ao carregar. */
 function Barra({
   x,
   y,
@@ -58,7 +82,7 @@ function Barra({
   cor: string;
   titulo: string;
   delayMs?: number;
-  /** série em destaque: ganha halo e traço de topo */
+  /** série em destaque: ganha marca de topo */
   foco?: boolean;
 }) {
   if (h <= 0.5)
@@ -67,30 +91,54 @@ function Barra({
         <title>{titulo}</title>
       </rect>
     );
-  const r = Math.min(5, w / 2, h);
+  const r = Math.min(3, w / 2, h);
   const d = `M${x},${y + h} v${-(h - r)} q0,${-r} ${r},${-r} h${w - 2 * r} q${r},0 ${r},${r} v${h - r} z`;
-  void foco; // o destaque visual é o passo escuro do matiz, não um efeito
   return (
-    <path
-      d={d}
-      fill={cor}
-      className="g-barra"
-      style={{ animationDelay: `${delayMs}ms` }}
-    >
-      <title>{titulo}</title>
-    </path>
+    <g className="g-barra" style={{ animationDelay: `${delayMs}ms` }}>
+      <path d={d} fill={cor}>
+        <title>{titulo}</title>
+      </path>
+      {/* marca de topo: fio de 1,5px que fecha a coluna em foco */}
+      {foco ? (
+        <line
+          x1={x}
+          x2={x + w}
+          y1={y - 1.5}
+          y2={y - 1.5}
+          stroke={cor}
+          strokeWidth={1.5}
+        />
+      ) : null}
+    </g>
   );
 }
 
-/** Grade pontilhada + eixo de valores à esquerda + linha de base. */
-function Moldura({ max, niveis = 4 }: { max: number; niveis?: number }) {
-  const linhas = Array.from({ length: niveis }, (_, i) => (i + 1) / niveis);
+/**
+ * Moldura de instrumento: espinha do eixo à esquerda, marcas de escala,
+ * grade fina pontilhada e cantoneiras nos extremos do plot. Cada elemento
+ * entra em sequência ao carregar — a leitura é de aparelho calibrando.
+ */
+function Moldura({ ticks, max }: { ticks: number[]; max: number }) {
   return (
     <g aria-hidden="true">
-      {linhas.map((f) => {
-        const y = TOPO + ALT - ALT * f;
+      <line
+        x1={EIXO_W}
+        x2={EIXO_W}
+        y1={TOPO - 8}
+        y2={BASE}
+        stroke={EIXO}
+        strokeWidth={1}
+        opacity={0.5}
+        className="g-eixo"
+      />
+      {ticks.map((v, i) => {
+        const y = BASE - (v / max) * ALT;
         return (
-          <g key={f}>
+          <g
+            key={v}
+            className="g-grade"
+            style={{ animationDelay: `${100 + i * 60}ms` }}
+          >
             <line
               x1={EIXO_W}
               x2={LARG}
@@ -98,17 +146,26 @@ function Moldura({ max, niveis = 4 }: { max: number; niveis?: number }) {
               y2={y}
               stroke={GRADE}
               strokeWidth={1}
-              strokeDasharray="2 5"
+              strokeDasharray="1 4"
+            />
+            <line
+              x1={EIXO_W - 4}
+              x2={EIXO_W}
+              y1={y}
+              y2={y}
+              stroke={EIXO}
+              strokeWidth={1}
+              opacity={0.65}
             />
             <text
-              x={EIXO_W - 9}
+              x={EIXO_W - 10}
               y={y + 3.2}
               fontSize={9.5}
               fill={ROTULO}
               textAnchor="end"
               style={{ fontFamily: "var(--font-jetbrains), monospace" }}
             >
-              {abreviarBRL(Math.round(max * f))}
+              {abreviarBRL(Math.round(v))}
             </text>
           </g>
         );
@@ -120,12 +177,29 @@ function Moldura({ max, niveis = 4 }: { max: number; niveis?: number }) {
         y2={BASE}
         stroke={EIXO}
         strokeWidth={1.25}
+        className="g-eixo"
       />
+      {/* cantoneiras — detalhe de instrumento, sem custo de tinta */}
+      {[
+        [EIXO_W, 1],
+        [LARG, -1],
+      ].map(([x, sx]) => (
+        <path
+          key={x}
+          d={`M${x},${TOPO - 1} V${TOPO - 8} H${x + sx * 8}`}
+          fill="none"
+          stroke={EIXO}
+          strokeWidth={1}
+          opacity={0.45}
+          className="g-surgir"
+          style={{ animationDelay: "0.45s" }}
+        />
+      ))}
     </g>
   );
 }
 
-/** Faixa clicável/hoverável que acende a coluna inteira do mês. */
+/** Faixa hoverável que acende a coluna inteira do mês (crosshair sem JS). */
 function ColunaHover({
   x,
   w,
@@ -140,10 +214,10 @@ function ColunaHover({
       <rect
         className="g-realce"
         x={x}
-        y={TOPO - 6}
+        y={TOPO - 8}
         width={w}
-        height={ALT + 6}
-        rx={4}
+        height={ALT + 8}
+        rx={3}
         fill={TINTA}
       />
       {children}
@@ -151,7 +225,7 @@ function ColunaHover({
   );
 }
 
-/** Etiqueta de valor sobre a barra em foco (pílula de leitura rápida). */
+/** Etiqueta de valor sobre a barra em foco (leitura direta, em tinta). */
 function Etiqueta({
   x,
   y,
@@ -164,20 +238,26 @@ function Etiqueta({
   cor: string;
 }) {
   void cor; // rótulo em tinta — cor fica só na barra
+  // a etiqueta é centrada na barra; nas colunas das pontas isso jogaria o
+  // texto para fora do quadro, então ela encosta na borda em vez de vazar
+  const meia = (texto.length * 9.5 * 0.6) / 2;
+  const xc = Math.min(Math.max(x, EIXO_W + meia), LARG - meia);
   return (
-    <g className="g-surgir" style={{ animationDelay: "0.6s" }}>
-      <text
-        x={x}
-        y={y - 5}
-        fontSize={9.5}
-        fontWeight={700}
-        fill={TINTA}
-        textAnchor="middle"
-        style={{ fontFamily: "var(--font-jetbrains), monospace" }}
-      >
-        {texto}
-      </text>
-    </g>
+    <text
+      x={xc}
+      y={y - 6}
+      fontSize={9.5}
+      fontWeight={700}
+      fill={TINTA}
+      textAnchor="middle"
+      className="g-surgir"
+      style={{
+        fontFamily: "var(--font-jetbrains), monospace",
+        animationDelay: "0.55s",
+      }}
+    >
+      {texto}
+    </text>
   );
 }
 
@@ -218,7 +298,7 @@ export function BarrasMensais({
   cor?: string;
   rotulos?: string[];
 }) {
-  const max = Math.max(...valores, 1);
+  const { max, ticks } = escalaAgradavel(Math.max(...valores, 1));
   const n = valores.length;
   const passo = PLOT_W / n;
   const larguraBarra = Math.max(2, Math.min(30, passo - 10));
@@ -226,7 +306,7 @@ export function BarrasMensais({
 
   return (
     <svg viewBox={VIEWBOX} className="w-full" role="img" aria-label={rotuloAcessivel}>
-      <Moldura max={max} />
+      <Moldura ticks={ticks} max={max} />
       {valores.map((v, i) => {
         const h = (v / max) * ALT;
         const centro = EIXO_W + i * passo + passo / 2;
@@ -257,11 +337,15 @@ export function BarrasMensais({
               <text
                 x={centro}
                 y={BASE + 15}
+                className="g-rot"
                 fontSize={9.5}
                 fill={selecionado ? TINTA : ROTULO}
                 fontWeight={selecionado ? 700 : 400}
                 textAnchor="middle"
-                style={{ fontFamily: "var(--font-jetbrains), monospace" }}
+                style={{
+                  fontFamily: "var(--font-jetbrains), monospace",
+                  animationDelay: `${300 + i * 30}ms`,
+                }}
               >
                 {rotuloEixo(rotulos, i)}
               </text>
@@ -306,7 +390,7 @@ export function BarrasDuplas({
   /** rótulos do eixo (default JAN..DEZ) */
   rotulos?: string[];
 }) {
-  const max = Math.max(...serieA, ...serieB, 1);
+  const { max, ticks } = escalaAgradavel(Math.max(...serieA, ...serieB, 1));
   const n = serieA.length;
   const passo = PLOT_W / n;
   const larguraBarra = Math.max(1.5, Math.min(14, (passo - 12) / 2));
@@ -318,7 +402,7 @@ export function BarrasDuplas({
       role="img"
       aria-label={`${nomeA} e ${nomeB} por mês`}
     >
-      <Moldura max={max} />
+      <Moldura ticks={ticks} max={max} />
       {serieA.map((a, i) => {
         const b = serieB[i] ?? 0;
         const hA = (a / max) * ALT;
@@ -350,11 +434,15 @@ export function BarrasDuplas({
               <text
                 x={centro}
                 y={BASE + 15}
+                className="g-rot"
                 fontSize={9.5}
                 fill={selecionado ? TINTA : ROTULO}
                 fontWeight={selecionado ? 700 : 400}
                 textAnchor="middle"
-                style={{ fontFamily: "var(--font-jetbrains), monospace" }}
+                style={{
+                  fontFamily: "var(--font-jetbrains), monospace",
+                  animationDelay: `${300 + i * 30}ms`,
+                }}
               >
                 {rotuloEixo(rotulos, i)}
               </text>
@@ -379,10 +467,8 @@ export function BarrasCaixa({
   /** rótulos do eixo (default JAN..DEZ) */
   rotulos?: string[];
 }) {
-  const max = Math.max(
-    ...receita,
-    ...despesaAL.map((v, i) => v + (despesaCH[i] ?? 0)),
-    1
+  const { max, ticks } = escalaAgradavel(
+    Math.max(...receita, ...despesaAL.map((v, i) => v + (despesaCH[i] ?? 0)), 1)
   );
   const n = receita.length;
   const passo = PLOT_W / n;
@@ -395,7 +481,7 @@ export function BarrasCaixa({
       role="img"
       aria-label="Receita e despesas do caixa por mês"
     >
-      <Moldura max={max} />
+      <Moldura ticks={ticks} max={max} />
       {receita.map((rec, i) => {
         const al = despesaAL[i] ?? 0;
         const ch = despesaCH[i] ?? 0;
@@ -445,10 +531,14 @@ export function BarrasCaixa({
               <text
                 x={centro}
                 y={BASE + 15}
+                className="g-rot"
                 fontSize={9.5}
                 fill={ROTULO}
                 textAnchor="middle"
-                style={{ fontFamily: "var(--font-jetbrains), monospace" }}
+                style={{
+                  fontFamily: "var(--font-jetbrains), monospace",
+                  animationDelay: `${300 + i * 30}ms`,
+                }}
               >
                 {mes}
               </text>
@@ -481,7 +571,7 @@ export function AreaTendencia({
 }) {
   const n = valores.length;
   if (n === 0) return null;
-  const max = Math.max(...valores, 1);
+  const { max, ticks } = escalaAgradavel(Math.max(...valores, 1));
   const px = (i: number) =>
     n === 1 ? EIXO_W + PLOT_W / 2 : EIXO_W + 18 + (i * (PLOT_W - 36)) / (n - 1);
   const py = (v: number) => BASE - (v / max) * ALT;
@@ -494,7 +584,7 @@ export function AreaTendencia({
 
   return (
     <svg viewBox={VIEWBOX} className="w-full" role="img" aria-label={rotuloAcessivel}>
-      <Moldura max={max} />
+      <Moldura ticks={ticks} max={max} />
       <path d={area} fill={cor} fillOpacity={0.08} className="g-surgir" />
       <path
         d={linha}
@@ -538,11 +628,15 @@ export function AreaTendencia({
               <text
                 x={x}
                 y={BASE + 15}
+                className="g-rot"
                 fontSize={9.5}
                 fill={marcado ? TINTA : ROTULO}
                 fontWeight={marcado ? 700 : 400}
                 textAnchor="middle"
-                style={{ fontFamily: "var(--font-jetbrains), monospace" }}
+                style={{
+                  fontFamily: "var(--font-jetbrains), monospace",
+                  animationDelay: `${300 + i * 30}ms`,
+                }}
               >
                 {rotuloEixo(rotulos, i)}
               </text>
@@ -613,16 +707,18 @@ export function BarrasHorizontais({
               y={y + 1}
               width={plotW}
               height={ALT_BARRA - 2}
-              rx={4}
+              rx={3}
               fill={GRADE}
-              opacity={0.55}
+              opacity={0.5}
+              className="g-grade"
+              style={{ animationDelay: `${i * 55}ms` }}
             />
             <rect
               x={ROTULO_W}
               y={y + 1}
               width={w}
               height={ALT_BARRA - 2}
-              rx={4}
+              rx={3}
               fill={c}
               className="g-barra-x"
               style={{ animationDelay: `${i * 60}ms` }}
@@ -764,68 +860,91 @@ export function Medidor({
   faixaAtencao?: number;
 }) {
   const cx = 110;
-  const cy = 116;
-  const R = 88;
-  const esp = 17;
+  const cy = 120;
+  const R = 82; // raio do arco de valor
+  const esp = 12; // espessura do arco de valor — fina, de instrumento
+  const rZona = R + esp / 2 + 7; // anel das zonas, FORA do arco (não encosta)
+  const espZona = 3;
   const t = Math.max(0, Math.min(1, fracao));
   const pct = fracao * 100;
   const nivel: Nivel =
     fracao >= faixaBoa ? "otimo" : fracao >= faixaAtencao ? "atencao" : "critico";
   const est = NIVEL[nivel];
-  const [mx, my] = [
-    cx + R * Math.cos(Math.PI * (1 - t)),
-    cy - R * Math.sin(Math.PI * (1 - t)),
-  ];
+  const ponta = (f: number, r: number): [number, number] => {
+    const a = Math.PI * (1 - f);
+    return [cx + r * Math.cos(a), cy - r * Math.sin(a)];
+  };
+  const [mx, my] = ponta(t, R);
+
+  // marcas de escala a cada 10%; as de 0/50/100 são mais longas
+  const marcas = Array.from({ length: 11 }, (_, i) => i / 10);
 
   return (
     <svg
-      viewBox="0 0 220 138"
+      viewBox="0 0 220 150"
       className="w-full"
       role="img"
       aria-label={`${rotulo ?? "medidor"}: ${pct.toFixed(0)}% — ${est.rotulo}`}
     >
-      {/* trilho com as três zonas do semáforo, bem esmaecidas */}
+      {/* anel externo das três zonas do semáforo — pontas retas, sem calombo */}
+      <g className="g-surgir" style={{ animationDelay: "0.15s" }}>
+        <path
+          d={arcoMedidor(cx, cy, rZona, 0, faixaAtencao)}
+          fill="none"
+          stroke={NIVEL.critico.cor}
+          strokeWidth={espZona}
+          opacity={0.55}
+        />
+        <path
+          d={arcoMedidor(cx, cy, rZona, faixaAtencao, faixaBoa)}
+          fill="none"
+          stroke={NIVEL.atencao.cor}
+          strokeWidth={espZona}
+          opacity={0.55}
+        />
+        <path
+          d={arcoMedidor(cx, cy, rZona, faixaBoa, 1)}
+          fill="none"
+          stroke={NIVEL.otimo.cor}
+          strokeWidth={espZona}
+          opacity={0.55}
+        />
+      </g>
+
+      {/* marcas de escala */}
+      <g aria-hidden="true" className="g-surgir" style={{ animationDelay: "0.3s" }}>
+        {marcas.map((f) => {
+          const longa = f === 0 || f === 0.5 || f === 1;
+          const r0 = R - esp / 2 - 3;
+          const r1 = r0 - (longa ? 7 : 4);
+          const [x0, y0] = ponta(f, r0);
+          const [x1, y1] = ponta(f, r1);
+          return (
+            <line
+              key={f}
+              x1={x0}
+              y1={y0}
+              x2={x1}
+              y2={y1}
+              stroke={EIXO}
+              strokeWidth={longa ? 1.2 : 0.8}
+              opacity={longa ? 0.75 : 0.4}
+            />
+          );
+        })}
+      </g>
+
+      {/* trilho do arco de valor — carrega o tooltip mesmo com 0% */}
       <path
-        d={arcoMedidor(cx, cy, R, 0, faixaAtencao)}
+        d={arcoMedidor(cx, cy, R, 0, 1)}
         fill="none"
-        stroke={NIVEL.critico.cor}
+        stroke={GRADE}
         strokeWidth={esp}
-        opacity={0.16}
-        strokeLinecap="round"
-      />
-      <path
-        d={arcoMedidor(cx, cy, R, faixaAtencao, faixaBoa)}
-        fill="none"
-        stroke={NIVEL.atencao.cor}
-        strokeWidth={esp}
-        opacity={0.2}
-      />
-      <path
-        d={arcoMedidor(cx, cy, R, faixaBoa, 1)}
-        fill="none"
-        stroke={NIVEL.otimo.cor}
-        strokeWidth={esp}
-        opacity={0.18}
-        strokeLinecap="round"
-      />
-      {/* marcas dos limites das faixas */}
-      {[faixaAtencao, faixaBoa].map((f) => {
-        const t0 = Math.PI * (1 - f);
-        const r0 = R - esp / 2 - 1;
-        const r1 = R + esp / 2 + 1;
-        return (
-          <line
-            key={f}
-            x1={cx + r0 * Math.cos(t0)}
-            y1={cy - r0 * Math.sin(t0)}
-            x2={cx + r1 * Math.cos(t0)}
-            y2={cy - r1 * Math.sin(t0)}
-            stroke="#fdfbf8"
-            strokeWidth={2}
-          />
-        );
-      })}
-      {/* arco do valor */}
+      >
+        <title>{`${rotulo ?? "Medidor"}: ${pct.toFixed(1).replace(".", ",")}% — ${est.rotulo}`}</title>
+      </path>
+
+      {/* arco do valor — desenha-se da esquerda para a direita */}
       {t > 0 ? (
         <>
           <path
@@ -833,54 +952,88 @@ export function Medidor({
             fill="none"
             stroke={est.cor}
             strokeWidth={esp}
-            strokeLinecap="round"
             pathLength={1}
             className="g-linha"
           >
             <title>{`${rotulo ?? ""}: ${pct.toFixed(1).replace(".", ",")}%`}</title>
           </path>
-          <circle
-            cx={mx}
-            cy={my}
-            r={esp / 2 - 2.5}
-            fill="#fdfbf8"
-            stroke={est.forte}
-            strokeWidth={3}
-            className="g-surgir"
-            style={{ animationDelay: "1s" }}
-          />
+          {/* cursor na ponta: fio radial + anel, como agulha de aparelho */}
+          <g className="g-surgir" style={{ animationDelay: "1.05s" }}>
+            <line
+              x1={ponta(t, R - esp / 2)[0]}
+              y1={ponta(t, R - esp / 2)[1]}
+              x2={ponta(t, R + esp / 2)[0]}
+              y2={ponta(t, R + esp / 2)[1]}
+              stroke="#fdfbf8"
+              strokeWidth={2}
+            />
+            <circle
+              cx={mx}
+              cy={my}
+              r={4}
+              fill="#fdfbf8"
+              stroke={est.forte}
+              strokeWidth={2.5}
+            />
+          </g>
         </>
       ) : null}
+
       {/* leitura central */}
-      <text
-        x={cx}
-        y={cy - 22}
-        textAnchor="middle"
-        fontSize={38}
-        fontWeight={700}
-        fill={TINTA}
-        style={{ fontFamily: "var(--font-source-serif), Georgia, serif" }}
+      <g className="g-surgir" style={{ animationDelay: "0.7s" }}>
+        <text
+          x={cx}
+          y={cy - 26}
+          textAnchor="middle"
+          fontSize={40}
+          fontWeight={700}
+          fill={TINTA}
+          style={{ fontFamily: "var(--font-source-serif), Georgia, serif" }}
+        >
+          {pct.toFixed(0)}%
+        </text>
+        <text
+          x={cx}
+          y={cy - 6}
+          textAnchor="middle"
+          fontSize={10}
+          fontWeight={700}
+          letterSpacing="0.16em"
+          fill={ROTULO}
+        >
+          {est.rotulo.toUpperCase()}
+        </text>
+      </g>
+
+      {/* âncoras da escala */}
+      <g
+        className="g-rot"
+        style={{ animationDelay: "0.5s" }}
+        aria-hidden="true"
       >
-        {pct.toFixed(0)}%
-      </text>
-      <text
-        x={cx}
-        y={cy - 2}
-        textAnchor="middle"
-        fontSize={11}
-        fontWeight={700}
-        letterSpacing="0.12em"
-        fill={ROTULO}
-      >
-        {est.rotulo.toUpperCase()}
-      </text>
-      {/* âncoras 0% e 100% */}
-      <text x={cx - R} y={cy + 17} textAnchor="middle" fontSize={9} fill={ROTULO}>
-        0%
-      </text>
-      <text x={cx + R} y={cy + 17} textAnchor="middle" fontSize={9} fill={ROTULO}>
-        100%
-      </text>
+        <text
+          x={cx - rZona}
+          y={cy + 15}
+          textAnchor="middle"
+          fontSize={8.5}
+          fill={ROTULO}
+          opacity={0.75}
+          style={{ fontFamily: "var(--font-jetbrains), monospace" }}
+        >
+          0%
+        </text>
+        <text
+          x={cx + rZona}
+          y={cy + 15}
+          textAnchor="middle"
+          fontSize={8.5}
+          fill={ROTULO}
+          opacity={0.75}
+          style={{ fontFamily: "var(--font-jetbrains), monospace" }}
+        >
+          100%
+        </text>
+      </g>
     </svg>
   );
 }
@@ -901,10 +1054,10 @@ export function Rosca({
 }) {
   const CORES = [COR_1, COR_2, COR_3, "#a9a7ad", "#75786f"];
   const total = fatias.reduce((s, f) => s + f.valor, 0);
-  const cx = 96;
-  const cy = 96;
-  const R = 68;
-  const esp = 24;
+  const cx = 106;
+  const cy = 106;
+  const R = 76;
+  const esp = 22;
   if (total <= 0) return null;
 
   const fracoes = fatias.map((f) => f.valor / total);
@@ -927,9 +1080,9 @@ export function Rosca({
   return (
     <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:gap-6">
       <svg
-        viewBox="0 0 192 192"
-        width={168}
-        height={168}
+        viewBox="0 0 212 212"
+        width={192}
+        height={192}
         className="shrink-0"
         role="img"
         aria-label="Composição"
@@ -943,6 +1096,27 @@ export function Rosca({
           strokeWidth={esp}
           opacity={0.5}
         />
+        {/* anéis-guia finos: dão a régua do instrumento ao redor da rosca */}
+        <g className="g-surgir" style={{ animationDelay: "0.15s" }}>
+          <circle
+            cx={cx}
+            cy={cy}
+            r={R + esp / 2 + 5}
+            fill="none"
+            stroke={EIXO}
+            strokeWidth={0.75}
+            opacity={0.35}
+          />
+          <circle
+            cx={cx}
+            cy={cy}
+            r={R - esp / 2 - 5}
+            fill="none"
+            stroke={EIXO}
+            strokeWidth={0.75}
+            opacity={0.2}
+          />
+        </g>
         {segs.map((s, i) =>
           s.frac >= 0.999 ? (
             <circle
@@ -977,10 +1151,14 @@ export function Rosca({
             x={cx}
             y={cy + 2}
             textAnchor="middle"
-            fontSize={20}
+            className="g-surgir"
+            fontSize={22}
             fontWeight={700}
             fill={TINTA}
-            style={{ fontFamily: "var(--font-source-serif), Georgia, serif" }}
+            style={{
+              fontFamily: "var(--font-source-serif), Georgia, serif",
+              animationDelay: "0.75s",
+            }}
           >
             {centroValor}
           </text>
@@ -1000,7 +1178,11 @@ export function Rosca({
       </svg>
       <div className="flex w-full flex-col gap-2">
         {segs.map((s, i) => (
-          <div key={i} className="flex items-center gap-2.5 text-xs">
+          <div
+            key={i}
+            className="g-chip flex items-center gap-2.5 border-b border-contorno/60 pb-2 text-xs last:border-b-0"
+            style={{ animationDelay: `${0.5 + i * 0.09}s` }}
+          >
             <span
               className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
               style={{ backgroundColor: s.cor }}
@@ -1078,8 +1260,12 @@ export function BarraComposicao({
 export function Legenda({ itens }: { itens: { cor: string; nome: string }[] }) {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] font-medium text-tinta-suave">
-      {itens.map((i) => (
-        <span key={i.nome} className="inline-flex items-center gap-1.5">
+      {itens.map((i, idx) => (
+        <span
+          key={i.nome}
+          className="g-chip inline-flex items-center gap-1.5"
+          style={{ animationDelay: `${0.35 + idx * 0.08}s` }}
+        >
           <span
             className="inline-block h-2.5 w-2.5 rounded-sm"
             style={{ backgroundColor: i.cor }}

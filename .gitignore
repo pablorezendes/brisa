@@ -47,3 +47,6 @@ prisma/dev.db
 /data/*.json
 /dados/
 /auth/
+
+# banco de provas visual dos gráficos (gerado por scripts/lab-graficos.tsx)
+public/lab-graficos.svg
