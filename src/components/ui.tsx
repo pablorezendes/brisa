@@ -441,6 +441,50 @@ export function TituloCard({
   );
 }
 
+/**
+ * Alternador de tipo de gráfico — links, não botões: cada opção é uma URL
+ * (?g=linha) que o servidor renderiza. Zero JavaScript no cliente, e a
+ * escolha sobrevive ao compartilhar o link.
+ */
+export function SeletorGrafico({
+  base,
+  qs,
+  atual,
+  opcoes,
+}: {
+  base: string;
+  /** querystring da página SEM o parâmetro `g` (ex.: "mes=2026-06") */
+  qs: string;
+  atual: string;
+  opcoes: { valor: string; rotulo: string }[];
+}) {
+  return (
+    <div
+      className="inline-flex overflow-hidden rounded-lg border border-contorno"
+      role="group"
+      aria-label="Tipo de gráfico"
+    >
+      {opcoes.map((o) => {
+        const ativo = o.valor === atual;
+        return (
+          <Link
+            key={o.valor}
+            href={`${base}?${qs}${qs ? "&" : ""}g=${o.valor}`}
+            aria-current={ativo ? "true" : undefined}
+            className={`border-r border-contorno px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.06em] transition-colors last:border-r-0 ${
+              ativo
+                ? "bg-tinta text-papel"
+                : "text-tinta-suave hover:bg-[#efeee9] hover:text-tinta"
+            }`}
+          >
+            {o.rotulo}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Link de aprofundamento no canto do card. */
 export function LinkCard({
   href,

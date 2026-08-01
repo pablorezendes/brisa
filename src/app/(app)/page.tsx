@@ -8,6 +8,7 @@ import {
   PainelAlertas,
   Ponto,
   Selo,
+  SeletorGrafico,
   SeletorMes,
   SeletorPeriodo,
   TituloCard,
@@ -17,6 +18,7 @@ import {
   AreaTendencia,
   BarraComposicao,
   BarrasHorizontais,
+  BarrasMensais,
   COR_1,
   COR_2,
   Sparkline,
@@ -57,7 +59,12 @@ const fmtPercentual = new Intl.NumberFormat("pt-BR", {
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; de?: string; ate?: string }>;
+  searchParams: Promise<{
+    mes?: string;
+    de?: string;
+    ate?: string;
+    g?: string;
+  }>;
 }) {
   const sp = await searchParams;
   const periodo = parsePeriodo(sp.de, sp.ate);
@@ -137,6 +144,33 @@ export default async function Home({
   // aceitam ?de/?ate e o clique tem de bater com o que o card afirma
   const qs = periodo ? `de=${periodo.de}&ate=${periodo.ate}` : `mes=${mes}`;
   const qsAno = periodo ? qs : `ano=${ano}`;
+
+  // ---- tipo de gráfico da curva de comissão (?g=) ------------------------
+  const TIPOS_GRAFICO = [
+    { valor: "area", rotulo: "Área" },
+    { valor: "linha", rotulo: "Linha" },
+    { valor: "barras", rotulo: "Barras" },
+    { valor: "acumulado", rotulo: "Acumulado" },
+  ];
+  const tipoGrafico = TIPOS_GRAFICO.some((t) => t.valor === sp.g)
+    ? (sp.g as string)
+    : "area";
+
+  /**
+   * Série acumulada: soma progressiva ATÉ o último mês com movimento. Depois
+   * dele volta a zero para que o gráfico entenda "ainda não aconteceu" — sem
+   * isso a curva seguiria reta até dezembro fingindo que o ano já fechou.
+   */
+  const ultimoComDado = vm.serie.reduce(
+    (ultimo, v, i) => (v > 0 ? i : ultimo),
+    -1
+  );
+  let somaCorrente = 0;
+  const serieAcumulada = vm.serie.map((v, i) => {
+    if (i > ultimoComDado) return 0;
+    somaCorrente += v;
+    return somaCorrente;
+  });
 
   // ---- semáforos -----------------------------------------------------------
   const nivelTaxa = nivelTaxaRecebimento(vm.taxa);
@@ -414,7 +448,7 @@ export default async function Home({
       <Card className="mt-6 px-5 py-4">
         <TituloCard
           titulo={vm.tituloSerie}
-          ajuda="A curva do ganho da administradora, pelo mês de lançamento de cada cobrança. No modo período, o eixo mostra exatamente os meses escolhidos no calendário. O ponto cheio é o mês em tela (modo mês)."
+          ajuda="O ganho da administradora pelo mês de lançamento de cada cobrança. Escolha a forma de ver: Área e Linha mostram a tendência, Barras comparam mês a mês, Acumulado soma o ano até cada mês. A curva termina no último mês com movimento — meses à frente ainda não aconteceram e não valem como zero."
           direita={
             <>
               <span className="font-mono text-[12px] text-tinta-suave">
@@ -429,14 +463,36 @@ export default async function Home({
             </>
           }
         />
-        <AreaTendencia
-          valores={vm.serie}
-          destaque={vm.destaqueSerie}
-          rotulos={vm.rotulosSerie}
-          rotuloAcessivel={vm.tituloSerie}
-        />
+        <div className="mb-3">
+          <SeletorGrafico
+            base="/"
+            qs={qs}
+            atual={tipoGrafico}
+            opcoes={TIPOS_GRAFICO}
+          />
+        </div>
+        {tipoGrafico === "barras" ? (
+          <BarrasMensais
+            valores={vm.serie}
+            mesSelecionado={vm.destaqueSerie}
+            rotulos={vm.rotulosSerie}
+            rotuloAcessivel={vm.tituloSerie}
+          />
+        ) : (
+          <AreaTendencia
+            valores={tipoGrafico === "acumulado" ? serieAcumulada : vm.serie}
+            destaque={vm.destaqueSerie}
+            rotulos={vm.rotulosSerie}
+            rotuloAcessivel={vm.tituloSerie}
+            preenchimento={tipoGrafico !== "linha"}
+          />
+        )}
         <p className="mt-2 text-xs text-tinta-suave">
-          Passe o mouse em qualquer ponto para ver o valor exato do mês.
+          {tipoGrafico === "acumulado"
+            ? "Cada ponto é a soma de tudo o que entrou de comissão até aquele mês — a curva só sobe."
+            : tipoGrafico === "barras"
+              ? "Cada coluna é o ganho daquele mês; a etiqueta marca o mês em tela e o melhor do ano."
+              : "Passe o mouse em qualquer ponto para ver o valor exato do mês."}
         </p>
       </Card>
 

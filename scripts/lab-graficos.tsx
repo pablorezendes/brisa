@@ -102,8 +102,31 @@ empilhar(
   296
 );
 empilhar(
-  "AreaTendencia — curva do ano",
+  "AreaTendencia · ÁREA — o caso do print: JUL–DEZ sem lançamento não viram zero",
   <AreaTendencia valores={COMISSAO} destaque={6} />,
+  296
+);
+empilhar(
+  "AreaTendencia · LINHA — mesma série, sem a mancha",
+  <AreaTendencia valores={COMISSAO} destaque={6} preenchimento={false} />,
+  296
+);
+empilhar(
+  "AreaTendencia · ACUMULADO — soma progressiva, para a curva só subir",
+  <AreaTendencia
+    valores={COMISSAO.map((_, i) =>
+      i > 5 ? 0 : COMISSAO.slice(0, i + 1).reduce((a, v) => a + v, 0)
+    )}
+    destaque={6}
+  />,
+  296
+);
+empilhar(
+  "AreaTendencia · zero no MEIO da série continua sendo desenhado",
+  <AreaTendencia
+    valores={[1_100_000, 1_200_000, 0, 1_400_000, 1_300_000, 1_222_428, 0, 0, 0, 0, 0, 0]}
+    destaque={6}
+  />,
   296
 );
 empilhar(
@@ -143,7 +166,7 @@ const medidores = [
 ];
 partes.push(
   `<rect x="24" y="${y}" width="640" height="248" rx="8" fill="#fdfbf8" stroke="#e5e1d8"/>
-   <text x="40" y="${y + 24}" font-size="13" font-weight="600" fill="#1c2430" font-family="Georgia, serif">Medidor — arco fino, anel de zonas por fora, marcas de escala</text>`
+   <text x="40" y="${y + 24}" font-size="13" font-weight="600" fill="#1c2430" font-family="Georgia, serif">Medidor — um arco só; os dois riscos brancos marcam 80% e 95%</text>`
 );
 medidores.forEach((m, i) => {
   const markup = renderToStaticMarkup(

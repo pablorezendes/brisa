@@ -179,22 +179,6 @@ function Moldura({ ticks, max }: { ticks: number[]; max: number }) {
         strokeWidth={1.25}
         className="g-eixo"
       />
-      {/* cantoneiras — detalhe de instrumento, sem custo de tinta */}
-      {[
-        [EIXO_W, 1],
-        [LARG, -1],
-      ].map(([x, sx]) => (
-        <path
-          key={x}
-          d={`M${x},${TOPO - 1} V${TOPO - 8} H${x + sx * 8}`}
-          fill="none"
-          stroke={EIXO}
-          strokeWidth={1}
-          opacity={0.45}
-          className="g-surgir"
-          style={{ animationDelay: "0.45s" }}
-        />
-      ))}
     </g>
   );
 }
@@ -551,8 +535,13 @@ export function BarrasCaixa({
 }
 
 /**
- * Tendência em área — a curva do ano com o preenchimento esvaindo para baixo.
- * Melhor que barras quando a pergunta é "está subindo ou descendo?".
+ * Tendência mensal em linha (com ou sem preenchimento).
+ *
+ * Regra de honestidade: meses do FIM da série sem valor não são "zero", são
+ * meses que ainda não aconteceram. A curva para no último mês com dado — sem
+ * isso a linha despencava até a base e corria rente ao eixo, dando a leitura
+ * falsa de que a comissão tinha zerado. Zeros no MEIO da série continuam
+ * sendo desenhados: ali o zero é informação de verdade.
  */
 export function AreaTendencia({
   valores,
@@ -560,14 +549,17 @@ export function AreaTendencia({
   destaque,
   rotuloAcessivel = "Tendência mensal",
   rotulos,
+  preenchimento = true,
 }: {
   valores: number[];
   cor?: string;
-  /** posição 1-based na série — ponto marcado com anel */
+  /** posição 1-based na série — ponto cheio */
   destaque?: number;
   rotuloAcessivel?: string;
   /** rótulos do eixo (default JAN..DEZ) */
   rotulos?: string[];
+  /** false = só a linha, sem a mancha embaixo */
+  preenchimento?: boolean;
 }) {
   const n = valores.length;
   if (n === 0) return null;
@@ -576,54 +568,81 @@ export function AreaTendencia({
     n === 1 ? EIXO_W + PLOT_W / 2 : EIXO_W + 18 + (i * (PLOT_W - 36)) / (n - 1);
   const py = (v: number) => BASE - (v / max) * ALT;
 
-  const pontos = valores.map((v, i) => [px(i), py(v)] as const);
+  // último mês com movimento: daí para a frente é futuro, não é zero
+  let ultimo = -1;
+  for (let i = n - 1; i >= 0; i--) {
+    if (valores[i] > 0) {
+      ultimo = i;
+      break;
+    }
+  }
+  const comDado = valores.slice(0, ultimo + 1);
+  const pontos = comDado.map((v, i) => [px(i), py(v)] as const);
   const linha = pontos
     .map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`)
     .join(" ");
-  const area = `${linha} L${pontos[n - 1][0].toFixed(1)},${BASE} L${pontos[0][0].toFixed(1)},${BASE} Z`;
+  const area =
+    pontos.length > 1
+      ? `${linha} L${pontos[pontos.length - 1][0].toFixed(1)},${BASE} L${pontos[0][0].toFixed(1)},${BASE} Z`
+      : "";
+  // com muitos pontos a série vira um colar de bolinhas: marca só o destaque
+  const marcarPontos = pontos.length <= 14;
 
   return (
     <svg viewBox={VIEWBOX} className="w-full" role="img" aria-label={rotuloAcessivel}>
       <Moldura ticks={ticks} max={max} />
-      <path d={area} fill={cor} fillOpacity={0.08} className="g-surgir" />
-      <path
-        d={linha}
-        fill="none"
-        stroke={cor}
-        strokeWidth={2.5}
-        strokeLinejoin="round"
-        strokeLinecap="round"
-        pathLength={1}
-        className="g-linha"
-      />
-      {pontos.map(([x, y], i) => {
-        const marcado = i + 1 === destaque;
-        const largura = PLOT_W / n;
-        // não deixa o realce invadir a faixa dos rótulos de valor
-        const x0 = Math.max(x - largura / 2, EIXO_W);
+      {preenchimento && area ? (
+        <path
+          d={area}
+          fill={cor}
+          fillOpacity={0.07}
+          className="g-surgir"
+          style={{ animationDelay: "0.35s" }}
+        />
+      ) : null}
+      {pontos.length > 1 ? (
+        <path
+          d={linha}
+          fill="none"
+          stroke={cor}
+          strokeWidth={2}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          pathLength={1}
+          className="g-linha"
+        />
+      ) : null}
+      {valores.map((v, i) => {
+        const marcado = i + 1 === destaque && i <= ultimo;
+        const futuro = i > ultimo;
+        const x = px(i);
         return (
-          <g key={i} className="g-col">
-            <rect
-              className="g-realce"
-              x={x0}
-              y={TOPO - 6}
-              width={Math.min(largura, LARG - x0)}
-              height={ALT + 6}
-              rx={4}
-              fill={TINTA}
-            />
-            <circle
-              cx={x}
-              cy={y}
-              r={marcado ? 5 : 3}
-              fill={marcado ? cor : "#fdfbf8"}
-              stroke={cor}
-              strokeWidth={marcado ? 2.5 : 1.8}
-              className="g-surgir"
-              style={{ animationDelay: `${0.7 + i * 0.04}s` }}
-            >
-              <title>{`${rotuloEixo(rotulos, i)}: ${formatarBRL(valores[i])}`}</title>
-            </circle>
+          <g key={i} className={futuro ? undefined : "g-col"}>
+            {!futuro ? (
+              <rect
+                className="g-realce"
+                x={Math.max(x - PLOT_W / n / 2, EIXO_W)}
+                y={TOPO - 8}
+                width={PLOT_W / n}
+                height={ALT + 8}
+                rx={3}
+                fill={TINTA}
+              />
+            ) : null}
+            {!futuro && (marcarPontos || marcado) ? (
+              <circle
+                cx={x}
+                cy={py(v)}
+                r={marcado ? 4.5 : 2.5}
+                fill={marcado ? cor : "#fdfbf8"}
+                stroke={cor}
+                strokeWidth={marcado ? 0 : 1.6}
+                className="g-surgir"
+                style={{ animationDelay: `${0.75 + i * 0.035}s` }}
+              >
+                <title>{`${rotuloEixo(rotulos, i)}: ${formatarBRL(v)}`}</title>
+              </circle>
+            ) : null}
             {mostrarRotulo(n, i, marcado) ? (
               <text
                 x={x}
@@ -632,6 +651,7 @@ export function AreaTendencia({
                 fontSize={9.5}
                 fill={marcado ? TINTA : ROTULO}
                 fontWeight={marcado ? 700 : 400}
+                opacity={futuro ? 0.4 : 1}
                 textAnchor="middle"
                 style={{
                   fontFamily: "var(--font-jetbrains), monospace",
@@ -644,6 +664,18 @@ export function AreaTendencia({
           </g>
         );
       })}
+      {ultimo < 0 ? (
+        <text
+          x={EIXO_W + PLOT_W / 2}
+          y={TOPO + ALT / 2}
+          textAnchor="middle"
+          fontSize={11}
+          fill={ROTULO}
+          opacity={0.7}
+        >
+          sem movimento no período
+        </text>
+      ) : null}
     </svg>
   );
 }
@@ -860,11 +892,9 @@ export function Medidor({
   faixaAtencao?: number;
 }) {
   const cx = 110;
-  const cy = 120;
-  const R = 82; // raio do arco de valor
-  const esp = 12; // espessura do arco de valor — fina, de instrumento
-  const rZona = R + esp / 2 + 7; // anel das zonas, FORA do arco (não encosta)
-  const espZona = 3;
+  const cy = 112;
+  const R = 82;
+  const esp = 14;
   const t = Math.max(0, Math.min(1, fracao));
   const pct = fracao * 100;
   const nivel: Nivel =
@@ -874,118 +904,65 @@ export function Medidor({
     const a = Math.PI * (1 - f);
     return [cx + r * Math.cos(a), cy - r * Math.sin(a)];
   };
-  const [mx, my] = ponta(t, R);
-
-  // marcas de escala a cada 10%; as de 0/50/100 são mais longas
-  const marcas = Array.from({ length: 11 }, (_, i) => i / 10);
 
   return (
     <svg
-      viewBox="0 0 220 150"
+      viewBox="0 0 220 126"
       className="w-full"
       role="img"
       aria-label={`${rotulo ?? "medidor"}: ${pct.toFixed(0)}% — ${est.rotulo}`}
     >
-      {/* anel externo das três zonas do semáforo — pontas retas, sem calombo */}
-      <g className="g-surgir" style={{ animationDelay: "0.15s" }}>
-        <path
-          d={arcoMedidor(cx, cy, rZona, 0, faixaAtencao)}
-          fill="none"
-          stroke={NIVEL.critico.cor}
-          strokeWidth={espZona}
-          opacity={0.55}
-        />
-        <path
-          d={arcoMedidor(cx, cy, rZona, faixaAtencao, faixaBoa)}
-          fill="none"
-          stroke={NIVEL.atencao.cor}
-          strokeWidth={espZona}
-          opacity={0.55}
-        />
-        <path
-          d={arcoMedidor(cx, cy, rZona, faixaBoa, 1)}
-          fill="none"
-          stroke={NIVEL.otimo.cor}
-          strokeWidth={espZona}
-          opacity={0.55}
-        />
-      </g>
-
-      {/* marcas de escala */}
-      <g aria-hidden="true" className="g-surgir" style={{ animationDelay: "0.3s" }}>
-        {marcas.map((f) => {
-          const longa = f === 0 || f === 0.5 || f === 1;
-          const r0 = R - esp / 2 - 3;
-          const r1 = r0 - (longa ? 7 : 4);
-          const [x0, y0] = ponta(f, r0);
-          const [x1, y1] = ponta(f, r1);
-          return (
-            <line
-              key={f}
-              x1={x0}
-              y1={y0}
-              x2={x1}
-              y2={y1}
-              stroke={EIXO}
-              strokeWidth={longa ? 1.2 : 0.8}
-              opacity={longa ? 0.75 : 0.4}
-            />
-          );
-        })}
-      </g>
-
-      {/* trilho do arco de valor — carrega o tooltip mesmo com 0% */}
+      {/* trilho: um arco só, cinza de contorno. Carrega o tooltip mesmo em 0% */}
       <path
         d={arcoMedidor(cx, cy, R, 0, 1)}
         fill="none"
         stroke={GRADE}
         strokeWidth={esp}
+        strokeLinecap="round"
       >
         <title>{`${rotulo ?? "Medidor"}: ${pct.toFixed(1).replace(".", ",")}% — ${est.rotulo}`}</title>
       </path>
 
+      {/* limites das faixas: dois riscos finos SOBRE o trilho. É toda a
+          sinalização de zona que o medidor precisa — quem dá o veredito é a
+          cor do arco, e a palavra embaixo do número confirma. */}
+      {[faixaAtencao, faixaBoa].map((f) => {
+        const [x0, y0] = ponta(f, R - esp / 2);
+        const [x1, y1] = ponta(f, R + esp / 2);
+        return (
+          <line
+            key={f}
+            x1={x0}
+            y1={y0}
+            x2={x1}
+            y2={y1}
+            stroke="#fdfbf8"
+            strokeWidth={1.5}
+            opacity={0.9}
+          />
+        );
+      })}
+
       {/* arco do valor — desenha-se da esquerda para a direita */}
       {t > 0 ? (
-        <>
-          <path
-            d={arcoMedidor(cx, cy, R, 0, t)}
-            fill="none"
-            stroke={est.cor}
-            strokeWidth={esp}
-            pathLength={1}
-            className="g-linha"
-          >
-            <title>{`${rotulo ?? ""}: ${pct.toFixed(1).replace(".", ",")}%`}</title>
-          </path>
-          {/* cursor na ponta: fio radial + anel, como agulha de aparelho */}
-          <g className="g-surgir" style={{ animationDelay: "1.05s" }}>
-            <line
-              x1={ponta(t, R - esp / 2)[0]}
-              y1={ponta(t, R - esp / 2)[1]}
-              x2={ponta(t, R + esp / 2)[0]}
-              y2={ponta(t, R + esp / 2)[1]}
-              stroke="#fdfbf8"
-              strokeWidth={2}
-            />
-            <circle
-              cx={mx}
-              cy={my}
-              r={4}
-              fill="#fdfbf8"
-              stroke={est.forte}
-              strokeWidth={2.5}
-            />
-          </g>
-        </>
+        <path
+          d={arcoMedidor(cx, cy, R, 0, t)}
+          fill="none"
+          stroke={est.cor}
+          strokeWidth={esp}
+          strokeLinecap="round"
+          pathLength={1}
+          className="g-linha"
+        />
       ) : null}
 
       {/* leitura central */}
-      <g className="g-surgir" style={{ animationDelay: "0.7s" }}>
+      <g className="g-surgir" style={{ animationDelay: "0.6s" }}>
         <text
           x={cx}
-          y={cy - 26}
+          y={cy - 24}
           textAnchor="middle"
-          fontSize={40}
+          fontSize={42}
           fontWeight={700}
           fill={TINTA}
           style={{ fontFamily: "var(--font-source-serif), Georgia, serif" }}
@@ -994,44 +971,14 @@ export function Medidor({
         </text>
         <text
           x={cx}
-          y={cy - 6}
+          y={cy - 5}
           textAnchor="middle"
           fontSize={10}
           fontWeight={700}
-          letterSpacing="0.16em"
+          letterSpacing="0.18em"
           fill={ROTULO}
         >
           {est.rotulo.toUpperCase()}
-        </text>
-      </g>
-
-      {/* âncoras da escala */}
-      <g
-        className="g-rot"
-        style={{ animationDelay: "0.5s" }}
-        aria-hidden="true"
-      >
-        <text
-          x={cx - rZona}
-          y={cy + 15}
-          textAnchor="middle"
-          fontSize={8.5}
-          fill={ROTULO}
-          opacity={0.75}
-          style={{ fontFamily: "var(--font-jetbrains), monospace" }}
-        >
-          0%
-        </text>
-        <text
-          x={cx + rZona}
-          y={cy + 15}
-          textAnchor="middle"
-          fontSize={8.5}
-          fill={ROTULO}
-          opacity={0.75}
-          style={{ fontFamily: "var(--font-jetbrains), monospace" }}
-        >
-          100%
         </text>
       </g>
     </svg>
@@ -1078,7 +1025,7 @@ export function Rosca({
   });
 
   return (
-    <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:gap-6">
+    <div className="flex h-full flex-col items-center justify-center gap-4 sm:flex-row sm:gap-6">
       <svg
         viewBox="0 0 212 212"
         width={192}
@@ -1096,27 +1043,6 @@ export function Rosca({
           strokeWidth={esp}
           opacity={0.5}
         />
-        {/* anéis-guia finos: dão a régua do instrumento ao redor da rosca */}
-        <g className="g-surgir" style={{ animationDelay: "0.15s" }}>
-          <circle
-            cx={cx}
-            cy={cy}
-            r={R + esp / 2 + 5}
-            fill="none"
-            stroke={EIXO}
-            strokeWidth={0.75}
-            opacity={0.35}
-          />
-          <circle
-            cx={cx}
-            cy={cy}
-            r={R - esp / 2 - 5}
-            fill="none"
-            stroke={EIXO}
-            strokeWidth={0.75}
-            opacity={0.2}
-          />
-        </g>
         {segs.map((s, i) =>
           s.frac >= 0.999 ? (
             <circle
