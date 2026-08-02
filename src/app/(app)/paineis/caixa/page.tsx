@@ -21,7 +21,8 @@ import {
   BarrasHorizontais,
   COR_1,
   COR_2,
-  COR_3,
+  COR_SAIDA,
+  COR_SAIDA_2,
   Legenda,
 } from "@/components/graficos";
 import { nivelSaldo } from "@/lib/dominio/semaforo";
@@ -48,18 +49,18 @@ function pctDoTotal(valor: number, total: number): string {
   return `${((valor / total) * 100).toFixed(1).replace(".", ",")}%`;
 }
 
-/** Badge do centro de custo com as mesmas cores das séries (AL ocre, CH índigo). */
+/** Badge do centro de custo. Saída é sempre vermelha — igual às séries. */
 function BadgeCentro({ centro }: { centro: string }) {
-  if (centro === "AL") return <Badge cor="ambar">Antonio/Laura</Badge>;
-  if (centro === "CH") return <Badge cor="azul">Chácara Brisa</Badge>;
+  if (centro === "AL") return <Badge cor="vermelho">Antonio/Laura</Badge>;
+  if (centro === "CH") return <Badge cor="vermelho">Chácara Brisa</Badge>;
   return <Badge cor="slate">{centro}</Badge>;
 }
 
 /**
  * Duas barras horizontais na MESMA escala para comparar os centros.
- * (BarrasHorizontais compartilhado é série única de uma cor só — aqui o
- * comparativo pede uma cor por centro: AL ocre, CH índigo, como no gráfico
- * mensal.) Mesma geometria/estilo do componente compartilhado.
+ * (BarrasHorizontais compartilhado é série única de uma cor só — aqui cada
+ * centro tem seu tom de terracota, como no gráfico mensal: saída é vermelha,
+ * a luminosidade distingue os dois.) Mesma geometria do componente comum.
  */
 function ComparativoCentros({ al, ch }: { al: number; ch: number }) {
   const LARG = 560;
@@ -68,8 +69,8 @@ function ComparativoCentros({ al, ch }: { al: number; ch: number }) {
   const ROTULO_W = 170;
   const VALOR_W = 90;
   const itens = [
-    { rotulo: "Antonio/Laura", valor: al, cor: COR_2 },
-    { rotulo: "Chácara Brisa", valor: ch, cor: COR_3 },
+    { rotulo: "Antonio/Laura", valor: al, cor: COR_SAIDA },
+    { rotulo: "Chácara Brisa", valor: ch, cor: COR_SAIDA_2 },
   ];
   const max = Math.max(al, ch, 1);
   const plotW = LARG - ROTULO_W - VALOR_W;
@@ -217,8 +218,8 @@ export default async function PaginaPainelCaixa({
               <BarraComposicao
                 partes={[
                   { rotulo: "entradas", valor: t.receita, cor: COR_1 },
-                  { rotulo: "saídas AL", valor: t.despesaAL, cor: COR_2 },
-                  { rotulo: "saídas CH", valor: t.despesaCH, cor: COR_3 },
+                  { rotulo: "saídas AL", valor: t.despesaAL, cor: COR_SAIDA },
+                  { rotulo: "saídas CH", valor: t.despesaCH, cor: COR_SAIDA_2 },
                 ]}
               />
             ) : undefined
@@ -245,8 +246,8 @@ export default async function PaginaPainelCaixa({
           <Legenda
             itens={[
               { cor: COR_1, nome: "Receita (entradas)" },
-              { cor: COR_2, nome: "Despesa Antonio/Laura" },
-              { cor: COR_3, nome: "Despesa Chácara Brisa" },
+              { cor: COR_SAIDA, nome: "Despesa Antonio/Laura" },
+              { cor: COR_SAIDA_2, nome: "Despesa Chácara Brisa" },
             ]}
           />
         </div>
@@ -422,7 +423,7 @@ export default async function PaginaPainelCaixa({
             <Legenda
               itens={[
                 { cor: COR_2, nome: "Antonio/Laura" },
-                { cor: COR_3, nome: "Chácara Brisa" },
+                { cor: COR_SAIDA_2, nome: "Chácara Brisa" },
               ]}
             />
           </div>

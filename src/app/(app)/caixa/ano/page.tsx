@@ -19,8 +19,8 @@ import {
 import {
   BarraComposicao,
   COR_1,
-  COR_2,
-  COR_3,
+  COR_SAIDA,
+  COR_SAIDA_2,
 } from "@/components/graficos";
 import { NOME_MES_COMPLETO, parseCompetencia } from "@/lib/dominio/normalizacao";
 import { parsePeriodo } from "@/lib/dominio/periodo";
@@ -135,8 +135,8 @@ export default async function PaginaCaixaAnual({
               <BarraComposicao
                 partes={[
                   { rotulo: "entradas", valor: resumo.totais.receita, cor: COR_1 },
-                  { rotulo: "saídas AL", valor: resumo.totais.despesaAL, cor: COR_2 },
-                  { rotulo: "saídas CH", valor: resumo.totais.despesaCH, cor: COR_3 },
+                  { rotulo: "saídas AL", valor: resumo.totais.despesaAL, cor: COR_SAIDA },
+                  { rotulo: "saídas CH", valor: resumo.totais.despesaCH, cor: COR_SAIDA_2 },
                 ]}
               />
             ) : undefined

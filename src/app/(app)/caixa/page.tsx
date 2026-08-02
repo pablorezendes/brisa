@@ -13,11 +13,14 @@
 import Link from "next/link";
 import type { LancamentoCaixa } from "@prisma/client";
 import {
+  Ajuda,
   Badge,
   Card,
   Dinheiro,
   Kpi,
   PageHeader,
+  Ponto,
+  Selo,
   SeletorMes,
   SeletorPeriodo,
   btnPrimario,
@@ -32,8 +35,8 @@ import { nivelSaldo } from "@/lib/dominio/semaforo";
 import {
   BarraComposicao,
   COR_1,
-  COR_2,
-  COR_3,
+  COR_SAIDA,
+  COR_SAIDA_2,
 } from "@/components/graficos";
 import {
   consolidacaoDoMes,
@@ -358,7 +361,76 @@ export default async function PaginaCaixa({
         }
       />
 
-      <div className="mb-6 grid grid-cols-2 gap-4 xl:grid-cols-4">
+      {/* ---------- consolidação ----------
+           O saldo NÃO é mais um cartão igual aos outros três: ele é o
+           resultado deles. Fica em faixa própria, com número maior e a barra
+           de composição mostrando de que partes o resultado é feito; as três
+           parcelas ficam embaixo, menores e do mesmo tamanho entre si. */}
+      <Card className="mb-4 px-5 py-4" nivel={nivelSaldo(consolidacao.saldo)}>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-8">
+          <div className="sm:w-72 sm:shrink-0">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-tinta-suave">
+              {periodo ? "Saldo do período" : "Saldo do mês"}
+              <Ajuda dica="Entradas menos as saídas dos dois centros, na janela em análise. Positivo: sobrou dinheiro; negativo: as saídas superaram as entradas. O registro de espécie não entra nesta conta." />
+              <Selo nivel={nivelSaldo(consolidacao.saldo)}>
+                {consolidacao.saldo > 0
+                  ? "sobrou"
+                  : consolidacao.saldo < 0
+                    ? "faltou"
+                    : "zerado"}
+              </Selo>
+            </div>
+            <div className="mt-1 font-serif text-3xl font-semibold tabular-nums text-tinta sm:text-[40px] sm:leading-tight">
+              <span className="sigilo">
+                <span>
+                  <Dinheiro centavos={consolidacao.saldo} destaque />
+                </span>
+              </span>
+            </div>
+            <div className="mt-1 text-xs text-tinta-suave">
+              receita − despesa AL − despesa CH
+              {periodo ? ` · ${periodo.rotulo}` : ""}
+            </div>
+            {consolidacao.saldo < 0 ? (
+              <div className="mt-2 flex items-start gap-1.5 text-[11px] font-medium leading-snug text-tinta-suave">
+                <span aria-hidden="true" className="mt-[3px]">
+                  <Ponto nivel="critico" />
+                </span>
+                <span>
+                  Saiu mais do que entrou. Confira se alguma despesa caiu no
+                  centro de custo errado.
+                </span>
+              </div>
+            ) : null}
+          </div>
+          <div className="min-w-0 flex-1">
+            {consolidacao.receita > 0 ||
+            consolidacao.despesaAL > 0 ||
+            consolidacao.despesaCH > 0 ? (
+              <BarraComposicao
+                altura={16}
+                partes={[
+                  { rotulo: "entradas", valor: consolidacao.receita, cor: COR_1 },
+                  { rotulo: "saídas AL", valor: consolidacao.despesaAL, cor: COR_SAIDA },
+                  { rotulo: "saídas CH", valor: consolidacao.despesaCH, cor: COR_SAIDA_2 },
+                ]}
+              />
+            ) : (
+              <p className="text-sm text-tinta-suave">
+                Nenhum lançamento na janela em análise.
+              </p>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <Kpi
+          rotulo="Receita (entradas)"
+          valor={<Dinheiro centavos={consolidacao.receita} destaque />}
+          detalhe={periodo ? periodo.rotulo : undefined}
+          ajuda="Tudo o que entrou na conta na janela em análise (tipo ENTRADA, centro GERAL). Recebimentos em dinheiro NÃO estão aqui — são registro paralelo de espécie e ficam no bloco próprio."
+        />
         <Kpi
           rotulo="Despesa Antonio/Laura"
           valor={<Dinheiro centavos={consolidacao.despesaAL} destaque />}
@@ -370,44 +442,6 @@ export default async function PaginaCaixa({
           valor={<Dinheiro centavos={consolidacao.despesaCH} destaque />}
           detalhe={periodo ? periodo.rotulo : undefined}
           ajuda="Soma das saídas do centro de custo CH (Chácara Brisa) na janela em análise. Gastos da chácara entram aqui; gastos pessoais de Antonio/Laura vão no centro AL."
-        />
-        <Kpi
-          rotulo="Receita (entradas)"
-          valor={<Dinheiro centavos={consolidacao.receita} destaque />}
-          detalhe={periodo ? periodo.rotulo : undefined}
-          ajuda="Tudo o que entrou na conta na janela em análise (tipo ENTRADA, centro GERAL). Recebimentos em dinheiro NÃO estão aqui — são registro paralelo de espécie e ficam no bloco próprio."
-        />
-        <Kpi
-          rotulo={periodo ? "Saldo do período" : "Saldo do mês"}
-          valor={<Dinheiro centavos={consolidacao.saldo} destaque />}
-          detalhe="receita − despesa AL − despesa CH"
-          nivel={nivelSaldo(consolidacao.saldo)}
-          selo={
-            consolidacao.saldo > 0
-              ? "sobrou"
-              : consolidacao.saldo < 0
-                ? "faltou"
-                : undefined
-          }
-          nota={
-            consolidacao.saldo < 0
-              ? "Saiu mais do que entrou. Confira se alguma despesa caiu no centro de custo errado."
-              : undefined
-          }
-          grafico={
-            consolidacao.receita > 0 ||
-            consolidacao.despesaAL > 0 ||
-            consolidacao.despesaCH > 0 ? (
-              <BarraComposicao
-                partes={[
-                  { rotulo: "entradas", valor: consolidacao.receita, cor: COR_1 },
-                  { rotulo: "saídas AL", valor: consolidacao.despesaAL, cor: COR_2 },
-                  { rotulo: "saídas CH", valor: consolidacao.despesaCH, cor: COR_3 },
-                ]}
-              />
-            ) : undefined
-          }
-          ajuda="Entradas menos as saídas dos dois centros, na janela em análise. Positivo: sobrou dinheiro; negativo: as saídas superaram as entradas. O registro de espécie não entra nesta conta."
         />
       </div>
 

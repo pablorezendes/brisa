@@ -1,5 +1,6 @@
 import {
   Ajuda,
+  BuscaCard,
   Card,
   Dinheiro,
   Kpi,
@@ -38,6 +39,7 @@ import {
 import { formatarBRL } from "@/lib/dominio/dinheiro";
 import {
   formatarCompetencia,
+  normalizar,
   NOME_MES_COMPLETO,
   parseCompetencia,
 } from "@/lib/dominio/normalizacao";
@@ -64,6 +66,7 @@ export default async function Home({
     de?: string;
     ate?: string;
     g?: string;
+    qr?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -243,6 +246,17 @@ export default async function Home({
     });
   }
 
+  // busca dentro do quadro de reajustes (?qr=) — normalizada para achar
+  // "jose" digitando sem acento e sem se importar com maiúsculas
+  const buscaReajuste = (sp.qr ?? "").trim();
+  const alvoBusca = normalizar(buscaReajuste);
+  const reajustesFiltrados = alvoBusca
+    ? vm.reajustes.filter((r) =>
+        [r.empreendimento, r.identificacao, r.locatario ?? "", r.indiceReajuste ?? ""]
+          .some((campo) => normalizar(campo).includes(alvoBusca))
+      )
+    : vm.reajustes;
+
   const rankingEmp = vm.porEmp
     .filter((c) => c.comissao > 0)
     .slice(0, 6)
@@ -271,68 +285,31 @@ export default async function Home({
         vazio={`Nada pedindo atenção ${nomeJanela} — cobranças recebidas, caixa positivo e nenhum reajuste a aplicar.`}
       />
 
-      {/* ---------- indicadores ---------- */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* ---------- indicadores, do mais decisivo ao menos ----------
+           Ordem pedida pelo cliente: primeiro o que decide o dia (o caixa, o
+           que falta entrar, quanto do devido entrou); depois o que é tarefa e
+           resultado (reajustes na mesa, comissão, temporada). */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Kpi
-          rotulo={periodo ? "Comissão no período" : "Comissão do mês"}
-          valor={<Dinheiro centavos={vm.comissao} />}
-          detalhe={
-            periodo
-              ? `${periodo.meses.length} ${periodo.meses.length === 1 ? "competência" : "competências"} somadas`
-              : `mês de lançamento ${vm.janela}`
-          }
-          nivel={nivelComissao}
+          rotulo={periodo ? "Saldo de caixa no período" : "Saldo de caixa do mês"}
+          valor={<Dinheiro centavos={vm.saldoCaixa} />}
+          detalhe="entradas − saídas AL − saídas CH"
+          nivel={nivelCaixa}
+          destaque
           selo={
-            periodo
-              ? "total da janela"
-              : nivelComissao === "otimo"
-                ? "acima da média"
-                : nivelComissao === "info"
-                  ? "na média"
-                  : "abaixo da média"
+            vm.saldoCaixa > 0
+              ? "positivo"
+              : vm.saldoCaixa < 0
+                ? "negativo"
+                : undefined
           }
           nota={
-            !periodo && mediaComissao > 0 && vm.comissao < mediaComissao * 0.85
-              ? `Média dos meses com movimento no ano: ${formatarBRL(Math.round(mediaComissao))}. Confira se faltam recebimentos por lançar.`
+            vm.saldoCaixa < 0
+              ? "Saiu mais do que entrou. Confira se alguma despesa caiu no centro de custo errado."
               : undefined
           }
-          grafico={<Sparkline valores={vm.serie} rotulos={vm.rotulosSerie} />}
-          ajuda="O que a administradora ganhou na janela em análise: a taxa vigente (padrão 10%) sobre o aluguel efetivamente recebido. IPTU e condomínio são repasses ao proprietário e nunca entram na conta. Só muda quando você registra pagamentos em Recebimentos."
-        />
-        <Kpi
-          rotulo={periodo ? "Média mensal no período" : "Acumulada no ano"}
-          valor={
-            periodo ? (
-              <Dinheiro
-                centavos={Math.round(
-                  vm.comissao / Math.max(1, periodo.meses.length)
-                )}
-              />
-            ) : (
-              <Dinheiro
-                centavos={vm.serie
-                  .slice(0, mesNum)
-                  .reduce((a, v) => a + v, 0)}
-              />
-            )
-          }
-          detalhe={
-            periodo
-              ? `${formatarBRL(vm.comissao)} ÷ ${periodo.meses.length} meses`
-              : `JAN–${vm.janela}`
-          }
-          nivel="info"
-          selo={
-            periodo
-              ? undefined
-              : `${mesesComComissao.length} ${mesesComComissao.length === 1 ? "mês" : "meses"}`
-          }
-          href={`/relatorios/comissao?${qsAno}`}
-          ajuda={
-            periodo
-              ? "Comissão total do período dividida pelos meses da janela — o ritmo médio de ganho mensal. Compare com outros períodos para ver se a operação está acelerando ou desacelerando."
-              : "Soma das comissões de janeiro até o mês selecionado. É o total que a administradora ganhou no ano até aqui — a matriz completa por empreendimento está em Relatórios."
-          }
+          href={`/caixa?${qs}`}
+          ajuda="Entradas do caixa menos as saídas dos dois centros (Antonio/Laura e Chácara Brisa) na janela em análise. Recebimentos em dinheiro são um registro paralelo de espécie e não entram neste saldo."
         />
         <Kpi
           rotulo="Inadimplência"
@@ -343,6 +320,7 @@ export default async function Home({
               : "lançamentos pendentes"
           } ${nomeJanela}`}
           nivel={nivelInad}
+          destaque
           nota={
             vencidasGraves.length > 0
               ? `${vencidasGraves.length} ${vencidasGraves.length === 1 ? "cobrança já passou" : "cobranças já passaram"} de 30 dias — priorize essas.`
@@ -358,6 +336,7 @@ export default async function Home({
           valor={vm.taxa !== null ? fmtPercentual.format(vm.taxa) : "—"}
           detalhe="Σ recebido / Σ total devido"
           nivel={nivelTaxa}
+          destaque
           nota={
             nivelTaxa === "critico"
               ? "Abaixo de 80%: passe a lista de cobrança ainda hoje."
@@ -402,25 +381,46 @@ export default async function Home({
           href={vm.reajustesQtde > 0 ? "/contratos" : undefined}
           ajuda="Contratos que fazem aniversário de correção na janela em análise. É hora de aplicar o índice (IGP-M, IPCA...) e atualizar o valor do aluguel na tela de Contratos — o sistema não reajusta sozinho."
         />
+        {/* comissão do mês e acumulada do ano no MESMO card — são a mesma
+            história contada em dois prazos, não merecem dois cartões */}
         <Kpi
-          rotulo={periodo ? "Saldo de caixa no período" : "Saldo de caixa do mês"}
-          valor={<Dinheiro centavos={vm.saldoCaixa} />}
-          detalhe="entradas − saídas AL − saídas CH"
-          nivel={nivelCaixa}
+          rotulo={periodo ? "Comissão no período" : "Comissão do mês"}
+          valor={<Dinheiro centavos={vm.comissao} />}
+          detalhe={
+            periodo
+              ? `${periodo.meses.length} ${periodo.meses.length === 1 ? "competência" : "competências"} somadas`
+              : `mês de lançamento ${vm.janela}`
+          }
+          secundario={{
+            rotulo: periodo ? "média mensal" : `acumulada JAN–${vm.janela}`,
+            valor: (
+              <Dinheiro
+                centavos={
+                  periodo
+                    ? Math.round(vm.comissao / Math.max(1, periodo.meses.length))
+                    : vm.serie.slice(0, mesNum).reduce((a, v) => a + v, 0)
+                }
+              />
+            ),
+          }}
+          nivel={nivelComissao}
           selo={
-            vm.saldoCaixa > 0
-              ? "positivo"
-              : vm.saldoCaixa < 0
-                ? "negativo"
-                : undefined
+            periodo
+              ? "total da janela"
+              : nivelComissao === "otimo"
+                ? "acima da média"
+                : nivelComissao === "info"
+                  ? "na média"
+                  : "abaixo da média"
           }
           nota={
-            vm.saldoCaixa < 0
-              ? "Saiu mais do que entrou. Confira se alguma despesa caiu no centro de custo errado."
+            !periodo && mediaComissao > 0 && vm.comissao < mediaComissao * 0.85
+              ? `Média dos meses com movimento no ano: ${formatarBRL(Math.round(mediaComissao))}. Confira se faltam recebimentos por lançar.`
               : undefined
           }
-          href={`/caixa?${qs}`}
-          ajuda="Entradas do caixa menos as saídas dos dois centros (Antonio/Laura e Chácara Brisa) na janela em análise. Recebimentos em dinheiro são um registro paralelo de espécie e não entram neste saldo."
+          grafico={<Sparkline valores={vm.serie} rotulos={vm.rotulosSerie} />}
+          href={`/relatorios/comissao?${qsAno}`}
+          ajuda="O que a administradora ganhou na janela em análise: a taxa vigente (padrão 10%) sobre o aluguel efetivamente recebido — e, na linha de baixo, o acumulado do ano até aqui. IPTU e condomínio são repasses ao proprietário e nunca entram na conta."
         />
         <Kpi
           rotulo={periodo ? "Lucro temporada no período" : "Lucro temporada"}
@@ -444,59 +444,255 @@ export default async function Home({
         />
       </div>
 
-      {/* ---------- comissão da janela, mês a mês ---------- */}
-      <Card className="mt-6 px-5 py-4">
+      {/* ---------- pendentes ---------- */}
+    <Card
+      className="mt-6 px-5 py-4"
+        nivel={vm.pendentes.length > 0 ? nivelInad : "otimo"}
+      >
         <TituloCard
-          titulo={vm.tituloSerie}
-          ajuda="O ganho da administradora pelo mês de lançamento de cada cobrança. Escolha a forma de ver: Área e Linha mostram a tendência, Barras comparam mês a mês, Acumulado soma o ano até cada mês. A curva termina no último mês com movimento — meses à frente ainda não aconteceram e não valem como zero."
+          titulo={periodo ? "Pendentes do período" : "Pendentes do mês"}
+          nivel={vm.pendentes.length > 0 ? nivelInad : "otimo"}
+          ajuda="As cobranças de maior valor ainda sem pagamento registrado. O ponto colorido na frente é o tempo de atraso: verde/azul ainda não venceu, âmbar venceu há pouco, vermelho passou de 30 dias."
+          direita={
+            <LinkCard href={`/relatorios/inadimplencia?${qs}`}>
+              Inadimplência completa
+            </LinkCard>
+          }
+        />
+        {topPendentes.length === 0 ? (
+          <div className="flex items-center gap-2 py-8 text-center text-sm text-tinta-suave">
+            <span className="mx-auto inline-flex items-center gap-2">
+              <Selo nivel="otimo">tudo recebido</Selo>
+              Nenhuma pendência {nomeJanela}.
+            </span>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="tabela">
+              <thead>
+                <tr>
+                  <th>
+                    Situação{" "}
+                    <Ajuda dica="Semáforo do atraso: azul = ainda não venceu, âmbar = venceu há até 30 dias, vermelho = passou de 30 dias, cinza = contrato sem dia de vencimento cadastrado." />
+                  </th>
+                  {vm.comMesNaTabela ? <th>Mês</th> : null}
+                  <th>Empreendimento</th>
+                  <th>Locatário</th>
+                  <th className="text-right">
+                    Total devido{" "}
+                    <Ajuda dica="Aluguel + IPTU + condomínio da cobrança ainda sem pagamento. Quando entrar o dinheiro, registre em Recebimentos — se vier parcial ou em acordo, anote o motivo na Observação." />
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {topPendentes.map((p) => {
+                  const n = nivelAtraso(p.diasDesdeVencimento);
+                  return (
+                    <tr key={p.recebimentoId}>
+                      <td>
+                        <Ponto
+                          nivel={n}
+                          titulo={
+                            p.diasDesdeVencimento === null
+                              ? "sem dia de vencimento cadastrado"
+                              : p.diasDesdeVencimento <= 0
+                                ? `a vencer (dia ${p.diaVencimento})`
+                                : `${p.diasDesdeVencimento} dia(s) de atraso`
+                          }
+                        />
+                      </td>
+                      {vm.comMesNaTabela ? (
+                        <td className="font-mono text-[12px]">
+                          {formatarCompetencia(p.mes)}
+                        </td>
+                      ) : null}
+                      <td className="font-medium">{p.empreendimento}</td>
+                      <td>
+                        {p.locatario ?? (
+                          <span className="text-tinta-suave/60">
+                            {p.identificacao}
+                          </span>
+                        )}
+                      </td>
+                      <td className="text-right">
+                        <Dinheiro centavos={p.totalDevido} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={vm.comMesNaTabela ? 4 : 3}>
+                    {vm.pendentes.length > topPendentes.length
+                      ? `Top ${topPendentes.length} de ${vm.pendentes.length} pendências`
+                      : `${vm.pendentes.length} ${
+                          vm.pendentes.length === 1
+                            ? "pendência"
+                            : "pendências"
+                        }`}
+                  </td>
+                  <td className="text-right">
+                    <Dinheiro
+                      centavos={vm.inadimplencia.valorDevido}
+                      destaque
+                    />
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {/* ---------- reajustes ---------- */}
+      <Card
+        className="mt-4 px-5 py-4"
+        nivel={vm.reajustes.length > 0 ? nivelReaj : undefined}
+      >
+        <TituloCard
+          titulo={periodo ? "Reajustes no período" : "Reajustes deste mês"}
+          nivel={vm.reajustes.length > 0 ? nivelReaj : "otimo"}
+          ajuda="Contratos cujo aniversário de correção cai na janela em análise. Aplique o índice combinado sobre o aluguel-base (sem IPTU nem condomínio) e atualize o valor na tela de Contratos — o sistema avisa, mas não reajusta sozinho."
           direita={
             <>
-              <span className="font-mono text-[12px] text-tinta-suave">
-                total:{" "}
-                <strong className="text-tinta">
-                  {formatarBRL(vm.serie.reduce((a, v) => a + v, 0))}
-                </strong>
-              </span>
-              <LinkCard href={`/relatorios/comissao?${qsAno}`}>
-                Matriz completa
-              </LinkCard>
+              <Selo nivel={vm.reajustes.length > 0 ? nivelReaj : "otimo"}>
+                {alvoBusca
+                  ? `${reajustesFiltrados.length} de ${vm.reajustes.length}`
+                  : `${vm.reajustes.length} ${vm.reajustes.length === 1 ? "contrato" : "contratos"}`}
+              </Selo>
+              {vm.reajustes.length > 0 ? (
+                <BuscaCard
+                  base="/"
+                  campo="qr"
+                  valor={buscaReajuste}
+                  ocultos={{
+                    mes: periodo ? undefined : mes,
+                    de: periodo?.de,
+                    ate: periodo?.ate,
+                    g: tipoGrafico === "area" ? undefined : tipoGrafico,
+                  }}
+                  placeholder="Empreendimento, sala, locatário…"
+                />
+              ) : null}
+              {vm.reajustes.length > 0 ? (
+                <LinkCard href="/contratos">Abrir contratos</LinkCard>
+              ) : null}
             </>
           }
         />
-        <div className="mb-3">
-          <SeletorGrafico
-            base="/"
-            qs={qs}
-            atual={tipoGrafico}
-            opcoes={TIPOS_GRAFICO}
-          />
-        </div>
-        {tipoGrafico === "barras" ? (
-          <BarrasMensais
-            valores={vm.serie}
-            mesSelecionado={vm.destaqueSerie}
-            rotulos={vm.rotulosSerie}
-            rotuloAcessivel={vm.tituloSerie}
-          />
+        {vm.reajustes.length === 0 ? (
+          <p className="py-4 text-center text-sm text-tinta-suave">
+            Nenhum contrato com reajuste {nomeJanela}.
+          </p>
+        ) : reajustesFiltrados.length === 0 ? (
+          <p className="py-6 text-center text-sm text-tinta-suave">
+            Nenhum dos {vm.reajustes.length} contratos a reajustar bate com
+            “{buscaReajuste}”.
+          </p>
         ) : (
-          <AreaTendencia
-            valores={tipoGrafico === "acumulado" ? serieAcumulada : vm.serie}
-            destaque={vm.destaqueSerie}
-            rotulos={vm.rotulosSerie}
-            rotuloAcessivel={vm.tituloSerie}
-            preenchimento={tipoGrafico !== "linha"}
-          />
+          <div className="overflow-x-auto">
+            <table className="tabela">
+              <thead>
+                <tr>
+                  <th>Empreendimento</th>
+                  <th>Localização</th>
+                  <th>Locatário</th>
+                  <th>
+                    Índice{" "}
+                    <Ajuda dica="Índice de correção combinado no contrato (IGP-M, IPCA...). Aplique o percentual acumulado de 12 meses sobre o valor atual e atualize o contrato." />
+                  </th>
+                  <th className="text-right">
+                    Valor atual{" "}
+                    <Ajuda dica="Aluguel-base vigente antes do reajuste, sem IPTU nem condomínio. É sobre este valor que o índice é aplicado." />
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {reajustesFiltrados.map((r) => (
+                  <tr key={r.contratoId}>
+                    <td className="font-medium">{r.empreendimento}</td>
+                    <td>{r.identificacao}</td>
+                    <td>
+                      {r.locatario ?? (
+                        <span className="text-tinta-suave/60">—</span>
+                      )}
+                    </td>
+                    <td>
+                      {r.indiceReajuste ? (
+                        <Selo nivel="info" icone={false}>
+                          {r.indiceReajuste}
+                        </Selo>
+                      ) : (
+                        <span className="text-tinta-suave/60">
+                          índice não cadastrado
+                        </span>
+                      )}
+                    </td>
+                    <td className="text-right">
+                      <Dinheiro centavos={r.valorBase} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-        <p className="mt-2 text-xs text-tinta-suave">
-          {tipoGrafico === "acumulado"
-            ? "Cada ponto é a soma de tudo o que entrou de comissão até aquele mês — a curva só sobe."
-            : tipoGrafico === "barras"
-              ? "Cada coluna é o ganho daquele mês; a etiqueta marca o mês em tela e o melhor do ano."
-              : "Passe o mouse em qualquer ponto para ver o valor exato do mês."}
-        </p>
-      </Card>
 
-      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+      {/* ---------- as duas leituras da comissão, lado a lado ---------- */}
+      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+        {/* ---------- comissão da janela, mês a mês ---------- */}
+        <Card className="px-5 py-4">
+          <TituloCard
+            titulo={vm.tituloSerie}
+            ajuda="O ganho da administradora pelo mês de lançamento de cada cobrança. Escolha a forma de ver: Área e Linha mostram a tendência, Barras comparam mês a mês, Acumulado soma o ano até cada mês. A curva termina no último mês com movimento — meses à frente ainda não aconteceram e não valem como zero."
+            direita={
+              <>
+                <span className="font-mono text-[12px] text-tinta-suave">
+                  total:{" "}
+                  <strong className="text-tinta">
+                    {formatarBRL(vm.serie.reduce((a, v) => a + v, 0))}
+                  </strong>
+                </span>
+                <LinkCard href={`/relatorios/comissao?${qsAno}`}>
+                  Matriz completa
+                </LinkCard>
+              </>
+            }
+          />
+          <div className="mb-3">
+            <SeletorGrafico
+              base="/"
+              qs={qs}
+              atual={tipoGrafico}
+              opcoes={TIPOS_GRAFICO}
+            />
+          </div>
+          {tipoGrafico === "barras" ? (
+            <BarrasMensais
+              valores={vm.serie}
+              mesSelecionado={vm.destaqueSerie}
+              rotulos={vm.rotulosSerie}
+              rotuloAcessivel={vm.tituloSerie}
+            />
+          ) : (
+            <AreaTendencia
+              valores={tipoGrafico === "acumulado" ? serieAcumulada : vm.serie}
+              destaque={vm.destaqueSerie}
+              rotulos={vm.rotulosSerie}
+              rotuloAcessivel={vm.tituloSerie}
+              preenchimento={tipoGrafico !== "linha"}
+            />
+          )}
+          <p className="mt-2 text-xs text-tinta-suave">
+            {tipoGrafico === "acumulado"
+              ? "Cada ponto é a soma de tudo o que entrou de comissão até aquele mês — a curva só sobe."
+              : tipoGrafico === "barras"
+                ? "Cada coluna é o ganho daquele mês; a etiqueta marca o mês em tela e o melhor do ano."
+                : "Passe o mouse em qualquer ponto para ver o valor exato do mês."}
+          </p>
+        </Card>
+
         {/* ---------- comissão por empreendimento ---------- */}
         <Card className="px-5 py-4">
           <TituloCard
@@ -534,182 +730,8 @@ export default async function Home({
             </p>
           )}
         </Card>
-
-        {/* ---------- pendentes ---------- */}
-        <Card
-          className="px-5 py-4"
-          nivel={vm.pendentes.length > 0 ? nivelInad : "otimo"}
-        >
-          <TituloCard
-            titulo={periodo ? "Pendentes do período" : "Pendentes do mês"}
-            nivel={vm.pendentes.length > 0 ? nivelInad : "otimo"}
-            ajuda="As cobranças de maior valor ainda sem pagamento registrado. O ponto colorido na frente é o tempo de atraso: verde/azul ainda não venceu, âmbar venceu há pouco, vermelho passou de 30 dias."
-            direita={
-              <LinkCard href={`/relatorios/inadimplencia?${qs}`}>
-                Inadimplência completa
-              </LinkCard>
-            }
-          />
-          {topPendentes.length === 0 ? (
-            <div className="flex items-center gap-2 py-8 text-center text-sm text-tinta-suave">
-              <span className="mx-auto inline-flex items-center gap-2">
-                <Selo nivel="otimo">tudo recebido</Selo>
-                Nenhuma pendência {nomeJanela}.
-              </span>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="tabela">
-                <thead>
-                  <tr>
-                    <th>
-                      Situação{" "}
-                      <Ajuda dica="Semáforo do atraso: azul = ainda não venceu, âmbar = venceu há até 30 dias, vermelho = passou de 30 dias, cinza = contrato sem dia de vencimento cadastrado." />
-                    </th>
-                    {vm.comMesNaTabela ? <th>Mês</th> : null}
-                    <th>Empreendimento</th>
-                    <th>Locatário</th>
-                    <th className="text-right">
-                      Total devido{" "}
-                      <Ajuda dica="Aluguel + IPTU + condomínio da cobrança ainda sem pagamento. Quando entrar o dinheiro, registre em Recebimentos — se vier parcial ou em acordo, anote o motivo na Observação." />
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topPendentes.map((p) => {
-                    const n = nivelAtraso(p.diasDesdeVencimento);
-                    return (
-                      <tr key={p.recebimentoId}>
-                        <td>
-                          <Ponto
-                            nivel={n}
-                            titulo={
-                              p.diasDesdeVencimento === null
-                                ? "sem dia de vencimento cadastrado"
-                                : p.diasDesdeVencimento <= 0
-                                  ? `a vencer (dia ${p.diaVencimento})`
-                                  : `${p.diasDesdeVencimento} dia(s) de atraso`
-                            }
-                          />
-                        </td>
-                        {vm.comMesNaTabela ? (
-                          <td className="font-mono text-[12px]">
-                            {formatarCompetencia(p.mes)}
-                          </td>
-                        ) : null}
-                        <td className="font-medium">{p.empreendimento}</td>
-                        <td>
-                          {p.locatario ?? (
-                            <span className="text-tinta-suave/60">
-                              {p.identificacao}
-                            </span>
-                          )}
-                        </td>
-                        <td className="text-right">
-                          <Dinheiro centavos={p.totalDevido} />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan={vm.comMesNaTabela ? 4 : 3}>
-                      {vm.pendentes.length > topPendentes.length
-                        ? `Top ${topPendentes.length} de ${vm.pendentes.length} pendências`
-                        : `${vm.pendentes.length} ${
-                            vm.pendentes.length === 1
-                              ? "pendência"
-                              : "pendências"
-                          }`}
-                    </td>
-                    <td className="text-right">
-                      <Dinheiro
-                        centavos={vm.inadimplencia.valorDevido}
-                        destaque
-                      />
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
-        </Card>
       </div>
 
-      {/* ---------- reajustes ---------- */}
-      <Card
-        className="mt-4 px-5 py-4"
-        nivel={vm.reajustes.length > 0 ? nivelReaj : undefined}
-      >
-        <TituloCard
-          titulo={periodo ? "Reajustes no período" : "Reajustes deste mês"}
-          nivel={vm.reajustes.length > 0 ? nivelReaj : "otimo"}
-          ajuda="Contratos cujo aniversário de correção cai na janela em análise. Aplique o índice combinado sobre o aluguel-base (sem IPTU nem condomínio) e atualize o valor na tela de Contratos — o sistema avisa, mas não reajusta sozinho."
-          direita={
-            <>
-              <Selo nivel={vm.reajustes.length > 0 ? nivelReaj : "otimo"}>
-                {vm.reajustes.length}{" "}
-                {vm.reajustes.length === 1 ? "contrato" : "contratos"}
-              </Selo>
-              {vm.reajustes.length > 0 ? (
-                <LinkCard href="/contratos">Abrir contratos</LinkCard>
-              ) : null}
-            </>
-          }
-        />
-        {vm.reajustes.length === 0 ? (
-          <p className="py-4 text-center text-sm text-tinta-suave">
-            Nenhum contrato com reajuste {nomeJanela}.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="tabela">
-              <thead>
-                <tr>
-                  <th>Empreendimento</th>
-                  <th>Localização</th>
-                  <th>Locatário</th>
-                  <th>
-                    Índice{" "}
-                    <Ajuda dica="Índice de correção combinado no contrato (IGP-M, IPCA...). Aplique o percentual acumulado de 12 meses sobre o valor atual e atualize o contrato." />
-                  </th>
-                  <th className="text-right">
-                    Valor atual{" "}
-                    <Ajuda dica="Aluguel-base vigente antes do reajuste, sem IPTU nem condomínio. É sobre este valor que o índice é aplicado." />
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {vm.reajustes.map((r) => (
-                  <tr key={r.contratoId}>
-                    <td className="font-medium">{r.empreendimento}</td>
-                    <td>{r.identificacao}</td>
-                    <td>
-                      {r.locatario ?? (
-                        <span className="text-tinta-suave/60">—</span>
-                      )}
-                    </td>
-                    <td>
-                      {r.indiceReajuste ? (
-                        <Selo nivel="info" icone={false}>
-                          {r.indiceReajuste}
-                        </Selo>
-                      ) : (
-                        <span className="text-tinta-suave/60">
-                          índice não cadastrado
-                        </span>
-                      )}
-                    </td>
-                    <td className="text-right">
-                      <Dinheiro centavos={r.valorBase} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </Card>
     </div>
   );

@@ -17,10 +17,23 @@ import { abreviarBRL, formatarBRL } from "@/lib/dominio/dinheiro";
 import { NOME_MES_ABREV } from "@/lib/dominio/normalizacao";
 import { NIVEL, type Nivel } from "@/lib/dominio/semaforo";
 
-export const COR_1 = "#4f7a33"; // musgo — série principal (dinheiro que entra)
+export const COR_1 = "#4f7a33"; // musgo — dinheiro que ENTRA
 export const COR_1_FORTE = "#33511f"; // passo escuro do mesmo matiz (destaque)
-export const COR_2 = "#b3801a"; // ocre — devido / atenção (--ambar)
-export const COR_3 = "#4a68a8"; // índigo — terceira série
+export const COR_2 = "#b3801a"; // ocre — o que era DEVIDO, ainda não é saída
+
+/**
+ * Dinheiro que SAI é sempre vermelho.
+ *
+ * Antes cada centro de custo usava a cor da identidade visual dele (ocre para
+ * Antonio/Laura, índigo para a Chácara). Bonito, mas o olho não lia "isso é
+ * despesa" — a cor não carregava o dado. Agora os dois centros são terracota,
+ * distinguidos pela LUMINOSIDADE (um claro, um escuro), o que sobrevive tanto
+ * ao daltonismo quanto à impressão em preto e branco.
+ */
+export const COR_SAIDA = "#ba1a1a"; // terracota (--erro) — despesa
+export const COR_SAIDA_2 = "#7a1f1f"; // terracota escura — segundo centro
+
+export const COR_3 = "#4a68a8"; // índigo — série neutra (não é entrada nem saída)
 
 const GRADE = "#e5e1d8"; // --contorno
 const EIXO = "#75786f"; // --contorno-forte
@@ -494,7 +507,7 @@ export function BarrasCaixa({
                   y={BASE - hAL}
                   width={larguraBarra}
                   height={hAL}
-                  fill={COR_2}
+                  fill={COR_SAIDA}
                 >
                   <title>{`${mes} — Despesa Antonio/Laura: ${formatarBRL(al)}`}</title>
                 </rect>
@@ -506,7 +519,7 @@ export function BarrasCaixa({
                 y={BASE - hAL - (hAL > 0 ? 2 : 0) - hCH}
                 w={larguraBarra}
                 h={hCH}
-                cor={COR_3}
+                cor={COR_SAIDA_2}
                 titulo={`${mes} — Despesa Chácara Brisa: ${formatarBRL(ch)}`}
                 delayMs={i * 45 + 40}
               />

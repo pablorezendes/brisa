@@ -53,7 +53,8 @@ import {
   BarrasMensais,
   COR_1,
   COR_2,
-  COR_3,
+  COR_SAIDA,
+  COR_SAIDA_2,
   Legenda,
   Medidor,
   Rosca,
@@ -935,8 +936,8 @@ export default async function PaginaExecutivo({
             <Legenda
               itens={[
                 { cor: COR_1, nome: "Receita (entradas)" },
-                { cor: COR_2, nome: "Despesa Antonio/Laura" },
-                { cor: COR_3, nome: "Despesa Chácara Brisa" },
+                { cor: COR_SAIDA, nome: "Despesa Antonio/Laura" },
+                { cor: COR_SAIDA_2, nome: "Despesa Chácara Brisa" },
               ]}
             />
           }

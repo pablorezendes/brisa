@@ -241,6 +241,71 @@ h3 {
   opacity: 1;
 }
 
+/* ---------- sigilo dos valores ----------
+   A tela abre SEMPRE com os números velados; o olho no cabeçalho revela.
+   CSS puro (checkbox escondido + :has()): nada vai para o servidor, nada
+   fica gravado, e ao recarregar volta a velar. O valor real continua no
+   DOM ocupando o mesmo espaço — por isso o layout não salta ao revelar. */
+.sigilo {
+  position: relative;
+  display: inline-block;
+  min-width: 4.5ch;
+}
+
+/* Tudo depende de :has(). Num navegador sem suporte não haveria como
+   revelar de volta e os números ficariam mascarados para sempre — por isso a
+   máscara só existe DENTRO do @supports. Sem :has(), o botão some e os
+   valores aparecem normalmente: perde-se o sigilo, nunca o sistema. */
+@supports selector(:has(*)) {
+  .sigilo > * {
+    visibility: hidden;
+  }
+  .sigilo::after {
+    content: "••••••";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    color: var(--tinta-suave);
+    font-family: var(--font-jetbrains), monospace;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    opacity: 0.55;
+  }
+  body:has(#ver-valores:checked) .sigilo > * {
+    visibility: visible;
+  }
+  body:has(#ver-valores:checked) .sigilo::after {
+    content: none;
+  }
+  /* o botão troca de rótulo e de ícone conforme o estado do checkbox */
+  body:has(#ver-valores:checked) .olho-velado,
+  body:not(:has(#ver-valores:checked)) .olho-revelado {
+    display: none;
+  }
+}
+@supports not selector(:has(*)) {
+  label[for="ver-valores"] {
+    display: none;
+  }
+}
+
+/* ---------- blocos colapsáveis (<details>) ---------- */
+.bloco-dobra > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.bloco-dobra > summary::-webkit-details-marker {
+  display: none;
+}
+/* seta que gira ao abrir */
+.bloco-dobra .dobra-seta {
+  transition: transform 0.18s ease;
+}
+.bloco-dobra[open] .dobra-seta {
+  transform: rotate(90deg);
+}
+
 /* ---------- cartões com semáforo ---------- */
 /* um filete de 3px à esquerda é TODA a cor que o card carrega — o resto do
    veredito vai em palavra (ponto + rótulo). Sem wash, sem borda colorida. */

@@ -8,7 +8,45 @@ import {
 import { presetsPeriodo, type Periodo } from "@/lib/dominio/periodo";
 import { NIVEL, PESO_NIVEL, type Nivel } from "@/lib/dominio/semaforo";
 
-/** Cabeçalho padrão de página. */
+/**
+ * Botão de sigilo: vela ou revela os valores da tela.
+ *
+ * É um checkbox escondido + CSS (`:has`) — sem JavaScript, sem cookie, sem
+ * nada gravado. Toda página abre velada; ao recarregar, vela de novo. Serve
+ * para abrir o sistema na frente de outras pessoas sem expor números.
+ */
+function BotaoSigilo() {
+  return (
+    <>
+      <input type="checkbox" id="ver-valores" className="sr-only" />
+      <label
+        htmlFor="ver-valores"
+        title="Mostrar ou ocultar os valores da tela"
+        className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-contorno bg-carta px-2.5 text-[11px] font-bold uppercase tracking-[0.06em] text-tinta-suave transition-colors hover:border-tinta hover:text-tinta"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"
+            stroke="currentColor"
+            strokeWidth="1.8"
+          />
+          <circle cx="12" cy="12" r="2.6" stroke="currentColor" strokeWidth="1.8" />
+          <path
+            className="olho-velado"
+            d="M3.5 3.5l17 17"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+          />
+        </svg>
+        <span className="olho-velado">Ver valores</span>
+        <span className="olho-revelado">Ocultar</span>
+      </label>
+    </>
+  );
+}
+
+/** Cabeçalho padrão de página. Traz sempre o botão de sigilo dos valores. */
 export function PageHeader({
   titulo,
   descricao,
@@ -26,9 +64,10 @@ export function PageHeader({
           <p className="mt-1 text-sm text-tinta-suave">{descricao}</p>
         ) : null}
       </div>
-      {acoes ? (
-        <div className="flex flex-wrap items-center gap-2">{acoes}</div>
-      ) : null}
+      <div className="flex flex-wrap items-center gap-2">
+        <BotaoSigilo />
+        {acoes}
+      </div>
     </div>
   );
 }
@@ -191,6 +230,8 @@ export function Kpi({
   selo,
   grafico,
   href,
+  secundario,
+  destaque = false,
 }: {
   rotulo: string;
   valor: React.ReactNode;
@@ -208,6 +249,10 @@ export function Kpi({
   grafico?: React.ReactNode;
   /** torna o card inteiro clicável */
   href?: string;
+  /** segunda leitura no mesmo card (ex.: acumulada do ano sob a do mês) */
+  secundario?: { rotulo: string; valor: React.ReactNode };
+  /** card de resultado: número maior, ocupa o lugar de destaque da grade */
+  destaque?: boolean;
 }) {
   const est = nivel ? NIVEL[nivel] : null;
   const conteudo = (
@@ -221,9 +266,29 @@ export function Kpi({
           <Selo nivel={nivel}>{selo}</Selo>
         ) : null}
       </div>
-      <div className="mt-2 font-serif text-xl font-semibold tabular-nums text-tinta sm:text-[26px] sm:leading-tight">
-        {valor}
+      <div
+        className={`mt-2 font-serif font-semibold tabular-nums text-tinta ${
+          destaque
+            ? "text-2xl sm:text-[34px] sm:leading-tight"
+            : "text-xl sm:text-[26px] sm:leading-tight"
+        }`}
+      >
+        <span className="sigilo">
+          <span>{valor}</span>
+        </span>
       </div>
+      {secundario ? (
+        <div className="mt-1.5 flex items-baseline gap-1.5 border-t border-contorno/70 pt-1.5 text-[11px] text-tinta-suave">
+          <span className="font-bold uppercase tracking-[0.06em]">
+            {secundario.rotulo}
+          </span>
+          <span className="font-mono font-semibold tabular-nums text-tinta">
+            <span className="sigilo">
+              <span>{secundario.valor}</span>
+            </span>
+          </span>
+        </div>
+      ) : null}
       {variacao ? <div className="mt-1.5">{variacao}</div> : null}
       {detalhe ? (
         <div className="mt-1.5 text-xs leading-snug text-tinta-suave">
@@ -373,42 +438,122 @@ export function PainelAlertas({
   const atencoes = ordenados.filter((i) => i.nivel === "atencao").length;
 
   return (
-    <Card className="mb-6 px-5 py-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.1em] text-tinta-suave">
-          Precisa da sua atenção
-          {ajuda ? <Ajuda dica={ajuda} /> : null}
-        </h2>
-        <div className="flex items-center gap-2">
-          {criticos > 0 ? (
-            <Selo nivel="critico">
-              {criticos} {criticos === 1 ? "urgente" : "urgentes"}
-            </Selo>
-          ) : null}
-          {atencoes > 0 ? (
-            <Selo nivel="atencao">{atencoes} a olhar</Selo>
-          ) : null}
-          {criticos === 0 && atencoes === 0 ? (
-            <Selo nivel="otimo">tudo em dia</Selo>
-          ) : null}
+    <Card className="mb-6 px-5 py-3.5">
+      {/* dobrado por padrão: o resumo já diz QUANTO pede atenção, e o detalhe
+          só aparece a pedido — a tela abre com menos texto na frente */}
+      <details className="bloco-dobra">
+        <summary className="flex items-center justify-between gap-3">
+          <h2 className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.1em] text-tinta-suave">
+            <svg
+              className="dobra-seta"
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M9 5l7 7-7 7"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Precisa da sua atenção
+            {ajuda ? <Ajuda dica={ajuda} /> : null}
+          </h2>
+          <div className="flex items-center gap-2">
+            {criticos > 0 ? (
+              <Selo nivel="critico">
+                {criticos} {criticos === 1 ? "urgente" : "urgentes"}
+              </Selo>
+            ) : null}
+            {atencoes > 0 ? (
+              <Selo nivel="atencao">{atencoes} a olhar</Selo>
+            ) : null}
+            {criticos === 0 && atencoes === 0 ? (
+              <Selo nivel="otimo">tudo em dia</Selo>
+            ) : null}
+          </div>
+        </summary>
+        <div className="mt-3">
+          {ordenados.length === 0 ? (
+            <div
+              className="flex items-center gap-3 rounded border border-contorno px-3.5 py-2.5 text-[13px] text-tinta"
+              style={{ borderLeft: `3px solid ${NIVEL.otimo.cor}` }}
+            >
+              <Ponto nivel="otimo" titulo="tudo em dia" />
+              {vazio}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {ordenados.map((item, i) => (
+                <Alerta key={i} item={item} />
+              ))}
+            </div>
+          )}
         </div>
-      </div>
-      {ordenados.length === 0 ? (
-        <div
-          className="flex items-center gap-3 rounded border border-contorno px-3.5 py-2.5 text-[13px] text-tinta"
-          style={{ borderLeft: `3px solid ${NIVEL.otimo.cor}` }}
-        >
-          <Ponto nivel="otimo" titulo="tudo em dia" />
-          {vazio}
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {ordenados.map((item, i) => (
-            <Alerta key={i} item={item} />
-          ))}
-        </div>
-      )}
+      </details>
     </Card>
+  );
+}
+
+/**
+ * Busca dentro de um card (form GET, sem JavaScript). Preserva os demais
+ * parâmetros da página em campos ocultos para não perder mês/período.
+ */
+export function BuscaCard({
+  base,
+  campo,
+  valor,
+  ocultos,
+  placeholder = "Buscar…",
+}: {
+  base: string;
+  /** nome do parâmetro na querystring (ex.: "qr") */
+  campo: string;
+  valor?: string;
+  /** outros parâmetros a preservar (mes, de, ate, g...) */
+  ocultos?: Record<string, string | undefined>;
+  placeholder?: string;
+}) {
+  return (
+    <form method="get" action={base} className="flex items-center gap-1.5">
+      {Object.entries(ocultos ?? {}).map(([k, v]) =>
+        v ? <input key={k} type="hidden" name={k} value={v} /> : null
+      )}
+      <input
+        type="search"
+        name={campo}
+        defaultValue={valor ?? ""}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        className={`${inputBase} h-8 w-44 py-0 text-[12px]`}
+      />
+      <button
+        type="submit"
+        className="h-8 rounded-lg border border-contorno bg-carta px-2.5 text-[11px] font-bold uppercase tracking-[0.06em] text-tinta-suave transition-colors hover:border-tinta hover:text-tinta"
+      >
+        Buscar
+      </button>
+      {valor ? (
+        <Link
+          href={
+            Object.entries(ocultos ?? {}).filter(([, v]) => v).length
+              ? `${base}?${Object.entries(ocultos ?? {})
+                  .filter(([, v]) => v)
+                  .map(([k, v]) => `${k}=${encodeURIComponent(v as string)}`)
+                  .join("&")}`
+              : base
+          }
+          className="text-[11px] font-bold text-tinta-suave hover:text-tinta"
+          title="Limpar busca"
+        >
+          ×
+        </Link>
+      ) : null}
+    </form>
   );
 }
 
