@@ -13,7 +13,7 @@ services:
       - proxy
     labels:
       - traefik.enable=true
-      - traefik.http.routers.brisa.rule=Host(`brisa.codexaurora.com.br`)
+      - traefik.http.routers.brisa.rule=Host(`brisa.tescod.com`)
       - traefik.http.routers.brisa.entrypoints=websecure
       - traefik.http.routers.brisa.tls=true
       # certresolver do Traefik deste servidor (confirmado nos outros stacks)
