@@ -195,15 +195,16 @@ export function Badge({
  * sempre em linguagem simples e dizendo COMO agir no lançamento.
  */
 export function Ajuda({ dica }: { dica: string }) {
+  // O texto é um ELEMENTO de verdade, não `content: attr(data-dica)` num
+  // ::after. Assim o leitor de tela lê a explicação como conteúdo (antes ela
+  // virava um aria-label de 350 caracteres no próprio botão) e o balão pode
+  // ter largura fluida — coisa que `attr()` não permitia medir.
   return (
-    <span
-      className="dica"
-      tabIndex={0}
-      role="note"
-      data-dica={dica}
-      aria-label={dica}
-    >
-      i
+    <span className="dica" tabIndex={0}>
+      <span aria-hidden="true">i</span>
+      <span className="dica-balao" role="note">
+        {dica}
+      </span>
     </span>
   );
 }

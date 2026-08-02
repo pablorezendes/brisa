@@ -28,7 +28,7 @@ export default async function PaginaHistoricoTemporada() {
       ) : (
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           {anos.map((a) => (
-            <Card key={a.ano} className="overflow-hidden">
+            <Card key={a.ano}>
               <div className="border-b border-contorno px-5 py-3">
                 <h2 className="text-sm font-semibold">Apuração {a.ano}</h2>
               </div>

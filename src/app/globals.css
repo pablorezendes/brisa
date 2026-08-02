@@ -194,7 +194,7 @@ h3 {
 /* "i" de informação — o mesmo botão em todo card, cabeçalho e coluna.
    CSS puro (hover/foco), sem JS. Neutro (tinta sobre papel), serifado e
    itálico para ler como "informação" mesmo em 16px; a cor fica reservada
-   ao semáforo. Tooltip editorial: borda de tinta, sem sombra. */
+   ao semáforo. */
 .dica {
   @apply relative inline-flex h-4 w-4 shrink-0 cursor-help items-center justify-center rounded-full border align-middle text-[11px] font-bold leading-none;
   font-family: var(--font-source-serif), Georgia, serif;
@@ -211,13 +211,18 @@ h3 {
   color: var(--tinta);
   outline: none;
 }
-.dica::after {
-  content: attr(data-dica);
+
+/* O balão. Largura FLUIDA com teto duplo: nunca passa de 288px e nunca passa
+   da largura da tela menos as margens — sem isso, num celular de 375px um
+   balão de 288px centrado num ícone perto da borda era decepado pelo
+   `overflow-x: hidden` do body e ficava ilegível. */
+.dica-balao {
   position: absolute;
   left: 50%;
   bottom: calc(100% + 8px);
   transform: translateX(-50%);
-  width: 288px;
+  width: max-content;
+  max-width: min(288px, calc(100vw - 2rem));
   padding: 10px 12px;
   background: var(--carta);
   border: 1px solid var(--tinta);
@@ -236,9 +241,34 @@ h3 {
   pointer-events: none;
   transition: opacity 0.12s ease;
 }
-.dica:hover::after,
-.dica:focus-visible::after {
+.dica:hover .dica-balao,
+.dica:focus-visible .dica-balao {
   opacity: 1;
+}
+
+/* Dentro de tabelas com rolagem horizontal o contêiner recorta os dois eixos
+   (`overflow-x: auto` obriga o eixo y a computar `auto` também). Regra do
+   transbordo: para a DIREITA e para BAIXO dá para rolar até o texto; para a
+   ESQUERDA e para CIMA, não — `scrollLeft` não fica negativo. Por isso o
+   balão abre para baixo e cresce para a direita, e só a ÚLTIMA coluna — a
+   única em que ancorar à direita é sempre seguro — inverte.
+
+   (A regra antiga usava `th:first-child`/`th:nth-child(2)` contra
+   `th:nth-last-child(-n+3)`. As duas tinham a MESMA especificidade, então a
+   de baixo vencia: numa tabela de 3 colunas a primeira coluna é também
+   `nth-last-child(3)` e o balão era jogado 288px para a esquerda, fora de
+   alcance. Contagem de colunas em CSS não resolve isso porque o número de
+   colunas muda em tempo de execução.) */
+.overflow-x-auto th .dica-balao {
+  bottom: auto;
+  top: calc(100% + 8px);
+  left: 0;
+  right: auto;
+  transform: none;
+}
+.overflow-x-auto th:last-child .dica-balao {
+  left: auto;
+  right: 0;
 }
 
 /* ---------- sigilo dos valores ----------
@@ -309,31 +339,12 @@ h3 {
 /* ---------- cartões com semáforo ---------- */
 /* um filete de 3px à esquerda é TODA a cor que o card carrega — o resto do
    veredito vai em palavra (ponto + rótulo). Sem wash, sem borda colorida. */
+/* O filete é uma sombra INTERNA, não um pseudo-elemento.
+   Motivo: para o pseudo-elemento não escapar do canto arredondado era preciso
+   `overflow: hidden` no card — e isso decepava os tooltips do "i", que sobem
+   para fora do card. A sombra interna respeita o border-radius sozinha e não
+   corta filho nenhum. */
 .card-sem {
   position: relative;
-  overflow: hidden;
-}
-.card-sem::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: var(--sem-cor, transparent);
-}
-/* Em cabeçalhos de tabelas com rolagem horizontal, o contêiner corta o que
-   sobe: a dica abre para BAIXO e, nas colunas das pontas, alinha-se à borda
-   para não vazar do contêiner. */
-.overflow-x-auto th .dica::after {
-  bottom: auto;
-  top: calc(100% + 8px);
-}
-.overflow-x-auto th:first-child .dica::after,
-.overflow-x-auto th:nth-child(2) .dica::after {
-  left: 0;
-  transform: none;
-}
-.overflow-x-auto th:nth-last-child(-n + 3) .dica::after {
-  left: auto;
-  right: 0;
-  transform: none;
+  box-shadow: inset 3px 0 0 0 var(--sem-cor, transparent);
 }

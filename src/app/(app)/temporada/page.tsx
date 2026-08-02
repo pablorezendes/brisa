@@ -244,7 +244,7 @@ export default async function PaginaTemporada({
           </Card>
 
           {/* 1. LIMPEZAS DA JANELA */}
-          <Card className="mt-6 overflow-hidden">
+          <Card className="mt-6">
             <div className="border-b border-contorno px-5 py-3">
               <h2 className="text-sm font-semibold">Limpezas — {periodo.rotulo}</h2>
               <p className="text-xs text-tinta-suave">
@@ -306,7 +306,7 @@ export default async function PaginaTemporada({
           </Card>
 
           {/* 2. DESPESAS DA JANELA */}
-          <Card className="mt-6 overflow-hidden">
+          <Card className="mt-6">
             <div className="border-b border-contorno px-5 py-3">
               <h2 className="text-sm font-semibold">Despesas — {periodo.rotulo}</h2>
               <p className="text-xs text-tinta-suave">
@@ -386,7 +386,7 @@ export default async function PaginaTemporada({
           </Card>
 
           {/* 3. RECEBIMENTOS DA JANELA */}
-          <Card className="mt-6 overflow-hidden">
+          <Card className="mt-6">
             <div className="border-b border-contorno px-5 py-3">
               <h2 className="text-sm font-semibold">Recebimentos — {periodo.rotulo}</h2>
               <p className="text-xs text-tinta-suave">
@@ -468,7 +468,7 @@ export default async function PaginaTemporada({
           ) : null}
 
           {/* 1. LIMPEZAS */}
-          <Card className="mt-6 overflow-hidden">
+          <Card className="mt-6">
             <div className="border-b border-contorno px-5 py-3">
               <h2 className="text-sm font-semibold">Limpezas — {formatarCompetencia(mes)}</h2>
               <p className="text-xs text-tinta-suave">
@@ -575,7 +575,7 @@ export default async function PaginaTemporada({
           </Card>
 
           {/* 2. DESPESAS */}
-          <Card className="mt-6 overflow-hidden">
+          <Card className="mt-6">
             <div className="border-b border-contorno px-5 py-3">
               <h2 className="text-sm font-semibold">Despesas — {formatarCompetencia(mes)}</h2>
               <p className="text-xs text-tinta-suave">
@@ -684,7 +684,7 @@ export default async function PaginaTemporada({
           </Card>
 
           {/* 3. RECEBIMENTOS */}
-          <Card className="mt-6 overflow-hidden">
+          <Card className="mt-6">
             <div className="border-b border-contorno px-5 py-3">
               <h2 className="text-sm font-semibold">Recebimentos — {formatarCompetencia(mes)}</h2>
               <p className="text-xs text-tinta-suave">
