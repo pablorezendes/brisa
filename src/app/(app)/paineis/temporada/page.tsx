@@ -19,7 +19,7 @@ import {
   btnPrimario,
   btnSecundario,
 } from "@/components/ui";
-import { BarrasMensais } from "@/components/graficos";
+import { BarrasMensais, MapaCalor } from "@/components/graficos";
 import { formatarBRL } from "@/lib/dominio/dinheiro";
 import {
   NOME_MES_ABREV,
@@ -440,6 +440,30 @@ export default async function PaginaPainelTemporada({
           </Link>
         </div>
       </Card>
+
+      {/* ---------- mapa de calor: todos os anos numa tela só ---------- */}
+      {d.anos.length > 1 ? (
+        <Card className="mt-6 p-5">
+          <div className="mb-3 flex items-center gap-1.5">
+            <h2 className="text-sm font-semibold">
+              Sazonalidade — receita ano × mês
+            </h2>
+            <Ajuda dica="Todos os anos lado a lado: quanto mais escuro o verde, maior a receita do mês. Dá para ver a estação forte do Airbnb repetindo de ano em ano — e comparar o ano atual com os anteriores de relance. Os números exatos estão nos cartões por ano, logo abaixo." />
+          </div>
+          <div className="overflow-x-auto">
+            <div className="min-w-[560px]">
+              <MapaCalor
+                colunas={NOME_MES_ABREV.slice(1)}
+                linhas={d.anos.map((a) => ({
+                  rotulo: String(a.ano),
+                  valores: a.receitaPorMes.map((v) => (v > 0 ? v : null)),
+                }))}
+                rotuloAcessivel="Receita da temporada por ano e mês"
+              />
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       {/* ---------- comparativo anual (pequenos múltiplos) ---------- */}
       <div className="mt-6 space-y-4">

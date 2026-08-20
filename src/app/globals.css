@@ -149,6 +149,77 @@ h3 {
 .g-col {
   cursor: default;
 }
+
+/* ---------- camada premium: tooltip rico, micro-interações e pulso ---------- */
+
+/* tooltip rico (cartão dentro do SVG): invisível até o hover da coluna.
+   A regra que o LIGA é gerada por gráfico (`:has(.g-cN:hover) .g-tN`),
+   porque SVG não tem z-index — a camada de tips é pintada por último. */
+.g-tip {
+  opacity: 0;
+  transform: translateY(3px);
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease;
+  pointer-events: none;
+}
+
+/* barras respondem ao toque do mouse com um ganho sutil de luz */
+.g-col path,
+.g-col rect:not(.g-realce) {
+  transition: filter 0.15s ease;
+}
+.g-col:hover path,
+.g-col:hover rect:not(.g-realce) {
+  filter: brightness(1.07);
+}
+
+/* fatias da rosca engrossam levemente sob o mouse */
+.g-fatia {
+  transition:
+    stroke-width 0.18s ease,
+    filter 0.18s ease;
+}
+.g-fatia:hover {
+  stroke-width: 26;
+  filter: brightness(1.06);
+}
+
+/* pulso do "agora": anel que expande e some sobre o ponto atual da série */
+@keyframes g-pulso {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.55;
+  }
+  75% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+.g-pulso {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: g-pulso 2.6s ease-out 1.2s infinite;
+}
+
+/* célula do mapa de calor: ganha moldura de tinta sob o mouse */
+.g-cel rect {
+  transition:
+    filter 0.12s ease,
+    stroke 0.12s ease,
+    stroke-width 0.12s ease;
+}
+.g-cel:hover rect {
+  stroke: var(--tinta);
+  stroke-width: 1.4;
+}
+.g-mapa-linha:hover .g-cel rect {
+  filter: saturate(1.12);
+}
 @media (prefers-reduced-motion: reduce) {
   .g-barra,
   .g-barra-x,
@@ -163,6 +234,17 @@ h3 {
     stroke-dashoffset: 0 !important;
     transform: none !important;
     opacity: 1 !important;
+  }
+  .g-pulso {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+  .g-tip,
+  .g-col path,
+  .g-col rect,
+  .g-fatia,
+  .g-cel rect {
+    transition: none !important;
   }
 }
 

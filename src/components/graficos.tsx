@@ -39,6 +39,155 @@ const GRADE = "#e5e1d8"; // --contorno
 const EIXO = "#75786f"; // --contorno-forte
 const ROTULO = "#444840"; // --tinta-suave
 const TINTA = "#1c2430"; // --tinta
+const CARTA = "#fdfbf8"; // --carta (fundo dos cards e dos tooltips)
+
+// ---------------------------------------------------------------------------
+// utilitários premium: mistura de cor, ids únicos e tooltip rico
+// ---------------------------------------------------------------------------
+
+/** Mistura duas cores hex (t=0 → a, t=1 → b). Para gradientes tom-sobre-tom. */
+function mixHex(a: string, b: string, t: number): string {
+  const pa = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16));
+  const pb = [1, 3, 5].map((i) => parseInt(b.slice(i, i + 2), 16));
+  return (
+    "#" +
+    pa
+      .map((v, i) =>
+        Math.round(v + (pb[i] - v) * t)
+          .toString(16)
+          .padStart(2, "0")
+      )
+      .join("")
+  );
+}
+
+/**
+ * Id único por instância de gráfico (defs de gradiente e regras :has do
+ * tooltip não podem colidir entre gráficos da mesma página). Contador de
+ * módulo: monotônico dentro de uma renderização — suficiente, pois estes
+ * SVGs são server components e nunca re-hidratam no cliente.
+ */
+let sequencia = 0;
+function novoUid(): string {
+  sequencia = (sequencia + 1) % 100000;
+  return `gx${sequencia}`;
+}
+
+/**
+ * Gradiente vertical sutil da série: topo 16% mais claro (na direção do
+ * papel), base na cor sólida. Dá volume de material sem distorcer leitura —
+ * o comprimento da barra continua sendo a única codificação do valor.
+ */
+function DefsGradientes({ uid, cores }: { uid: string; cores: string[] }) {
+  return (
+    <defs>
+      {cores.map((c, i) => (
+        <linearGradient key={i} id={`${uid}-g${i}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={mixHex(c, CARTA, 0.18)} />
+          <stop offset="100%" stopColor={c} />
+        </linearGradient>
+      ))}
+    </defs>
+  );
+}
+
+/** Linha de conteúdo de um tooltip rico. */
+interface LinhaTip {
+  cor?: string;
+  nome: string;
+  valor: string;
+}
+
+// Corpo do tip em 12 unidades SVG: nos cards de meia largura (~424px reais
+// para um viewBox de 620) isso rende ≈8-9px na tela — o mínimo legível.
+// Fonte 9 ficava com ~6px reais e virava decoração.
+const TIP_CHAR = 7.2; // largura média do mono 12px
+const TIP_ALT_LINHA = 15.5;
+
+/**
+ * Tooltip rico: cartão desenhado DENTRO do SVG, pintado por último (SVG não
+ * tem z-index). Fica invisível até o hover da coluna correspondente — a regra
+ * CSS por índice é gerada em <style> pelo EstiloTips, via :has().
+ */
+function Tip({
+  i,
+  centro,
+  titulo,
+  linhas,
+}: {
+  i: number;
+  centro: number;
+  titulo: string;
+  linhas: LinhaTip[];
+}) {
+  const maiorLinha = Math.max(
+    titulo.length,
+    ...linhas.map((l) => l.nome.length + l.valor.length + 2)
+  );
+  const w = Math.min(maiorLinha * TIP_CHAR + 30, PLOT_W - 8);
+  const h = 19 + linhas.length * TIP_ALT_LINHA + 6;
+  const x = Math.min(Math.max(centro - w / 2, EIXO_W + 3), LARG - w - 3);
+  const y = TOPO - 16;
+  return (
+    <g className={`g-tip g-t${i}`} aria-hidden="true">
+      <rect x={x} y={y} width={w} height={h} rx={5} fill={CARTA} stroke={TINTA} strokeWidth={1} />
+      <text
+        x={x + 11}
+        y={y + 14}
+        fontSize={10.5}
+        fontWeight={700}
+        letterSpacing="0.08em"
+        fill={ROTULO}
+        style={{ fontFamily: "var(--font-jetbrains), monospace" }}
+      >
+        {titulo.toUpperCase()}
+      </text>
+      {linhas.map((l, j) => {
+        const ly = y + 19 + (j + 1) * TIP_ALT_LINHA - 4;
+        return (
+          <g key={j}>
+            {l.cor ? <circle cx={x + 15} cy={ly - 4} r={3.5} fill={l.cor} /> : null}
+            <text
+              x={l.cor ? x + 24 : x + 11}
+              y={ly}
+              fontSize={12}
+              fill={TINTA}
+              style={{ fontFamily: "var(--font-jetbrains), monospace" }}
+            >
+              {l.nome}
+            </text>
+            <text
+              x={x + w - 11}
+              y={ly}
+              fontSize={12}
+              fontWeight={700}
+              fill={TINTA}
+              textAnchor="end"
+              style={{ fontFamily: "var(--font-jetbrains), monospace" }}
+            >
+              {l.valor}
+            </text>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/**
+ * Regras :has() que ligam cada coluna ao seu tooltip, escopadas pelo uid.
+ * Requisito: navegador com :has() (Chrome 105+, Safari 15.4+, Firefox 121+).
+ * Em navegador sem :has o tip simplesmente nunca aparece — a informação
+ * continua disponível na tabela que acompanha todo gráfico.
+ */
+function EstiloTips({ uid, n }: { uid: string; n: number }) {
+  const regras = Array.from(
+    { length: n },
+    (_, i) =>
+      `.${uid}:has(.g-c${i}:hover) .g-t${i}{opacity:1;transform:translateY(0)}`
+  ).join("\n");
+  return <style>{regras}</style>;
+}
 
 // ---------------------------------------------------------------------------
 // geometria comum das molduras verticais
@@ -87,29 +236,32 @@ function Barra({
   titulo,
   delayMs = 0,
   foco = false,
+  fill,
 }: {
   x: number;
   y: number;
   w: number;
   h: number;
   cor: string;
-  titulo: string;
+  titulo?: string;
   delayMs?: number;
   /** série em destaque: ganha marca de topo */
   foco?: boolean;
+  /** pintura do corpo (ex.: url(#gradiente)); default = cor sólida */
+  fill?: string;
 }) {
   if (h <= 0.5)
     return (
       <rect x={x} y={y - 1} width={w} height={1.5} fill={EIXO} rx={0.75}>
-        <title>{titulo}</title>
+        {titulo ? <title>{titulo}</title> : null}
       </rect>
     );
   const r = Math.min(3, w / 2, h);
   const d = `M${x},${y + h} v${-(h - r)} q0,${-r} ${r},${-r} h${w - 2 * r} q${r},0 ${r},${r} v${h - r} z`;
   return (
     <g className="g-barra" style={{ animationDelay: `${delayMs}ms` }}>
-      <path d={d} fill={cor}>
-        <title>{titulo}</title>
+      <path d={d} fill={fill ?? cor}>
+        {titulo ? <title>{titulo}</title> : null}
       </path>
       {/* marca de topo: fio de 1,5px que fecha a coluna em foco */}
       {foco ? (
@@ -201,13 +353,16 @@ function ColunaHover({
   x,
   w,
   children,
+  indice,
 }: {
   x: number;
   w: number;
   children: React.ReactNode;
+  /** índice da coluna — liga a coluna ao seu tooltip rico via .g-cN */
+  indice?: number;
 }) {
   return (
-    <g className="g-col">
+    <g className={indice === undefined ? "g-col" : `g-col g-c${indice}`}>
       <rect
         className="g-realce"
         x={x}
@@ -300,9 +455,17 @@ export function BarrasMensais({
   const passo = PLOT_W / n;
   const larguraBarra = Math.max(2, Math.min(30, passo - 10));
   const maxIdx = valores.indexOf(Math.max(...valores));
+  const uid = novoUid();
 
   return (
-    <svg viewBox={VIEWBOX} className="w-full" role="img" aria-label={rotuloAcessivel}>
+    <svg
+      viewBox={VIEWBOX}
+      className={`w-full ${uid}`}
+      role="img"
+      aria-label={rotuloAcessivel}
+    >
+      <DefsGradientes uid={uid} cores={[cor, COR_1_FORTE]} />
+      <EstiloTips uid={uid} n={n} />
       <Moldura ticks={ticks} max={max} />
       {valores.map((v, i) => {
         const h = (v / max) * ALT;
@@ -311,14 +474,14 @@ export function BarrasMensais({
         const selecionado = i + 1 === mesSelecionado;
         const rotular = selecionado || i === maxIdx;
         return (
-          <ColunaHover key={i} x={EIXO_W + i * passo + 2} w={passo - 4}>
+          <ColunaHover key={i} x={EIXO_W + i * passo + 2} w={passo - 4} indice={i}>
             <Barra
               x={x}
               y={BASE - h}
               w={larguraBarra}
               h={h}
               cor={selecionado ? COR_1_FORTE : cor}
-              titulo={`${rotuloEixo(rotulos, i)}: ${formatarBRL(v)}`}
+              fill={`url(#${uid}-g${selecionado ? 1 : 0})`}
               delayMs={i * 45}
               foco={selecionado}
             />
@@ -361,8 +524,36 @@ export function BarrasMensais({
           </ColunaHover>
         );
       })}
+      {/* camada de tooltips — pintada por último, sempre por cima */}
+      {valores.map((v, i) => (
+        <Tip
+          key={i}
+          i={i}
+          centro={EIXO_W + i * passo + passo / 2}
+          titulo={rotuloEixo(rotulos, i)}
+          linhas={[
+            { cor, nome: "valor", valor: formatarBRL(v) },
+            ...(i > 0
+              ? [
+                  {
+                    nome: "vs anterior",
+                    valor: variacaoTexto(v, valores[i - 1]),
+                  },
+                ]
+              : []),
+          ]}
+        />
+      ))}
     </svg>
   );
+}
+
+/** "▲ 12%" / "▼ 8%" / "estável" — comparação curta para tooltips. */
+function variacaoTexto(atual: number, anterior: number): string {
+  if (anterior === 0) return atual > 0 ? "novo" : "—";
+  const pct = ((atual - anterior) / Math.abs(anterior)) * 100;
+  if (Math.abs(pct) < 0.5) return "estável";
+  return `${pct > 0 ? "▲" : "▼"} ${Math.abs(pct).toFixed(0)}%`;
 }
 
 /** Duas séries agrupadas por mês (Devido × Recebido). */
@@ -391,14 +582,17 @@ export function BarrasDuplas({
   const n = serieA.length;
   const passo = PLOT_W / n;
   const larguraBarra = Math.max(1.5, Math.min(14, (passo - 12) / 2));
+  const uid = novoUid();
 
   return (
     <svg
       viewBox={VIEWBOX}
-      className="w-full"
+      className={`w-full ${uid}`}
       role="img"
       aria-label={`${nomeA} e ${nomeB} por mês`}
     >
+      <DefsGradientes uid={uid} cores={[corA, corB]} />
+      <EstiloTips uid={uid} n={n} />
       <Moldura ticks={ticks} max={max} />
       {serieA.map((a, i) => {
         const b = serieB[i] ?? 0;
@@ -407,14 +601,14 @@ export function BarrasDuplas({
         const centro = EIXO_W + i * passo + passo / 2;
         const selecionado = i + 1 === mesSelecionado;
         return (
-          <ColunaHover key={i} x={EIXO_W + i * passo + 2} w={passo - 4}>
+          <ColunaHover key={i} x={EIXO_W + i * passo + 2} w={passo - 4} indice={i}>
             <Barra
               x={centro - larguraBarra - 1.5}
               y={BASE - hA}
               w={larguraBarra}
               h={hA}
               cor={corA}
-              titulo={`${rotuloEixo(rotulos, i)} — ${nomeA}: ${formatarBRL(a)}`}
+              fill={`url(#${uid}-g0)`}
               delayMs={i * 45}
             />
             <Barra
@@ -423,7 +617,7 @@ export function BarrasDuplas({
               w={larguraBarra}
               h={hB}
               cor={corB}
-              titulo={`${rotuloEixo(rotulos, i)} — ${nomeB}: ${formatarBRL(b)}`}
+              fill={`url(#${uid}-g1)`}
               delayMs={i * 45 + 20}
               foco={selecionado}
             />
@@ -445,6 +639,22 @@ export function BarrasDuplas({
               </text>
             ) : null}
           </ColunaHover>
+        );
+      })}
+      {serieA.map((a, i) => {
+        const b = serieB[i] ?? 0;
+        return (
+          <Tip
+            key={i}
+            i={i}
+            centro={EIXO_W + i * passo + passo / 2}
+            titulo={rotuloEixo(rotulos, i)}
+            linhas={[
+              { cor: corA, nome: nomeA.toLowerCase(), valor: formatarBRL(a) },
+              { cor: corB, nome: nomeB.toLowerCase(), valor: formatarBRL(b) },
+              { nome: "diferença", valor: formatarBRL(b - a) },
+            ]}
+          />
         );
       })}
     </svg>
@@ -470,14 +680,17 @@ export function BarrasCaixa({
   const n = receita.length;
   const passo = PLOT_W / n;
   const larguraBarra = Math.max(1.5, Math.min(14, (passo - 12) / 2));
+  const uid = novoUid();
 
   return (
     <svg
       viewBox={VIEWBOX}
-      className="w-full"
+      className={`w-full ${uid}`}
       role="img"
       aria-label="Receita e despesas do caixa por mês"
     >
+      <DefsGradientes uid={uid} cores={[COR_1, COR_SAIDA, COR_SAIDA_2]} />
+      <EstiloTips uid={uid} n={n} />
       <Moldura ticks={ticks} max={max} />
       {receita.map((rec, i) => {
         const al = despesaAL[i] ?? 0;
@@ -489,14 +702,14 @@ export function BarrasCaixa({
         const hCH = (ch / max) * ALT;
         const mes = rotuloEixo(rotulos, i);
         return (
-          <ColunaHover key={i} x={EIXO_W + i * passo + 2} w={passo - 4}>
+          <ColunaHover key={i} x={EIXO_W + i * passo + 2} w={passo - 4} indice={i}>
             <Barra
               x={centro - larguraBarra - 1.5}
               y={BASE - hR}
               w={larguraBarra}
               h={hR}
               cor={COR_1}
-              titulo={`${mes} — Receita: ${formatarBRL(rec)}`}
+              fill={`url(#${uid}-g0)`}
               delayMs={i * 45}
             />
             {/* pilha de despesas: AL na base, CH acima com 2px de respiro */}
@@ -507,10 +720,8 @@ export function BarrasCaixa({
                   y={BASE - hAL}
                   width={larguraBarra}
                   height={hAL}
-                  fill={COR_SAIDA}
-                >
-                  <title>{`${mes} — Despesa Antonio/Laura: ${formatarBRL(al)}`}</title>
-                </rect>
+                  fill={`url(#${uid}-g1)`}
+                />
               </g>
             ) : null}
             {hCH > 0 ? (
@@ -520,7 +731,7 @@ export function BarrasCaixa({
                 w={larguraBarra}
                 h={hCH}
                 cor={COR_SAIDA_2}
-                titulo={`${mes} — Despesa Chácara Brisa: ${formatarBRL(ch)}`}
+                fill={`url(#${uid}-g2)`}
                 delayMs={i * 45 + 40}
               />
             ) : null}
@@ -541,6 +752,26 @@ export function BarrasCaixa({
               </text>
             ) : null}
           </ColunaHover>
+        );
+      })}
+      {receita.map((rec, i) => {
+        const al = despesaAL[i] ?? 0;
+        const ch = despesaCH[i] ?? 0;
+        const saldo = rec - al - ch;
+        // 3 linhas escaneáveis: o rateio A/L × chácara já está nas barras,
+        // na legenda e na tabela — o tip responde "entrou, saiu, sobrou"
+        return (
+          <Tip
+            key={i}
+            i={i}
+            centro={EIXO_W + i * passo + passo / 2}
+            titulo={rotuloEixo(rotulos, i)}
+            linhas={[
+              { cor: COR_1, nome: "receita", valor: formatarBRL(rec) },
+              { cor: COR_SAIDA, nome: "saídas", valor: formatarBRL(al + ch) },
+              { nome: "saldo", valor: formatarBRL(saldo) },
+            ]}
+          />
         );
       })}
     </svg>
@@ -600,15 +831,28 @@ export function AreaTendencia({
       : "";
   // com muitos pontos a série vira um colar de bolinhas: marca só o destaque
   const marcarPontos = pontos.length <= 14;
+  const uid = novoUid();
 
   return (
-    <svg viewBox={VIEWBOX} className="w-full" role="img" aria-label={rotuloAcessivel}>
+    <svg
+      viewBox={VIEWBOX}
+      className={`w-full ${uid}`}
+      role="img"
+      aria-label={rotuloAcessivel}
+    >
+      <defs>
+        {/* véu de gradiente sob a linha: presença sem peso */}
+        <linearGradient id={`${uid}-area`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={cor} stopOpacity={0.2} />
+          <stop offset="100%" stopColor={cor} stopOpacity={0.01} />
+        </linearGradient>
+      </defs>
+      <EstiloTips uid={uid} n={ultimo + 1} />
       <Moldura ticks={ticks} max={max} />
       {preenchimento && area ? (
         <path
           d={area}
-          fill={cor}
-          fillOpacity={0.07}
+          fill={`url(#${uid}-area)`}
           className="g-surgir"
           style={{ animationDelay: "0.35s" }}
         />
@@ -630,7 +874,7 @@ export function AreaTendencia({
         const futuro = i > ultimo;
         const x = px(i);
         return (
-          <g key={i} className={futuro ? undefined : "g-col"}>
+          <g key={i} className={futuro ? undefined : `g-col g-c${i}`}>
             {!futuro ? (
               <rect
                 className="g-realce"
@@ -640,6 +884,21 @@ export function AreaTendencia({
                 height={ALT + 8}
                 rx={3}
                 fill={TINTA}
+              />
+            ) : null}
+            {/* o pulso é sinal de "agora": só no ponto destacado quando ele
+                é de fato o último mês com dado — um mês histórico em foco
+                não deve fingir recência */}
+            {marcado && i === ultimo ? (
+              <circle
+                cx={x}
+                cy={py(v)}
+                r={5}
+                fill="none"
+                stroke={cor}
+                strokeWidth={1.5}
+                className="g-pulso"
+                aria-hidden="true"
               />
             ) : null}
             {!futuro && (marcarPontos || marcado) ? (
@@ -652,9 +911,7 @@ export function AreaTendencia({
                 strokeWidth={marcado ? 0 : 1.6}
                 className="g-surgir"
                 style={{ animationDelay: `${0.75 + i * 0.035}s` }}
-              >
-                <title>{`${rotuloEixo(rotulos, i)}: ${formatarBRL(v)}`}</title>
-              </circle>
+              />
             ) : null}
             {mostrarRotulo(n, i, marcado) ? (
               <text
@@ -689,6 +946,21 @@ export function AreaTendencia({
           sem movimento no período
         </text>
       ) : null}
+      {/* tooltips ricos — só nos meses que já aconteceram */}
+      {comDado.map((v, i) => (
+        <Tip
+          key={i}
+          i={i}
+          centro={px(i)}
+          titulo={rotuloEixo(rotulos, i)}
+          linhas={[
+            { cor, nome: "valor", valor: formatarBRL(v) },
+            ...(i > 0
+              ? [{ nome: "vs anterior", valor: variacaoTexto(v, comDado[i - 1]) }]
+              : []),
+          ]}
+        />
+      ))}
     </svg>
   );
 }
@@ -969,6 +1241,26 @@ export function Medidor({
         />
       ) : null}
 
+      {/* marcador na ponta do arco: acabamento de instrumento */}
+      {t > 0.02
+        ? (() => {
+            const [mx, my] = ponta(t, R);
+            return (
+              <circle
+                cx={mx}
+                cy={my}
+                r={esp / 2 - 2.5}
+                fill={CARTA}
+                stroke={est.cor}
+                strokeWidth={2.5}
+                className="g-surgir"
+                style={{ animationDelay: "1.05s" }}
+                aria-hidden="true"
+              />
+            );
+          })()
+        : null}
+
       {/* leitura central */}
       <g className="g-surgir" style={{ animationDelay: "0.6s" }}>
         <text
@@ -1066,6 +1358,7 @@ export function Rosca({
               fill="none"
               stroke={s.cor}
               strokeWidth={esp}
+              className="g-fatia"
             >
               <title>{`${s.rotulo}: ${formatarBRL(s.valor)}`}</title>
             </circle>
@@ -1078,7 +1371,7 @@ export function Rosca({
               strokeWidth={esp}
               strokeLinecap="butt"
               pathLength={1}
-              className="g-linha"
+              className="g-linha g-fatia"
               style={{ animationDelay: `${s.delay}s` }}
             >
               <title>{`${s.rotulo}: ${formatarBRL(s.valor)} (${(s.frac * 100).toFixed(1).replace(".", ",")}%)`}</title>
@@ -1192,6 +1485,212 @@ export function BarraComposicao({
         ))}
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Mapa de calor (matriz linha × coluna)
+// ---------------------------------------------------------------------------
+
+/**
+ * Mapa de calor para matrizes (empreendimento × mês, ano × mês). A cor é uma
+ * RAMPA SEQUENCIAL de um único matiz — do papel quase cru ao musgo escuro —
+ * então "mais escuro = mais dinheiro" vale no mapa inteiro e o olho encontra
+ * os melhores meses de cada linha em um segundo. Célula vazia é vazia (traço),
+ * não é zero. O texto dentro da célula troca para papel quando o fundo
+ * escurece, mantendo contraste sempre. Tooltip nativo por célula; a página
+ * deve continuar oferecendo a mesma informação em tabela.
+ */
+export function MapaCalor({
+  colunas,
+  linhas,
+  formatar = abreviarBRL,
+  formatarCheio = formatarBRL,
+  rotuloAcessivel = "Mapa de calor",
+  destaqueColuna,
+}: {
+  colunas: string[];
+  linhas: { rotulo: string; valores: (number | null)[] }[];
+  /** número → texto curto da célula */
+  formatar?: (v: number) => string;
+  /** número → texto completo do tooltip */
+  formatarCheio?: (v: number) => string;
+  rotuloAcessivel?: string;
+  /** índice 0-based da coluna a sublinhar (ex.: mês selecionado) */
+  destaqueColuna?: number;
+}) {
+  const nc = colunas.length;
+  const nl = linhas.length;
+  if (nc === 0 || nl === 0) return null;
+
+  const ROT_W = 128;
+  const GAP = 3;
+  const CEL_H = 26;
+  const CAB_H = 20;
+  const celW = (LARG - ROT_W - 4) / nc;
+  const altura = CAB_H + nl * (CEL_H + GAP);
+
+  const todos = linhas.flatMap((l) => l.valores).filter((v): v is number => v !== null && v > 0);
+  const max = Math.max(...todos, 1);
+
+  // rampa clara→escura do musgo; gama 0.72 abre os tons baixos para que
+  // valores pequenos não sumam no papel
+  const corDe = (v: number) => mixHex("#eef2e4", "#33511f", Math.pow(v / max, 0.72));
+  // 0.66 é o ponto de contraste-igual desta rampa (≈3,9:1 para os dois
+  // lados); com bold e o tooltip/tabela redundantes, é o melhor equilíbrio
+  const textoDe = (v: number) => (Math.pow(v / max, 0.72) > 0.66 ? CARTA : TINTA);
+
+  // muitas colunas (períodos multi-ano): cabeçalho raleado e célula sem
+  // texto — a cor responde, o tooltip e a tabela dão o número exato
+  const cabecalhoCada = nc <= 14 ? 1 : Math.ceil(nc / 14);
+  const celulaComTexto = celW >= 34;
+
+  return (
+    <svg
+      viewBox={`0 0 ${LARG} ${altura}`}
+      className="w-full"
+      role="img"
+      aria-label={rotuloAcessivel}
+    >
+      {/* cabeçalho de colunas (raleado quando não cabe um rótulo por coluna) */}
+      {colunas.map((c, j) =>
+        j % cabecalhoCada === 0 || destaqueColuna === j ? (
+          <text
+            key={j}
+            x={ROT_W + j * celW + celW / 2}
+            y={CAB_H - 7}
+            fontSize={9}
+            fontWeight={destaqueColuna === j ? 700 : 400}
+            fill={destaqueColuna === j ? TINTA : ROTULO}
+            textAnchor="middle"
+            style={{ fontFamily: "var(--font-jetbrains), monospace" }}
+          >
+            {c}
+          </text>
+        ) : null
+      )}
+      {destaqueColuna !== undefined && destaqueColuna >= 0 ? (
+        <line
+          x1={ROT_W + destaqueColuna * celW + 3}
+          x2={ROT_W + (destaqueColuna + 1) * celW - 3}
+          y1={CAB_H - 3}
+          y2={CAB_H - 3}
+          stroke={TINTA}
+          strokeWidth={1.5}
+        />
+      ) : null}
+
+      {linhas.map((linha, i) => {
+        const y = CAB_H + i * (CEL_H + GAP);
+        const rot =
+          linha.rotulo.length > 18 ? linha.rotulo.slice(0, 17) + "…" : linha.rotulo;
+        return (
+          <g key={i} className="g-mapa-linha">
+            <text
+              x={ROT_W - 10}
+              y={y + CEL_H / 2 + 3.5}
+              fontSize={10}
+              fill={TINTA}
+              textAnchor="end"
+            >
+              {rot}
+              <title>{linha.rotulo}</title>
+            </text>
+            {linha.valores.slice(0, nc).map((v, j) => {
+              const x = ROT_W + j * celW;
+              if (v === null || v === 0) {
+                return (
+                  <g key={j} className="g-cel">
+                    <rect
+                      x={x + 1.5}
+                      y={y}
+                      width={celW - GAP}
+                      height={CEL_H}
+                      rx={3.5}
+                      fill={GRADE}
+                      opacity={0.32}
+                    />
+                    <text
+                      x={x + celW / 2}
+                      y={y + CEL_H / 2 + 3}
+                      fontSize={8.5}
+                      fill={ROTULO}
+                      opacity={0.55}
+                      textAnchor="middle"
+                    >
+                      —
+                    </text>
+                    <title>{`${linha.rotulo} · ${colunas[j]}: sem movimento`}</title>
+                  </g>
+                );
+              }
+              // valor NEGATIVO (estorno/ajuste) não é "sem movimento":
+              // célula clara com contorno terracota e o valor real em tinta
+              if (v < 0) {
+                return (
+                  <g key={j} className="g-cel">
+                    <rect
+                      x={x + 1.5}
+                      y={y}
+                      width={celW - GAP}
+                      height={CEL_H}
+                      rx={3.5}
+                      fill={CARTA}
+                      stroke={COR_SAIDA}
+                      strokeWidth={1.2}
+                    />
+                    {celulaComTexto ? (
+                      <text
+                        x={x + celW / 2}
+                        y={y + CEL_H / 2 + 3}
+                        fontSize={8.5}
+                        fontWeight={700}
+                        fill={TINTA}
+                        textAnchor="middle"
+                        style={{ fontFamily: "var(--font-jetbrains), monospace" }}
+                      >
+                        {formatar(v)}
+                      </text>
+                    ) : null}
+                    <title>{`${linha.rotulo} · ${colunas[j]}: ${formatarCheio(v)} (negativo)`}</title>
+                  </g>
+                );
+              }
+              return (
+                <g
+                  key={j}
+                  className="g-cel g-surgir"
+                  style={{ animationDelay: `${i * 55 + j * 16}ms` }}
+                >
+                  <rect
+                    x={x + 1.5}
+                    y={y}
+                    width={celW - GAP}
+                    height={CEL_H}
+                    rx={3.5}
+                    fill={corDe(v)}
+                  />
+                  {celulaComTexto ? (
+                    <text
+                      x={x + celW / 2}
+                      y={y + CEL_H / 2 + 3}
+                      fontSize={8.5}
+                      fontWeight={700}
+                      fill={textoDe(v)}
+                      textAnchor="middle"
+                      style={{ fontFamily: "var(--font-jetbrains), monospace" }}
+                    >
+                      {formatar(v)}
+                    </text>
+                  ) : null}
+                  <title>{`${linha.rotulo} · ${colunas[j]}: ${formatarCheio(v)}`}</title>
+                </g>
+              );
+            })}
+          </g>
+        );
+      })}
+    </svg>
   );
 }
 
