@@ -17,9 +17,15 @@ import { abreviarBRL, formatarBRL } from "@/lib/dominio/dinheiro";
 import { NOME_MES_ABREV } from "@/lib/dominio/normalizacao";
 import { NIVEL, type Nivel } from "@/lib/dominio/semaforo";
 
-export const COR_1 = "#4f7a33"; // musgo — dinheiro que ENTRA
-export const COR_1_FORTE = "#33511f"; // passo escuro do mesmo matiz (destaque)
-export const COR_2 = "#b3801a"; // ocre — o que era DEVIDO, ainda não é saída
+/**
+ * As cores das séries são TOKENS, não literais: no papel valem os pigmentos
+ * editoriais; dentro de .painel-instrumento (globals.css) os mesmos
+ * componentes recebem automaticamente os passos luminosos, validados para
+ * superfície escura. Um componente, dois contextos, zero duplicação.
+ */
+export const COR_1 = "var(--g-s1)"; // dinheiro que ENTRA
+export const COR_1_FORTE = "var(--g-s1-forte)"; // passo de destaque
+export const COR_2 = "var(--g-s2)"; // o que era DEVIDO, ainda não é saída
 
 /**
  * Dinheiro que SAI é sempre vermelho.
@@ -30,22 +36,22 @@ export const COR_2 = "#b3801a"; // ocre — o que era DEVIDO, ainda não é saí
  * distinguidos pela LUMINOSIDADE (um claro, um escuro), o que sobrevive tanto
  * ao daltonismo quanto à impressão em preto e branco.
  */
-export const COR_SAIDA = "#ba1a1a"; // terracota (--erro) — despesa
-export const COR_SAIDA_2 = "#7a1f1f"; // terracota escura — segundo centro
+export const COR_SAIDA = "var(--g-saida)"; // despesa
+export const COR_SAIDA_2 = "var(--g-saida-2)"; // segundo centro de custo
 
-export const COR_3 = "#4a68a8"; // índigo — série neutra (não é entrada nem saída)
+export const COR_3 = "var(--g-s3)"; // série neutra (não é entrada nem saída)
 
-const GRADE = "#e5e1d8"; // --contorno
-const EIXO = "#75786f"; // --contorno-forte
-const ROTULO = "#444840"; // --tinta-suave
-const TINTA = "#1c2430"; // --tinta
-const CARTA = "#fdfbf8"; // --carta (fundo dos cards e dos tooltips)
+const GRADE = "var(--g-grade)";
+const EIXO = "var(--g-eixo)";
+const ROTULO = "var(--g-rotulo)";
+const TINTA = "var(--g-tinta)";
+const CARTA = "var(--g-carta)";
 
 // ---------------------------------------------------------------------------
 // utilitários premium: mistura de cor, ids únicos e tooltip rico
 // ---------------------------------------------------------------------------
 
-/** Mistura duas cores hex (t=0 → a, t=1 → b). Para gradientes tom-sobre-tom. */
+/** Mistura duas cores hex (t=0 → a, t=1 → b). Usada na rampa do mapa de calor. */
 function mixHex(a: string, b: string, t: number): string {
   const pa = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16));
   const pb = [1, 3, 5].map((i) => parseInt(b.slice(i, i + 2), 16));
@@ -59,6 +65,25 @@ function mixHex(a: string, b: string, t: number): string {
       )
       .join("")
   );
+}
+
+/**
+ * Cor do semáforo como token com fallback: no papel resolve para o pigmento
+ * de semaforo.ts; dentro do painel-instrumento, para o passo luminoso (que o
+ * globals.css define). O significado — ótimo/atenção/crítico — não muda.
+ */
+function corNivel(nivel: Nivel): string {
+  return `var(--g-n-${nivel}, ${NIVEL[nivel].cor})`;
+}
+
+/** Luminância relativa (WCAG) de um hex — decide texto claro ou escuro. */
+function luminancia(hex: string): number {
+  const canal = (c: number) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  return 0.2126 * canal(r) + 0.7152 * canal(g) + 0.0722 * canal(b);
 }
 
 /**
@@ -83,7 +108,9 @@ function DefsGradientes({ uid, cores }: { uid: string; cores: string[] }) {
     <defs>
       {cores.map((c, i) => (
         <linearGradient key={i} id={`${uid}-g${i}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={mixHex(c, CARTA, 0.18)} />
+          {/* opacidade em vez de mistura de hex: funciona igual sobre papel
+              (clareia) e sobre tinta (aprofunda), sem saber o tema */}
+          <stop offset="0%" stopColor={c} stopOpacity={0.74} />
           <stop offset="100%" stopColor={c} />
         </linearGradient>
       ))}
@@ -906,7 +933,7 @@ export function AreaTendencia({
                 cx={x}
                 cy={py(v)}
                 r={marcado ? 4.5 : 2.5}
-                fill={marcado ? cor : "#fdfbf8"}
+                fill={marcado ? cor : CARTA}
                 stroke={cor}
                 strokeWidth={marcado ? 0 : 1.6}
                 className="g-surgir"
@@ -991,7 +1018,7 @@ export function BarrasHorizontais({
   const max = Math.max(...itens.map((i) => i.valor), 1);
   const plotW = L - ROTULO_W - VALOR_W;
   const altura = n * (ALT_BARRA + GAP);
-  const cores = itens.map((i) => (i.nivel ? NIVEL[i.nivel].cor : cor));
+  const cores = itens.map((i) => (i.nivel ? corNivel(i.nivel) : cor));
 
   return (
     <svg
@@ -1101,7 +1128,7 @@ export function Sparkline({
         cy={py(ultimo)}
         r={3}
         fill={cor}
-        stroke="#fdfbf8"
+        stroke={CARTA}
         strokeWidth={1.5}
         className="g-surgir"
         style={{ animationDelay: "0.9s" }}
@@ -1221,7 +1248,7 @@ export function Medidor({
             y1={y0}
             x2={x1}
             y2={y1}
-            stroke="#fdfbf8"
+            stroke={CARTA}
             strokeWidth={1.5}
             opacity={0.9}
           />
@@ -1233,7 +1260,7 @@ export function Medidor({
         <path
           d={arcoMedidor(cx, cy, R, 0, t)}
           fill="none"
-          stroke={est.cor}
+          stroke={corNivel(nivel)}
           strokeWidth={esp}
           strokeLinecap="round"
           pathLength={1}
@@ -1251,7 +1278,7 @@ export function Medidor({
                 cy={my}
                 r={esp / 2 - 2.5}
                 fill={CARTA}
-                stroke={est.cor}
+                stroke={corNivel(nivel)}
                 strokeWidth={2.5}
                 className="g-surgir"
                 style={{ animationDelay: "1.05s" }}
@@ -1304,7 +1331,7 @@ export function Rosca({
   centroTitulo?: string;
   centroValor?: string;
 }) {
-  const CORES = [COR_1, COR_2, COR_3, "#a9a7ad", "#75786f"];
+  const CORES = [COR_1, COR_2, COR_3, EIXO, ROTULO];
   const total = fatias.reduce((s, f) => s + f.valor, 0);
   const cx = 106;
   const cy = 106;
@@ -1325,7 +1352,7 @@ export function Rosca({
       a0,
       a1,
       delay: partidas[i] * 0.7,
-      cor: CORES[i] ?? "#75786f",
+      cor: CORES[i] ?? EIXO,
     };
   });
 
@@ -1508,6 +1535,8 @@ export function MapaCalor({
   formatarCheio = formatarBRL,
   rotuloAcessivel = "Mapa de calor",
   destaqueColuna,
+  rampaDe = "#eef2e4",
+  rampaPara = "#33511f",
 }: {
   colunas: string[];
   linhas: { rotulo: string; valores: (number | null)[] }[];
@@ -1518,6 +1547,10 @@ export function MapaCalor({
   rotuloAcessivel?: string;
   /** índice 0-based da coluna a sublinhar (ex.: mês selecionado) */
   destaqueColuna?: number;
+  /** extremos da rampa (hex): claro→escuro no papel, escuro→luminoso no
+      painel-instrumento. Precisam ser literais — a cor é interpolada aqui. */
+  rampaDe?: string;
+  rampaPara?: string;
 }) {
   const nc = colunas.length;
   const nl = linhas.length;
@@ -1533,12 +1566,15 @@ export function MapaCalor({
   const todos = linhas.flatMap((l) => l.valores).filter((v): v is number => v !== null && v > 0);
   const max = Math.max(...todos, 1);
 
-  // rampa clara→escura do musgo; gama 0.72 abre os tons baixos para que
-  // valores pequenos não sumam no papel
-  const corDe = (v: number) => mixHex("#eef2e4", "#33511f", Math.pow(v / max, 0.72));
-  // 0.66 é o ponto de contraste-igual desta rampa (≈3,9:1 para os dois
-  // lados); com bold e o tooltip/tabela redundantes, é o melhor equilíbrio
-  const textoDe = (v: number) => (Math.pow(v / max, 0.72) > 0.66 ? CARTA : TINTA);
+  // rampa sequencial de um matiz só; gama 0.72 abre os tons baixos para que
+  // valores pequenos não sumam no fundo
+  const corDe = (v: number) => mixHex(rampaDe, rampaPara, Math.pow(v / max, 0.72));
+  // O texto não segue limiar chutado: mede a luminância REAL da célula e
+  // escolhe o extremo de maior contraste. 0,19 é o ponto de cruzamento exato
+  // entre #101720 e #f4f8fc — resolvendo √((Lclaro+0,05)(Lescuro+0,05))−0,05,
+  // ele garante piso de 4,1:1 em QUALQUER passo das duas rampas (um limiar
+  // maior deixava as células de verde médio com 2,4:1, quase ilegíveis).
+  const textoDe = (v: number) => (luminancia(corDe(v)) > 0.19 ? "#101720" : "#f4f8fc");
 
   // muitas colunas (períodos multi-ano): cabeçalho raleado e célula sem
   // texto — a cor responde, o tooltip e a tabela dão o número exato
@@ -1691,6 +1727,238 @@ export function MapaCalor({
         );
       })}
     </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Cascata (waterfall) e anéis radiais
+// ---------------------------------------------------------------------------
+
+/**
+ * Cascata: conta a HISTÓRIA de um saldo em etapas — começa com o que entrou,
+ * desce a cada saída e fecha no que sobrou. É a forma mais direta de responder
+ * "para onde foi o dinheiro", muito melhor que três barras soltas: cada degrau
+ * mostra o quanto aquela saída pesou, e o conector liga o antes ao depois.
+ * `tipo`: "total" ancora na base (entrada e saldo final); "saida" flutua.
+ */
+export function Cascata({
+  etapas,
+  rotuloAcessivel = "Composição do saldo",
+}: {
+  etapas: { rotulo: string; valor: number; tipo: "total" | "saida" }[];
+  rotuloAcessivel?: string;
+}) {
+  const n = etapas.length;
+  if (n === 0) return null;
+
+  // acumula para posicionar cada degrau
+  let corrente = 0;
+  const barras = etapas.map((e) => {
+    if (e.tipo === "total") {
+      corrente = e.valor;
+      return { ...e, de: 0, ate: e.valor };
+    }
+    const de = corrente;
+    corrente = corrente - Math.abs(e.valor);
+    return { ...e, de: corrente, ate: de };
+  });
+
+  const teto = Math.max(...barras.map((b) => Math.max(b.de, b.ate)), 1);
+  const { max, ticks } = escalaAgradavel(teto);
+  const passo = PLOT_W / n;
+  const larguraBarra = Math.max(14, Math.min(64, passo - 26));
+  const y = (v: number) => BASE - (v / max) * ALT;
+  const uid = novoUid();
+
+  return (
+    <svg
+      viewBox={VIEWBOX}
+      className={`w-full ${uid}`}
+      role="img"
+      aria-label={rotuloAcessivel}
+    >
+      <DefsGradientes uid={uid} cores={[COR_1, COR_SAIDA, COR_3]} />
+      <EstiloTips uid={uid} n={n} />
+      <Moldura ticks={ticks} max={max} />
+      {barras.map((b, i) => {
+        const centro = EIXO_W + i * passo + passo / 2;
+        const x = centro - larguraBarra / 2;
+        const topo = y(Math.max(b.de, b.ate));
+        const alturaBarra = Math.abs(y(b.de) - y(b.ate));
+        const ehSaida = b.tipo === "saida";
+        const ehFinal = i === n - 1;
+        // entrada = musgo, saídas = terracota, saldo final = índigo (é um
+        // resultado, não um fluxo — cor neutra evita ler "sobrou" como receita)
+        const idxCor = ehSaida ? 1 : ehFinal ? 2 : 0;
+        const cor = ehSaida ? COR_SAIDA : ehFinal ? COR_3 : COR_1;
+        return (
+          <ColunaHover key={i} x={EIXO_W + i * passo + 2} w={passo - 4} indice={i}>
+            {/* conector: leva o olho do fim de um degrau ao começo do próximo */}
+            {i < n - 1 && !barras[i + 1].tipo.startsWith("total") ? (
+              <line
+                x1={centro + larguraBarra / 2}
+                x2={EIXO_W + (i + 1) * passo + passo / 2 - larguraBarra / 2}
+                y1={y(b.tipo === "total" ? b.ate : b.de)}
+                y2={y(b.tipo === "total" ? b.ate : b.de)}
+                stroke={EIXO}
+                strokeWidth={1}
+                strokeDasharray="3 3"
+                opacity={0.7}
+                className="g-grade"
+                style={{ animationDelay: `${i * 90 + 260}ms` }}
+              />
+            ) : null}
+            <Barra
+              x={x}
+              y={topo}
+              w={larguraBarra}
+              h={alturaBarra}
+              cor={cor}
+              fill={`url(#${uid}-g${idxCor})`}
+              delayMs={i * 90}
+            />
+            <Etiqueta
+              x={centro}
+              y={topo}
+              texto={`${ehSaida ? "−" : ""}${abreviarBRL(Math.abs(b.valor))}`}
+              cor={cor}
+            />
+            <text
+              x={centro}
+              y={BASE + 15}
+              className="g-rot"
+              fontSize={9.5}
+              fill={ehFinal ? TINTA : ROTULO}
+              fontWeight={ehFinal ? 700 : 400}
+              textAnchor="middle"
+              style={{
+                fontFamily: "var(--font-jetbrains), monospace",
+                animationDelay: `${300 + i * 40}ms`,
+              }}
+            >
+              {b.rotulo}
+            </text>
+          </ColunaHover>
+        );
+      })}
+      {barras.map((b, i) => (
+        <Tip
+          key={i}
+          i={i}
+          centro={EIXO_W + i * passo + passo / 2}
+          titulo={b.rotulo}
+          linhas={[
+            {
+              cor: b.tipo === "saida" ? COR_SAIDA : i === n - 1 ? COR_3 : COR_1,
+              nome: b.tipo === "saida" ? "saiu" : i === n - 1 ? "sobrou" : "entrou",
+              valor: formatarBRL(Math.abs(b.valor)),
+            },
+            ...(b.tipo === "saida"
+              ? [{ nome: "restou", valor: formatarBRL(b.de) }]
+              : []),
+          ]}
+        />
+      ))}
+    </svg>
+  );
+}
+
+/**
+ * Anéis radiais: até três percentuais lado a lado, cada um com o número no
+ * miolo. Para taxas independentes (não são partes de um todo — para isso a
+ * rosca é a forma certa). Cor pelo semáforo quando o indicador tem julgamento.
+ */
+export function AneisRadiais({
+  aneis,
+}: {
+  aneis: {
+    rotulo: string;
+    fracao: number; // 1 = 100%
+    texto?: string; // texto do miolo (default: percentual)
+    nivel?: Nivel;
+    detalhe?: string;
+  }[];
+}) {
+  const R = 46;
+  const esp = 11;
+  const C = 2 * Math.PI * R;
+  return (
+    <div className="flex flex-wrap items-start justify-center gap-6 sm:gap-8">
+      {aneis.map((a, i) => {
+        const t = Math.max(0, Math.min(1, a.fracao));
+        const cor = a.nivel ? corNivel(a.nivel) : COR_1;
+        return (
+          <div key={i} className="flex flex-col items-center gap-2">
+            <svg
+              viewBox="0 0 120 120"
+              width={112}
+              height={112}
+              role="img"
+              aria-label={`${a.rotulo}: ${(a.fracao * 100).toFixed(0)}%`}
+            >
+              <circle
+                cx={60}
+                cy={60}
+                r={R}
+                fill="none"
+                stroke={GRADE}
+                strokeWidth={esp}
+                opacity={0.55}
+              />
+              {t > 0 ? (
+                <circle
+                  cx={60}
+                  cy={60}
+                  r={R}
+                  fill="none"
+                  stroke={cor}
+                  strokeWidth={esp}
+                  strokeLinecap="round"
+                  strokeDasharray={`${(t * C).toFixed(2)} ${C.toFixed(2)}`}
+                  transform="rotate(-90 60 60)"
+                  pathLength={undefined}
+                  className="g-anel"
+                  style={{ animationDelay: `${i * 140}ms` }}
+                >
+                  <title>{`${a.rotulo}: ${(a.fracao * 100).toFixed(1).replace(".", ",")}%`}</title>
+                </circle>
+              ) : null}
+              <text
+                x={60}
+                y={a.detalhe ? 60 : 66}
+                textAnchor="middle"
+                fontSize={a.texto && a.texto.length > 4 ? 17 : 22}
+                fontWeight={700}
+                fill={TINTA}
+                className="g-surgir"
+                style={{
+                  fontFamily: "var(--font-source-serif), Georgia, serif",
+                  animationDelay: `${0.5 + i * 0.12}s`,
+                }}
+              >
+                {a.texto ?? `${(a.fracao * 100).toFixed(0)}%`}
+              </text>
+              {a.detalhe ? (
+                <text
+                  x={60}
+                  y={76}
+                  textAnchor="middle"
+                  fontSize={8.5}
+                  letterSpacing="0.1em"
+                  fill={ROTULO}
+                  style={{ fontFamily: "var(--font-jetbrains), monospace" }}
+                >
+                  {a.detalhe.toUpperCase()}
+                </text>
+              ) : null}
+            </svg>
+            <span className="max-w-32 text-center text-[11px] font-semibold uppercase tracking-wider text-tinta-suave txt-suave">
+              {a.rotulo}
+            </span>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

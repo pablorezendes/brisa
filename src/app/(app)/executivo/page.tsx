@@ -47,6 +47,7 @@ import {
   pendentesDoPeriodo,
 } from "@/lib/consultas/relatorios";
 import {
+  AneisRadiais,
   BarraComposicao,
   BarrasCaixa,
   BarrasDuplas,
@@ -55,7 +56,9 @@ import {
   COR_2,
   COR_SAIDA,
   COR_SAIDA_2,
+  Cascata,
   Legenda,
+  MapaCalor,
   Medidor,
   Rosca,
 } from "@/components/graficos";
@@ -289,6 +292,27 @@ export default async function PaginaExecutivo({
         ]
       : []),
   ];
+
+  // ---- instrumentos derivados (nenhum dado novo: só outras leituras) --------
+
+  /** Concentração: fatia do maior empreendimento na comissão da janela. */
+  const concentracao =
+    vm.comissao > 0 && empOrdenados.length > 0
+      ? empOrdenados[0].comissao / vm.comissao
+      : 0;
+
+  /** Desempenho da janela contra o melhor mês da série (100% = é o melhor). */
+  const melhorMes = Math.max(...vm.serieComissao, 0);
+  const vsMelhor = melhorMes > 0 ? vm.comissao / melhorMes : 0;
+
+  /** Mapa de calor comissão × período: linhas = empreendimentos com movimento. */
+  const linhasMapa = vm.porEmp
+    .filter((e) => e.serie.some((v) => v > 0))
+    .slice(0, 9)
+    .map((e) => ({
+      rotulo: e.nome,
+      valores: e.serie.map((v) => (v > 0 ? v : null)),
+    }));
 
   // ---- semáforos -----------------------------------------------------------
   const nvTaxa = nivelTaxaRecebimento(vm.taxa);
@@ -669,9 +693,77 @@ export default async function PaginaExecutivo({
         />
       </div>
 
+      {/* ---------- central de instrumentos: anéis + cascata do caixa -------- */}
+      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-5">
+        <Card className="painel-instrumento p-5 lg:col-span-2">
+          <TituloCard
+            titulo="Sinais vitais"
+            ajuda="Três taxas independentes (não são partes de um todo): quanto do devido já entrou; o quanto o resultado depende de um único empreendimento; e como esta janela se compara ao melhor mês da série. Anel cheio = 100%."
+          />
+          <div className="pt-2">
+            <AneisRadiais
+              aneis={[
+                {
+                  rotulo: "do devido já entrou",
+                  fracao: vm.taxa ?? 0,
+                  texto:
+                    vm.taxa !== null
+                      ? `${(vm.taxa * 100).toFixed(0)}%`
+                      : "—",
+                  nivel: nvTaxa,
+                },
+                {
+                  rotulo: "vem do maior empreendimento",
+                  fracao: concentracao,
+                  nivel: concentracao >= 0.5 ? "atencao" : "info",
+                },
+                {
+                  rotulo: "do melhor mês da série",
+                  fracao: Math.min(vsMelhor, 1),
+                  texto: `${(vsMelhor * 100).toFixed(0)}%`,
+                  nivel: vsMelhor >= 0.95 ? "otimo" : "info",
+                },
+              ]}
+            />
+          </div>
+        </Card>
+
+        <Card className="painel-instrumento p-5 lg:col-span-3">
+          <TituloCard
+            titulo={periodo ? "Caixa do período, passo a passo" : "Caixa do mês, passo a passo"}
+            nivel={nvCaixa}
+            ajuda="A história do saldo em degraus: começa no que entrou, desce o que saiu e fecha no que sobrou. O degrau vermelho mostra o tamanho real da saída — se ele quase zera a coluna verde, o mês fechou apertado."
+          />
+          {vm.temCaixa ? (
+            <>
+              <Cascata
+                etapas={[
+                  { rotulo: "ENTROU", valor: vm.caixaReceita, tipo: "total" },
+                  { rotulo: "SAIU", valor: vm.caixaDespesa, tipo: "saida" },
+                  { rotulo: "SOBROU", valor: vm.saldoCaixa, tipo: "total" },
+                ]}
+                rotuloAcessivel="Entradas, saídas e saldo do caixa"
+              />
+              <p className="mt-1 text-xs text-tinta-suave">
+                Entrou {formatarBRL(vm.caixaReceita)}, saiu{" "}
+                {formatarBRL(vm.caixaDespesa)} — sobrou{" "}
+                <strong className="font-mono text-tinta">
+                  {formatarBRL(vm.saldoCaixa)}
+                </strong>
+                .
+              </p>
+            </>
+          ) : (
+            <p className="py-10 text-center text-sm text-tinta-suave">
+              Sem lançamentos de caixa {periodo ? "neste período" : "neste mês"}.
+            </p>
+          )}
+        </Card>
+      </div>
+
       {/* ---------- visão rápida: medidor + rosca ---------- */}
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card className="p-5">
+        <Card className="painel-instrumento p-5">
           <TituloCard
             titulo={periodo ? "Quanto do período já entrou" : "Quanto do mês já entrou"}
             nivel={nvTaxa}
@@ -707,7 +799,7 @@ export default async function PaginaExecutivo({
           )}
         </Card>
 
-        <Card className="p-5">
+        <Card className="painel-instrumento p-5">
           <TituloCard
             titulo={
               periodo
@@ -732,7 +824,7 @@ export default async function PaginaExecutivo({
 
       {/* ---------- gráficos do núcleo ---------- */}
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <Card className="p-5">
+        <Card className="painel-instrumento p-5">
           <TituloCard
             titulo={
               periodo
@@ -792,7 +884,7 @@ export default async function PaginaExecutivo({
           </details>
         </Card>
 
-        <Card className="p-5">
+        <Card className="painel-instrumento p-5">
           <TituloCard
             titulo="Devido × Recebido"
             ajuda="Lado a lado, mês a mês: a coluna ocre é o que era para entrar, a verde é o que entrou. Verde menor que ocre = mês com pendência. Verde maior = alguém quitou atraso de outro mês ali."
@@ -821,6 +913,32 @@ export default async function PaginaExecutivo({
           </p>
         </Card>
       </div>
+
+      {/* ---------- mapa de calor: quem rendeu, quando ---------- */}
+      {linhasMapa.length > 1 ? (
+        <Card className="painel-instrumento mt-4 p-5">
+          <TituloCard
+            titulo="Mapa de calor — comissão por empreendimento e mês"
+            ajuda="Cada célula é a comissão de um empreendimento num mês: quanto mais luminoso o verde, maior o valor. Serve para achar em um segundo os meses fortes de cada prédio, as quedas fora de padrão e quem sustenta o resultado o ano todo. Célula com traço = sem movimento; os números exatos estão na tabela abaixo."
+          />
+          <div className="overflow-x-auto">
+            <div
+              style={{
+                minWidth: `${Math.max(560, 128 + (vm.rotulos?.length ?? 12) * 40)}px`,
+              }}
+            >
+              <MapaCalor
+                colunas={vm.rotulos ?? NOME_MES_ABREV.slice(1)}
+                linhas={linhasMapa}
+                destaqueColuna={vm.destaque ? vm.destaque - 1 : undefined}
+                rampaDe="#16241f"
+                rampaPara="#2fd39a"
+                rotuloAcessivel="Comissão por empreendimento e mês"
+              />
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       {/* ---------- comissão por empreendimento ---------- */}
       <Card className="mt-4 p-5">
@@ -927,7 +1045,7 @@ export default async function PaginaExecutivo({
       </Card>
 
       {/* ---------- caixa ---------- */}
-      <Card className="mt-4 p-5">
+      <Card className="painel-instrumento mt-4 p-5">
         <TituloCard
           titulo="Caixa — receita × despesas por centro"
           nivel={nvCaixa}
