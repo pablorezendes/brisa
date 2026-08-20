@@ -695,7 +695,7 @@ export default async function PaginaExecutivo({
 
       {/* ---------- central de instrumentos: anéis + cascata do caixa -------- */}
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-5">
-        <Card className="painel-instrumento p-5 lg:col-span-2">
+        <Card className="p-5 lg:col-span-2">
           <TituloCard
             titulo="Sinais vitais"
             ajuda="Três taxas independentes (não são partes de um todo): quanto do devido já entrou; o quanto o resultado depende de um único empreendimento; e como esta janela se compara ao melhor mês da série. Anel cheio = 100%."
@@ -728,7 +728,7 @@ export default async function PaginaExecutivo({
           </div>
         </Card>
 
-        <Card className="painel-instrumento p-5 lg:col-span-3">
+        <Card className="p-5 lg:col-span-3">
           <TituloCard
             titulo={periodo ? "Caixa do período, passo a passo" : "Caixa do mês, passo a passo"}
             nivel={nvCaixa}
@@ -763,7 +763,7 @@ export default async function PaginaExecutivo({
 
       {/* ---------- visão rápida: medidor + rosca ---------- */}
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card className="painel-instrumento p-5">
+        <Card className="p-5">
           <TituloCard
             titulo={periodo ? "Quanto do período já entrou" : "Quanto do mês já entrou"}
             nivel={nvTaxa}
@@ -799,7 +799,7 @@ export default async function PaginaExecutivo({
           )}
         </Card>
 
-        <Card className="painel-instrumento p-5">
+        <Card className="p-5">
           <TituloCard
             titulo={
               periodo
@@ -824,7 +824,7 @@ export default async function PaginaExecutivo({
 
       {/* ---------- gráficos do núcleo ---------- */}
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <Card className="painel-instrumento p-5">
+        <Card className="p-5">
           <TituloCard
             titulo={
               periodo
@@ -884,7 +884,7 @@ export default async function PaginaExecutivo({
           </details>
         </Card>
 
-        <Card className="painel-instrumento p-5">
+        <Card className="p-5">
           <TituloCard
             titulo="Devido × Recebido"
             ajuda="Lado a lado, mês a mês: a coluna ocre é o que era para entrar, a verde é o que entrou. Verde menor que ocre = mês com pendência. Verde maior = alguém quitou atraso de outro mês ali."
@@ -916,7 +916,7 @@ export default async function PaginaExecutivo({
 
       {/* ---------- mapa de calor: quem rendeu, quando ---------- */}
       {linhasMapa.length > 1 ? (
-        <Card className="painel-instrumento mt-4 p-5">
+        <Card className="mt-4 p-5">
           <TituloCard
             titulo="Mapa de calor — comissão por empreendimento e mês"
             ajuda="Cada célula é a comissão de um empreendimento num mês: quanto mais luminoso o verde, maior o valor. Serve para achar em um segundo os meses fortes de cada prédio, as quedas fora de padrão e quem sustenta o resultado o ano todo. Célula com traço = sem movimento; os números exatos estão na tabela abaixo."
@@ -931,8 +931,6 @@ export default async function PaginaExecutivo({
                 colunas={vm.rotulos ?? NOME_MES_ABREV.slice(1)}
                 linhas={linhasMapa}
                 destaqueColuna={vm.destaque ? vm.destaque - 1 : undefined}
-                rampaDe="#16241f"
-                rampaPara="#2fd39a"
                 rotuloAcessivel="Comissão por empreendimento e mês"
               />
             </div>
@@ -1045,7 +1043,7 @@ export default async function PaginaExecutivo({
       </Card>
 
       {/* ---------- caixa ---------- */}
-      <Card className="painel-instrumento mt-4 p-5">
+      <Card className="mt-4 p-5">
         <TituloCard
           titulo="Caixa — receita × despesas por centro"
           nivel={nvCaixa}

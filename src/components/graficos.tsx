@@ -18,10 +18,9 @@ import { NOME_MES_ABREV } from "@/lib/dominio/normalizacao";
 import { NIVEL, type Nivel } from "@/lib/dominio/semaforo";
 
 /**
- * As cores das séries são TOKENS, não literais: no papel valem os pigmentos
- * editoriais; dentro de .painel-instrumento (globals.css) os mesmos
- * componentes recebem automaticamente os passos luminosos, validados para
- * superfície escura. Um componente, dois contextos, zero duplicação.
+ * As cores das séries são TOKENS (globals.css), não literais: trocar a paleta
+ * do sistema não exige tocar em nenhum gráfico, e o mesmo componente serve a
+ * qualquer superfície sem duplicação.
  */
 export const COR_1 = "var(--g-s1)"; // dinheiro que ENTRA
 export const COR_1_FORTE = "var(--g-s1-forte)"; // passo de destaque
@@ -68,9 +67,8 @@ function mixHex(a: string, b: string, t: number): string {
 }
 
 /**
- * Cor do semáforo como token com fallback: no papel resolve para o pigmento
- * de semaforo.ts; dentro do painel-instrumento, para o passo luminoso (que o
- * globals.css define). O significado — ótimo/atenção/crítico — não muda.
+ * Cor do semáforo como token com fallback para o pigmento de semaforo.ts.
+ * O significado — ótimo/atenção/crítico — vem sempre acompanhado da palavra.
  */
 function corNivel(nivel: Nivel): string {
   return `var(--g-n-${nivel}, ${NIVEL[nivel].cor})`;
@@ -1547,8 +1545,7 @@ export function MapaCalor({
   rotuloAcessivel?: string;
   /** índice 0-based da coluna a sublinhar (ex.: mês selecionado) */
   destaqueColuna?: number;
-  /** extremos da rampa (hex): claro→escuro no papel, escuro→luminoso no
-      painel-instrumento. Precisam ser literais — a cor é interpolada aqui. */
+  /** extremos da rampa (hex literais — a cor é interpolada aqui em JS) */
   rampaDe?: string;
   rampaPara?: string;
 }) {
@@ -1952,7 +1949,7 @@ export function AneisRadiais({
                 </text>
               ) : null}
             </svg>
-            <span className="max-w-32 text-center text-[11px] font-semibold uppercase tracking-wider text-tinta-suave txt-suave">
+            <span className="max-w-32 text-center text-[11px] font-semibold uppercase tracking-wider text-tinta-suave">
               {a.rotulo}
             </span>
           </div>
