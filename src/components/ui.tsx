@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BotaoSigilo } from "@/components/botao-sigilo";
 import { formatarBRL } from "@/lib/dominio/dinheiro";
 import {
   formatarCompetencia,
@@ -7,44 +8,6 @@ import {
 } from "@/lib/dominio/normalizacao";
 import { presetsPeriodo, type Periodo } from "@/lib/dominio/periodo";
 import { NIVEL, PESO_NIVEL, type Nivel } from "@/lib/dominio/semaforo";
-
-/**
- * Botão de sigilo: vela ou revela os valores da tela.
- *
- * É um checkbox escondido + CSS (`:has`) — sem JavaScript, sem cookie, sem
- * nada gravado. Toda página abre velada; ao recarregar, vela de novo. Serve
- * para abrir o sistema na frente de outras pessoas sem expor números.
- */
-function BotaoSigilo() {
-  return (
-    <>
-      <input type="checkbox" id="ver-valores" className="peer sr-only" />
-      <label
-        htmlFor="ver-valores"
-        title="Mostrar ou ocultar os valores da tela"
-        className="flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-contorno bg-carta px-3 text-[11px] font-semibold text-tinta-suave shadow-[0_1px_2px_rgba(16,35,38,0.03)] transition-all hover:border-[#aebabc] hover:bg-[#f8fafb] hover:text-tinta peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-oliva/30"
-      >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path
-            d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"
-            stroke="currentColor"
-            strokeWidth="1.8"
-          />
-          <circle cx="12" cy="12" r="2.6" stroke="currentColor" strokeWidth="1.8" />
-          <path
-            className="olho-velado"
-            d="M3.5 3.5l17 17"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-          />
-        </svg>
-        <span className="olho-velado">Ver valores</span>
-        <span className="olho-revelado">Ocultar valores</span>
-      </label>
-    </>
-  );
-}
 
 /** Cabeçalho padrão de página. Traz sempre o botão de sigilo dos valores. */
 export function PageHeader({

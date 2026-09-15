@@ -822,10 +822,9 @@ svg.grafico-executivo {
 }
 
 /* ---------- sigilo dos valores ----------
-   A tela abre SEMPRE com os números velados; o olho no cabeçalho revela.
-   CSS puro (checkbox escondido + :has()): nada vai para o servidor, nada
-   fica gravado, e ao recarregar volta a velar. O valor real continua no
-   DOM ocupando o mesmo espaço — por isso o layout não salta ao revelar. */
+   A preferência fica no navegador e é aplicada ao <html>, por isso continua
+   ativa ao navegar entre módulos. O valor real permanece no DOM ocupando o
+   mesmo espaço — o layout não salta ao revelar nem ao ocultar. */
 .sigilo {
   position: relative;
   display: inline-block;
@@ -835,48 +834,37 @@ svg.grafico-executivo {
   display: none;
 }
 
-/* Tudo depende de :has(). Num navegador sem suporte não haveria como
-   revelar de volta e os números ficariam mascarados para sempre — por isso a
-   máscara só existe DENTRO do @supports. Sem :has(), o botão some e os
-   valores aparecem normalmente: perde-se o sigilo, nunca o sistema. */
-@supports selector(:has(*)) {
-  .sigilo > *:not(.valor-sigilo-status) {
-    visibility: hidden;
-  }
-  .sigilo > .valor-sigilo-status {
-    display: block;
-  }
-  .sigilo::after {
-    content: "••••••";
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    color: var(--tinta-suave);
-    font-family: var(--font-jetbrains), monospace;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    opacity: 0.55;
-  }
-  body:has(#ver-valores:checked) .sigilo > *:not(.valor-sigilo-status) {
-    visibility: visible;
-  }
-  body:has(#ver-valores:checked) .sigilo > .valor-sigilo-status {
-    display: none;
-  }
-  body:has(#ver-valores:checked) .sigilo::after {
-    content: none;
-  }
-  /* o botão troca de rótulo e de ícone conforme o estado do checkbox */
-  body:has(#ver-valores:checked) .olho-velado,
-  body:not(:has(#ver-valores:checked)) .olho-revelado {
-    display: none;
-  }
+.sigilo > *:not(.valor-sigilo-status) {
+  visibility: hidden;
 }
-@supports not selector(:has(*)) {
-  label[for="ver-valores"] {
-    display: none;
-  }
+.sigilo > .valor-sigilo-status {
+  display: block;
+}
+.sigilo::after {
+  content: "••••••";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  color: var(--tinta-suave);
+  font-family: var(--font-jetbrains), monospace;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  opacity: 0.55;
+}
+html[data-valores-visiveis="true"] .sigilo > *:not(.valor-sigilo-status) {
+  visibility: visible;
+}
+html[data-valores-visiveis="true"] .sigilo > .valor-sigilo-status {
+  display: none;
+}
+html[data-valores-visiveis="true"] .sigilo::after {
+  content: none;
+}
+/* O botão troca de rótulo e de ícone conforme a preferência global. */
+html[data-valores-visiveis="true"] .olho-velado,
+html:not([data-valores-visiveis="true"]) .olho-revelado {
+  display: none;
 }
 
 /* ---------- blocos colapsáveis (<details>) ---------- */
