@@ -16,6 +16,8 @@ export type IconeMenuNome =
   | "relatorios"
   | "empreendimentos"
   | "unidades"
+  | "imoveis-legado"
+  | "pessoas"
   | "locatarios"
   | "contratos"
   | "recebimentos"
@@ -103,6 +105,22 @@ const DESENHOS: Record<IconeMenuNome, ReactNode> = {
       <path d="m3 11 9-8 9 8" />
       <path d="M5 10v11h14V10M9 21v-7h6v7" />
       <path d="M12 17h.01" />
+    </>
+  ),
+  "imoveis-legado": (
+    <>
+      <path d="m3 10.5 8.5-7 8.5 7" />
+      <path d="M5 9.5V21h13V9.5M9 21v-6h5v6" />
+      <rect x="16" y="14" width="5" height="6" rx="1.2" />
+      <path d="M17.5 16h2M17.5 18h2" />
+    </>
+  ),
+  pessoas: (
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="3" />
+      <circle cx="9.5" cy="9" r="2.5" />
+      <path d="M5.5 17a4 4 0 0 1 8 0" />
+      <path d="M16 8h2M16 12h2M16 16h2" />
     </>
   ),
   locatarios: (

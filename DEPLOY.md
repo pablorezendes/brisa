@@ -249,6 +249,76 @@ Todo o estado é um arquivo: `/srv/stack/acamargo/dados/brisa.db`.
 0 3 * * * cp /srv/stack/acamargo/dados/brisa.db /root/backups/brisa-$(date +\%F).db
 ```
 
+## 6) Importar cadastros do Widesys
+
+Faça a captura no próprio servidor para que os dados pessoais não precisem ser
+copiados entre máquinas. As duas etapas são somente de leitura no legado. Os
+arquivos resultantes ficam em `data/legacy-widesys/`, fora do Git, e o
+importador valida manifestos, contagens e hashes antes de abrir a transação.
+
+Use variáveis temporárias e silencie a senha no terminal. Não acrescente essas
+credenciais ao `.env`, ao histórico do shell ou ao `docker-compose.yml`:
+
+```bash
+cd /srv/stack/acamargo
+read -r -p "Usuário Widesys: " WIDESYS_USUARIO
+read -r -s -p "Senha Widesys: " WIDESYS_SENHA; printf '\n'
+export WIDESYS_USUARIO WIDESYS_SENHA
+
+docker compose exec \
+  -e WIDESYS_USUARIO \
+  -e WIDESYS_SENHA \
+  brisa npm run legacy:capture-api
+
+docker compose exec \
+  -e WIDESYS_USUARIO \
+  -e WIDESYS_SENHA \
+  brisa npm run legacy:scrape -- --refresh
+
+unset WIDESYS_SENHA WIDESYS_USUARIO
+docker compose exec brisa npm run importar:cadastros-widesys:dry-run
+docker compose exec brisa npm run importar:cadastros-widesys
+```
+
+O `dry-run` deve ser analisado antes da aplicação. A importação é idempotente e
+não remove registros que estejam ausentes em uma captura posterior; esses casos
+aparecem como avisos `*_ausente_na_origem` para conferência humana. Não use
+`npm run db:seed` neste fluxo, pois o seed é uma recarga total da operação.
+O modo `--refresh` refaz todas as telas e evita misturar a API atual com detalhes
+de uma execução anterior. Reserve `--resume` exclusivamente para continuar a
+mesma captura interrompida.
+
+### Atualização completa com backup e migração dos cadastros
+
+Para aplicar esta versão no servidor atual, pare brevemente a aplicação para
+obter uma cópia consistente do SQLite. O bootstrap do container aplica o novo
+schema antes da captura e da importação:
+
+```bash
+set -e
+cd /srv/stack/acamargo
+mkdir -p /root/backups
+docker compose stop brisa
+if [ -f dados/brisa.db ]; then
+  cp --archive dados/brisa.db "/root/backups/brisa-pre-cadastros-$(date +%F-%H%M%S).db"
+fi
+git pull --ff-only origin main
+docker compose up -d --build
+
+read -r -p "Usuário Widesys: " WIDESYS_USUARIO
+read -r -s -p "Senha Widesys: " WIDESYS_SENHA; printf '\n'
+export WIDESYS_USUARIO WIDESYS_SENHA
+docker compose exec -e WIDESYS_USUARIO -e WIDESYS_SENHA brisa npm run legacy:capture-api
+docker compose exec -e WIDESYS_USUARIO -e WIDESYS_SENHA brisa npm run legacy:scrape -- --refresh
+unset WIDESYS_SENHA WIDESYS_USUARIO
+
+docker compose exec brisa npm run importar:cadastros-widesys:dry-run
+docker compose exec brisa npm run importar:cadastros-widesys
+docker compose ps
+docker compose logs --tail 100 brisa
+curl -fsSI https://brisa.tescod.com/login | head -n 1
+```
+
 ## Cloudflare — a nuvem laranja e o certificado
 
 O registro `brisa.tescod.com` está no Cloudflare **com proxy** (nuvem

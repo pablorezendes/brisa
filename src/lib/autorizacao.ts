@@ -2,6 +2,7 @@ import "server-only";
 
 import { prisma } from "@/lib/db";
 import { exigirSessao, type SessaoPayload } from "@/lib/auth";
+import { perfilPodeVerPiiCadastros } from "@/lib/privacidade-cadastros";
 
 export type PermissaoFinanceira =
   | "GERENCIAR_CONTAS"
@@ -57,4 +58,12 @@ export async function perfilAtual(): Promise<string> {
     select: { perfil: true },
   });
   return usuario?.perfil ?? "CONSULTA";
+}
+
+/**
+ * Resolve a autorização com o perfil fresco do banco. Nunca confia em perfil
+ * enviado pelo cliente nem deixa a decisão para ocultação visual no React.
+ */
+export async function podeVerPiiCadastrosAtual(): Promise<boolean> {
+  return perfilPodeVerPiiCadastros(await perfilAtual());
 }

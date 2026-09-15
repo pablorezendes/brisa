@@ -41,6 +41,8 @@ const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
         icone: "cadastros",
         itens: [
           { tipo: "link", href: "/cadastros", rotulo: "Visão cadastral", correspondencia: "exata" },
+          { tipo: "link", href: "/cadastros/pessoas", rotulo: "Pessoas e empresas", icone: "pessoas" },
+          { tipo: "link", href: "/cadastros/imoveis-legado", rotulo: "Imóveis do legado", icone: "imoveis-legado" },
           { tipo: "link", href: "/cadastros/empreendimentos", rotulo: "Empreendimentos", icone: "empreendimentos" },
           { tipo: "link", href: "/cadastros/unidades", rotulo: "Imóveis e unidades", icone: "unidades" },
           { tipo: "link", href: "/cadastros/locatarios", rotulo: "Inquilinos", icone: "locatarios" },

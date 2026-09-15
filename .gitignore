@@ -50,6 +50,7 @@ prisma/dev.db
 *.db
 *.db-journal
 /data/*.json
+/data/legacy-widesys/
 /dados/
 /auth/
 

@@ -4,6 +4,8 @@ import { Badge, Card } from "@/components/ui";
 
 export type SecaoCadastro =
   | "inicio"
+  | "pessoas"
+  | "imoveis-legado"
   | "empreendimentos"
   | "unidades"
   | "locatarios";
@@ -13,7 +15,10 @@ const SECOES: {
   href: string;
   rotulo: string;
   descricao: string;
-  icone: Extract<IconeMenuNome, "inicio" | "empreendimentos" | "unidades" | "locatarios">;
+  icone: Extract<
+    IconeMenuNome,
+    "inicio" | "pessoas" | "imoveis-legado" | "empreendimentos" | "unidades" | "locatarios"
+  >;
 }[] = [
   {
     id: "inicio",
@@ -21,6 +26,20 @@ const SECOES: {
     rotulo: "Resumo",
     descricao: "Visão geral dos cadastros",
     icone: "inicio",
+  },
+  {
+    id: "pessoas",
+    href: "/cadastros/pessoas",
+    rotulo: "Pessoas",
+    descricao: "Perfis trazidos do sistema anterior",
+    icone: "pessoas",
+  },
+  {
+    id: "imoveis-legado",
+    href: "/cadastros/imoveis-legado",
+    rotulo: "Base legada",
+    descricao: "Imóveis e situação na origem",
+    icone: "imoveis-legado",
   },
   {
     id: "empreendimentos",
@@ -111,14 +130,16 @@ export function StatusCadastro({ ativo }: { ativo: boolean }) {
 export function EstadoVazio({
   titulo,
   texto,
+  icone = "inicio",
 }: {
   titulo: string;
   texto: string;
+  icone?: IconeMenuNome;
 }) {
   return (
     <div className="px-5 py-12 text-center">
       <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-[#eef2f2] text-tinta-suave">
-        <IconeMenu nome="inicio" tamanho={19} />
+        <IconeMenu nome={icone} tamanho={19} />
       </div>
       <h2 className="mt-3 text-sm font-bold text-tinta">{titulo}</h2>
       <p className="mx-auto mt-1 max-w-md text-[12px] leading-relaxed text-tinta-suave">
@@ -196,7 +217,10 @@ export function CartaoModulo({
   detalhe,
 }: {
   href: string;
-  icone: Extract<IconeMenuNome, "empreendimentos" | "unidades" | "locatarios">;
+  icone: Extract<
+    IconeMenuNome,
+    "pessoas" | "imoveis-legado" | "empreendimentos" | "unidades" | "locatarios"
+  >;
   titulo: string;
   descricao: string;
   total: number;

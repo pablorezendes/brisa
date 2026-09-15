@@ -10,6 +10,10 @@ export const metadata = { title: "Cadastros — Brisa" };
 
 export default async function PaginaCadastros() {
   const [
+    pessoasLegado,
+    papeisLegado,
+    imoveisLegado,
+    imoveisLegadoDisponiveis,
     empreendimentos,
     empreendimentosAtivos,
     unidades,
@@ -19,6 +23,10 @@ export default async function PaginaCadastros() {
     contratosAtivos,
     unidadesSemContrato,
   ] = await Promise.all([
+    prisma.pessoa.count(),
+    prisma.pessoaPapel.count(),
+    prisma.imovelLegado.count(),
+    prisma.imovelLegado.count({ where: { disponivel: true } }),
     prisma.empreendimento.count(),
     prisma.empreendimento.count({ where: { ativo: true } }),
     prisma.unidade.count(),
@@ -33,7 +41,7 @@ export default async function PaginaCadastros() {
     <div>
       <PageHeader
         titulo="Cadastros"
-        descricao="A base única de imóveis e inquilinos que alimenta contratos, cobranças e relatórios."
+        descricao="Consulte a base trazida do sistema anterior e os cadastros operacionais que alimentam contratos, cobranças e relatórios."
         acoes={
           <Link href="/contratos" className={btnSecundario}>
             Ver contratos
@@ -43,6 +51,36 @@ export default async function PaginaCadastros() {
 
       <NavegacaoCadastros atual="inicio" />
 
+      <div className="mb-2 flex items-end justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-bold text-tinta">Base consolidada do legado</h2>
+          <p className="mt-0.5 text-[11px] text-tinta-suave">Cadastros preservados com identidade e proveniência da origem.</p>
+        </div>
+        <span className="hidden font-mono text-[9px] uppercase tracking-[0.12em] text-tinta-suave sm:block">origem · Widesys</span>
+      </div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <CartaoModulo
+          href="/cadastros/pessoas"
+          icone="pessoas"
+          titulo="Pessoas e empresas"
+          descricao="Consulte todos os perfis sem duplicar quem exerce mais de um papel na operação."
+          total={pessoasLegado}
+          detalhe={`${papeisLegado} vínculos de papel`}
+        />
+        <CartaoModulo
+          href="/cadastros/imoveis-legado"
+          icone="imoveis-legado"
+          titulo="Imóveis do sistema anterior"
+          descricao="Revise referência, finalidade, situação e proprietários antes da conciliação operacional."
+          total={imoveisLegado}
+          detalhe={`${imoveisLegadoDisponiveis} disponíveis na origem`}
+        />
+      </div>
+
+      <div className="mb-2 mt-6">
+        <h2 className="text-sm font-bold text-tinta">Cadastros operacionais</h2>
+        <p className="mt-0.5 text-[11px] text-tinta-suave">Registros usados hoje por contratos, cobranças e relatórios.</p>
+      </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <CartaoModulo
           href="/cadastros/empreendimentos"
@@ -100,7 +138,8 @@ export default async function PaginaCadastros() {
             <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-tinta-suave">
               O empreendimento agrupa os imóveis. Cada contrato conecta um imóvel a um
               inquilino e define os valores usados nas cobranças mensais. Alterações aqui
-              atualizam as telas operacionais sem duplicar cadastros.
+              atualizam as telas operacionais sem duplicar cadastros. A base do legado fica
+              separada até cada vínculo ser conferido, preservando a rastreabilidade.
             </p>
           </div>
           <Link href="/contratos/novo" className="shrink-0 text-[12px] font-bold text-oliva-escura hover:underline">

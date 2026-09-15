@@ -43,6 +43,38 @@ após a confirmação do movimento tipo 5/LIQUI, processado pela mesma rota de
 sincronização usada pelo cron. Consulte [DEPLOY.md](./DEPLOY.md) e
 [.env.sicoob.example](./.env.sicoob.example) antes de habilitar a emissão.
 
+## Cadastros do Widesys
+
+O fluxo de migração captura os cadastros legados por duas fontes somente de
+leitura: a API JSON e as telas administrativas. Os artefatos ficam em
+`data/legacy-widesys/`, que é ignorado pelo Git por conter dados pessoais. As
+credenciais são lidas apenas das variáveis do processo e nunca são gravadas nos
+arquivos, no SQLite ou nos logs do importador.
+
+```bash
+export WIDESYS_USUARIO="..."
+export WIDESYS_SENHA="..."
+npm run legacy:capture-api
+npm run legacy:scrape -- --refresh
+unset WIDESYS_SENHA WIDESYS_USUARIO
+
+npm run importar:cadastros-widesys:dry-run
+npm run importar:cadastros-widesys
+```
+
+O manifesto e os hashes de cada captura são conferidos antes da importação. O
+processo é transacional e idempotente: uma segunda execução sem mudanças não
+duplica registros. Pessoas continuam distintas por identidade do legado, mesmo
+quando possuem o mesmo nome, e podem acumular papéis como proprietário,
+inquilino, fiador, corretor ou fornecedor. Registros que desaparecerem da fonte
+geram avisos para reconciliação manual; eles não são apagados automaticamente.
+O modo `--refresh` é o padrão e refaz todas as telas. Use `--resume` somente para
+continuar a mesma captura após uma interrupção.
+
+Os snapshots brutos não são copiados ao SQLite. O banco guarda somente os
+campos normalizados usados pelo Brisa e hashes de proveniência. Consulte o
+procedimento de captura, backup e atualização em [DEPLOY.md](./DEPLOY.md).
+
 ## Produção
 
 O deploy alvo usa Docker Compose, Traefik e o banco persistido em

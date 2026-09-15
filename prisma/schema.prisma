@@ -43,6 +43,7 @@ model Empreendimento {
 
 model Locatario {
   id                  String     @id @default(uuid())
+  pessoaId            String?    @unique
   nome                String
   nomeNorm            String // chave de matching (upper, sem acento, espaços colapsados)
   cpfCnpj             String? // só dígitos
@@ -56,10 +57,200 @@ model Locatario {
   bairro              String?
   cidade              String?
   uf                  String? // sigla com 2 caracteres
+  pessoa              Pessoa?    @relation(fields: [pessoaId], references: [id], onDelete: SetNull)
   contratos           Contrato[]
   boletos             Boleto[]
 
   @@index([nomeNorm])
+}
+
+// ---------- Cadastros mestres importados do Widesys ----------
+
+// A identidade externa é sempre origem + legadoId. nome/nomeNorm servem para
+// busca, nunca para deduplicação ou vínculo automático.
+model Pessoa {
+  id                      String                     @id @default(uuid())
+  origem                  String                     @default("WIDESYS")
+  legadoId                String
+  tipoPessoa              String                     @default("DESCONHECIDA") // FISICA|JURIDICA|DESCONHECIDA
+  tipoCadastroOrigem      String?
+  categoriaOrigem         String?
+  nome                    String
+  nomeNorm                String
+  nomeFantasia            String?
+  apelido                 String?
+  cpfCnpj                 String?
+  rgIe                    String?
+  inscricaoMunicipal      String?
+  nascimentoAbertura      String?
+  sexo                    String?
+  estadoCivil             String?
+  nacionalidade           String?
+  naturalidade            String?
+  profissao               String?
+  nomeMae                 String?
+  nomePai                 String?
+  website                 String?
+  recados                 String?
+  observacoes             String?
+  ativo                   Boolean                    @default(true)
+  cep                     String?
+  endereco                String?
+  numeroEndereco          String?
+  complementoEndereco     String?
+  bairro                  String?
+  cidade                  String?
+  uf                      String?
+  criadoPorOrigem         String?
+  origemCriadoEm          String?
+  origemAtualizadoEm      String?
+  capturadoEm             DateTime?
+  snapshot                String // JSON canônico normalizado + hashes de proveniência; sem resposta bruta
+  snapshotHash            String
+  importadoEm             DateTime                   @default(now())
+  atualizadoEm            DateTime                   @updatedAt
+  papeis                  PessoaPapel[]
+  emails                  PessoaEmail[]
+  telefones               PessoaTelefone[]
+  locatario               Locatario?
+  imoveisComoProprietario ImovelProprietarioLegado[]
+
+  @@unique([origem, legadoId])
+  @@index([nomeNorm])
+  @@index([cpfCnpj])
+  @@index([atualizadoEm])
+}
+
+model PessoaPapel {
+  id           String   @id @default(uuid())
+  pessoaId     String
+  papel        String // PROPRIETARIO|INQUILINO|FIADOR|CORRETOR|FORNECEDOR|PRECADASTRO|...
+  origem       String   @default("WIDESYS")
+  legadoId     String // ID da pessoa na origem; papel completa a identidade desta linha
+  snapshot     String // JSON canônico somente da classificação de papel
+  snapshotHash String
+  importadoEm  DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+  pessoa       Pessoa   @relation(fields: [pessoaId], references: [id], onDelete: Cascade)
+
+  @@unique([origem, legadoId, papel])
+  @@unique([pessoaId, papel])
+  @@index([papel])
+}
+
+model PessoaEmail {
+  id           String   @id @default(uuid())
+  pessoaId     String
+  origem       String   @default("WIDESYS")
+  legadoId     String // ID da pessoa na origem; emailNorm completa a identidade
+  ordem        Int      @default(0)
+  email        String
+  emailNorm    String
+  principal    Boolean  @default(false)
+  snapshot     String // JSON canônico apenas do contato de origem
+  snapshotHash String
+  importadoEm  DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+  pessoa       Pessoa   @relation(fields: [pessoaId], references: [id], onDelete: Cascade)
+
+  @@unique([origem, legadoId, emailNorm])
+  @@unique([pessoaId, emailNorm])
+  @@index([emailNorm])
+}
+
+model PessoaTelefone {
+  id           String   @id @default(uuid())
+  pessoaId     String
+  origem       String   @default("WIDESYS")
+  legadoId     String // ID da pessoa na origem; telefoneNorm completa a identidade
+  ordem        Int      @default(0)
+  telefone     String
+  telefoneNorm String
+  principal    Boolean  @default(false)
+  snapshot     String // JSON canônico apenas do contato de origem
+  snapshotHash String
+  importadoEm  DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+  pessoa       Pessoa   @relation(fields: [pessoaId], references: [id], onDelete: Cascade)
+
+  @@unique([origem, legadoId, telefoneNorm])
+  @@unique([pessoaId, telefoneNorm])
+  @@index([telefoneNorm])
+}
+
+model ImovelLegado {
+  id                     String                     @id @default(uuid())
+  origem                 String                     @default("WIDESYS")
+  legadoId               String
+  referencia             String?
+  nome                   String?
+  nomeNorm               String?
+  apelido                String?
+  tipo                   String?
+  categoria              String?
+  finalidade             String?
+  statusComercial        String?
+  publicado              Boolean                    @default(false)
+  disponivel             Boolean?
+  empreendimentoLegadoId String?
+  empreendimentoNome     String?
+  cep                    String?
+  endereco               String?
+  numeroEndereco         String?
+  complementoEndereco    String?
+  bairro                 String?
+  cidade                 String?
+  uf                     String?
+  valorLocacao           Int?
+  valorVenda             Int?
+  valorCondominio        Int?
+  valorIptu              Int?
+  quartos                Int?
+  suites                 Int?
+  banheiros              Int?
+  garagens               Int?
+  areaTotal              String?
+  latitude               String?
+  longitude              String?
+  descricao              String?
+  observacoes            String?
+  origemCriadoEm         String?
+  origemAtualizadoEm     String?
+  capturadoEm            DateTime?
+  snapshot               String // JSON canônico normalizado + hashes de proveniência; sem resposta bruta
+  snapshotHash           String
+  importadoEm            DateTime                   @default(now())
+  atualizadoEm           DateTime                   @updatedAt
+  proprietarios          ImovelProprietarioLegado[]
+
+  @@unique([origem, legadoId])
+  @@index([referencia])
+  @@index([nomeNorm])
+  @@index([statusComercial, publicado])
+  @@index([finalidade])
+}
+
+model ImovelProprietarioLegado {
+  id                   String       @id @default(uuid())
+  imovelId             String
+  pessoaId             String?
+  origem               String       @default("WIDESYS")
+  legadoId             String // ID do vínculo proprietário-produto no Widesys
+  proprietarioLegadoId String
+  porcentagem          String?
+  contaLegadoId        String?
+  principal            Boolean      @default(false)
+  ordem                Int          @default(0)
+  snapshot             String // JSON canônico somente do vínculo
+  snapshotHash         String
+  importadoEm          DateTime     @default(now())
+  atualizadoEm         DateTime     @updatedAt
+  imovel               ImovelLegado @relation(fields: [imovelId], references: [id], onDelete: Cascade)
+  pessoa               Pessoa?      @relation(fields: [pessoaId], references: [id], onDelete: SetNull)
+
+  @@unique([origem, legadoId])
+  @@unique([imovelId, proprietarioLegadoId])
+  @@index([pessoaId])
 }
 
 model Unidade {

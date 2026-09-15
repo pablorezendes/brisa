@@ -10,6 +10,10 @@
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "db:contas-sicoob": "tsx scripts/cadastrar-contas-sicoob.ts",
+    "importar:cadastros-widesys": "tsx scripts/importar-cadastros-widesys.ts",
+    "importar:cadastros-widesys:dry-run": "tsx scripts/importar-cadastros-widesys.ts --dry-run",
+    "legacy:capture-api": "node scripts/capturar-legado-widesys.mjs",
+    "legacy:scrape": "tsx scripts/scrape-widesys.ts",
     "reconciliar": "tsx scripts/reconciliar.ts",
     "test": "vitest run",
     "usuario": "tsx scripts/usuario.ts"
