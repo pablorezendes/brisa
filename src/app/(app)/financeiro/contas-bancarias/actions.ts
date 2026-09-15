@@ -19,6 +19,7 @@ const ESPECIES_DOCUMENTO_SICOOB = new Set([
 ]);
 const FINALIDADES = new Set(["OPERACIONAL", "APLICACAO", "IPTU", "OUTRA"]);
 const AMBIENTES = new Set(["SANDBOX", "PRODUCAO"]);
+const ACEITES = new Set(["N", "S"]);
 
 function campo(formData: FormData, nome: string): string {
   const valor = formData.get(nome);
@@ -28,6 +29,43 @@ function campo(formData: FormData, nome: string): string {
 function marcado(formData: FormData, nome: string): boolean {
   const valor = formData.get(nome);
   return valor === "on" || valor === "1" || valor === "true";
+}
+
+function inteiroNoIntervalo(
+  formData: FormData,
+  nome: string,
+  rotulo: string,
+  minimo: number,
+  maximo: number,
+): number {
+  const valor = campo(formData, nome);
+  if (!/^\d{1,3}$/.test(valor)) {
+    voltar({ erro: `${rotulo} deve ser um número inteiro.` });
+  }
+  const numero = Number.parseInt(valor, 10);
+  if (numero < minimo || numero > maximo) {
+    voltar({ erro: `${rotulo} deve ficar entre ${minimo} e ${maximo}.` });
+  }
+  return numero;
+}
+
+function mensagensCobranca(formData: FormData): string[] {
+  const valor = formData.get("mensagensCobranca");
+  const texto = typeof valor === "string" ? valor : "";
+  if (texto.length > 1_000) {
+    voltar({ erro: "As instruções do boleto excedem o limite permitido." });
+  }
+  const mensagens = texto
+    .split(/\r?\n/)
+    .map((mensagem) => mensagem.trim())
+    .filter(Boolean);
+  if (mensagens.length > 5) {
+    voltar({ erro: "Use no máximo cinco linhas de instrução no boleto." });
+  }
+  if (mensagens.some((mensagem) => mensagem.length > 40)) {
+    voltar({ erro: "Cada instrução do boleto pode ter no máximo 40 caracteres." });
+  }
+  return mensagens;
 }
 
 function voltar(aviso: { ok?: string; erro?: string }): never {
@@ -359,4 +397,70 @@ export async function atualizarContaBancaria(formData: FormData): Promise<void> 
   revalidatePath(ROTA);
   revalidatePath("/financeiro");
   voltar({ ok: "Configuração da conta atualizada com segurança." });
+}
+
+/**
+ * Edita somente as regras de novos boletos. Identidade bancária, credenciais,
+ * certificado e títulos já emitidos não são alterados por esta action.
+ */
+export async function atualizarPoliticaCobrancaSicoob(
+  formData: FormData,
+): Promise<void> {
+  const sessao = await exigirPermissaoFinanceira("GERENCIAR_CONTAS");
+  const contaBancariaId = campo(formData, "contaBancariaId");
+  if (contaBancariaId.length > 64 || !RE_UUID.test(contaBancariaId)) {
+    voltar({ erro: "Conta bancária inválida." });
+  }
+
+  const aceite = campo(formData, "aceite").toUpperCase();
+  if (!ACEITES.has(aceite)) {
+    voltar({ erro: "Selecione uma opção válida para o aceite do boleto." });
+  }
+  const toleranciaPagamentoDias = inteiroNoIntervalo(
+    formData,
+    "toleranciaPagamentoDias",
+    "A tolerância para pagamento",
+    0,
+    180,
+  );
+  const diasProtesto = inteiroNoIntervalo(
+    formData,
+    "diasProtesto",
+    "O prazo de protesto",
+    0,
+    99,
+  );
+  const mensagens = mensagensCobranca(formData);
+
+  const atualizado = await prisma.$transaction(async (tx) => {
+    const configuracao = await tx.configuracaoCobrancaSicoob.findUnique({
+      where: { contaBancariaId },
+      select: { id: true },
+    });
+    if (!configuracao) return false;
+
+    await tx.configuracaoCobrancaSicoob.update({
+      where: { id: configuracao.id },
+      data: {
+        aceite,
+        toleranciaPagamentoDias,
+        diasProtesto,
+        protestoEmDiasUteis:
+          diasProtesto > 0 && marcado(formData, "protestoEmDiasUteis"),
+        mensagens: JSON.stringify(mensagens),
+      },
+    });
+    await tx.contaBancaria.update({
+      where: { id: contaBancariaId },
+      data: { atualizadoPorUsuarioId: sessao.sub },
+    });
+    return true;
+  });
+
+  if (!atualizado) {
+    voltar({ erro: "A política de cobrança desta conta não foi encontrada." });
+  }
+  revalidatePath(ROTA);
+  revalidatePath("/financeiro/boletos");
+  voltar({ ok: "Política de novos boletos atualizada." });
 }

@@ -133,19 +133,19 @@ model Recebimento {
 // Credenciais, tokens e certificados não pertencem ao banco de dados. Eles são
 // fornecidos ao servidor por variáveis de ambiente/arquivos de segredo.
 model ContaBancaria {
-  id                          String                  @id @default(uuid())
+  id                          String                      @id @default(uuid())
   codigoBanco                 String // código COMPE; 756 = Bancoob/Sicoob
   nomeBanco                   String
   agencia                     String // texto para preservar zeros e dígito
   numero                      String // texto para preservar zeros e dígito
   apelido                     String
   finalidade                  String? // OPERACIONAL|APLICACAO|IPTU|OUTRA
-  ativa                       Boolean                 @default(true)
-  padrao                      Boolean                 @default(false)
-  integracaoHabilitada        Boolean                 @default(false)
-  boletosHabilitados          Boolean                 @default(false)
-  integracaoStatus            String                  @default("NAO_CONFIGURADA") // NAO_CONFIGURADA|PRONTA|ERRO
-  ambiente                    String                  @default("SANDBOX") // SANDBOX|PRODUCAO
+  ativa                       Boolean                     @default(true)
+  padrao                      Boolean                     @default(false)
+  integracaoHabilitada        Boolean                     @default(false)
+  boletosHabilitados          Boolean                     @default(false)
+  integracaoStatus            String                      @default("NAO_CONFIGURADA") // NAO_CONFIGURADA|PRONTA|ERRO
+  ambiente                    String                      @default("SANDBOX") // SANDBOX|PRODUCAO
   numeroCliente               String?
   codigoModalidade            Int?
   numeroContaCorrenteApi      String? // sem dígito; confirmado no convênio, nunca inferido da tela legada
@@ -158,15 +158,64 @@ model ContaBancaria {
   ultimaSincronizacaoEm       DateTime?
   mensagemIntegracao          String?
   atualizadoPorUsuarioId      String?
-  criadoEm                    DateTime                @default(now())
-  atualizadoEm                DateTime                @updatedAt
-  atualizadoPor               Usuario?                @relation("ContaBancariaAtualizadaPor", fields: [atualizadoPorUsuarioId], references: [id], onDelete: SetNull)
+  criadoEm                    DateTime                    @default(now())
+  atualizadoEm                DateTime                    @updatedAt
+  atualizadoPor               Usuario?                    @relation("ContaBancariaAtualizadaPor", fields: [atualizadoPorUsuarioId], references: [id], onDelete: SetNull)
   boletos                     Boleto[]
   pagamentos                  PagamentoRecebimento[]
   sincronizacoes              SincronizacaoBancaria[]
+  configuracaoCobrancaSicoob  ConfiguracaoCobrancaSicoob?
 
   @@unique([codigoBanco, agencia, numero])
   @@index([ativa, padrao])
+}
+
+// Parâmetros operacionais não secretos capturados do layout de cobrança
+// legado. Client ID, certificado PFX e senha continuam exclusivamente no
+// cofre/ambiente do servidor e nunca devem ser persistidos neste modelo.
+model ConfiguracaoCobrancaSicoob {
+  id                       String        @id @default(uuid())
+  contaBancariaId          String        @unique
+  layoutLegadoId           Int?
+  nomeLayoutLegado         String?
+  contaLiquidacaoLegadoId  Int?
+  bancoLegadoId            Int?
+  ativaLegado              Boolean?
+  padraoLegado             Boolean?
+  sistemaOrigem            String        @default("WIDESYS")
+  capturadoEm              DateTime
+  agenciaRemessa           String
+  numeroContaPixLegado     String?
+  numeroContaRemessaLegado String?
+  numeroContaCorrenteApi   String
+  carteiraLegada           String
+  convenioLegado           String?
+  modalidadeCobrancaLegada String?
+  numeroCliente            String
+  codigoEspecieDocumento   String
+  aceite                   String        @default("N")
+  moeda                    String        @default("R$")
+  protestoAutomaticoLegado String?
+  diasProtesto             Int           @default(0)
+  ultimoNossoNumeroLegado  Int?
+  loteLegado               Int?
+  escopos                  String
+  toleranciaPagamentoDias  Int           @default(0)
+  protestoEmDiasUteis      Boolean       @default(false)
+  correspondente           String        @default("API")
+  bancoNumera              Boolean       @default(false)
+  bancoEmite               Boolean?
+  bancoDespacha            Boolean?
+  mensagens                String        @default("[]") // JSON; [] representa os quatro campos legados vazios
+  exibirServicos           Boolean       @default(false)
+  usoAutorizado            Boolean       @default(false)
+  mostrarIptu              Boolean       @default(false)
+  avisoDeposito            Boolean       @default(false)
+  lancarTarifa             Boolean       @default(false)
+  planoContaLegadoId       Int? // referência de auditoria; não é FK para o plano atual
+  criadoEm                 DateTime      @default(now())
+  atualizadoEm             DateTime      @updatedAt
+  contaBancaria            ContaBancaria @relation(fields: [contaBancariaId], references: [id], onDelete: Cascade)
 }
 
 // O webhook pertence ao aplicativo/credencial Sicoob, não a uma conta isolada.

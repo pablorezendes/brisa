@@ -5,8 +5,16 @@
  *
  * Este script não grava titular, usuário legado, credenciais, certificado ou
  * token. Em contas já existentes, preserva toda a configuração da integração.
+ * Os parâmetros do layout legado pertencem somente à conta operacional e são
+ * inseridos apenas quando ainda não existe uma configuração para ela.
  */
 import { PrismaClient } from "@prisma/client";
+import {
+  CAMPOS_CONVENIO_CONTA_PRINCIPAL_SICOOB,
+  CONFIGURACAO_LAYOUT_SICOOB_LEGADO,
+  camposAuditoriaLegadaAusentes,
+  camposConvenioAusentes,
+} from "../src/lib/dominio/layout-sicoob-legado";
 
 const prisma = new PrismaClient();
 
@@ -63,6 +71,9 @@ async function main() {
         create: {
           ...BANCO,
           ...conta,
+          ...(conta.numero === "1180-0"
+            ? CAMPOS_CONVENIO_CONTA_PRINCIPAL_SICOOB
+            : {}),
           padrao: false,
           ativa: true,
           integracaoHabilitada: false,
@@ -96,11 +107,43 @@ async function main() {
     if (principal) principal.padrao = true;
   }
 
+  const principal = contas.find((conta) => conta.numero === "1180-0");
+  if (!principal) {
+    throw new Error("Conta principal Sicoob 1180-0 não foi cadastrada.");
+  }
+
+  const camposAusentes = camposConvenioAusentes(principal);
+  if (Object.keys(camposAusentes).length > 0) {
+    await prisma.contaBancaria.update({
+      where: { id: principal.id },
+      data: camposAusentes,
+    });
+  }
+
+  const configuracaoCobranca = await prisma.configuracaoCobrancaSicoob.upsert({
+    where: { contaBancariaId: principal.id },
+    create: {
+      contaBancariaId: principal.id,
+      ...CONFIGURACAO_LAYOUT_SICOOB_LEGADO,
+    },
+    // Não reaplica valores raspados sobre uma configuração já revisada pela
+    // operação. A presença do registro é a fronteira de idempotência.
+    update: {},
+  });
+  const auditoriaAusente = camposAuditoriaLegadaAusentes(configuracaoCobranca);
+  if (Object.keys(auditoriaAusente).length > 0) {
+    await prisma.configuracaoCobrancaSicoob.update({
+      where: { id: configuracaoCobranca.id },
+      data: auditoriaAusente,
+    });
+  }
+
   console.log("Contas Sicoob prontas:");
   for (const conta of contas) {
     const marcador = conta.padrao ? " (padrão)" : "";
     console.log(`  agência ${conta.agencia} · conta ${conta.numero} · ${conta.apelido}${marcador}`);
   }
+  console.log("Layout Sicoob legado vinculado somente à conta 1180-0 (sem segredos).");
   console.log("O cadastro não habilita integração nem emissão; configurações existentes são preservadas.");
 }
 

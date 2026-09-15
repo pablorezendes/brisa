@@ -105,28 +105,58 @@ operação financeira, mas sem emissão nesse perfil.
 - **Sandbox com OAuth:** sem token estático, configure a URL de token e o
   certificado mTLS, da mesma forma que o cliente OAuth exigir.
 - **Produção:** use `client_credentials` com a URL oficial de token e
-  certificado A1/mTLS. Deixe `SICOOB_ACCESS_TOKEN` vazio. O PFX e sua senha
-  nunca devem entrar no Git nem no SQLite.
+  certificado A1/mTLS. Deixe `SICOOB_ACCESS_TOKEN` vazio. O `client_id` é
+  informado por `SICOOB_CLIENT_ID`; não o grave no código ou no banco. O PFX e
+  sua senha nunca devem entrar no Git, na imagem Docker nem no SQLite.
 
-Os escopos usados pelo app são somente os já declarados em
-`.env.sicoob.example`; não amplie a lista sem ajustar a autorização do
-aplicativo no portal do Sicoob.
+O layout Widesys continha somente os três escopos de boletos, que também são o
+padrão seguro do Brisa: `boletos_inclusao`, `boletos_consulta` e
+`boletos_alteracao`. Mantenha `SICOOB_SCOPES` exatamente assim para evitar
+`invalid_scope` enquanto a aplicação do Portal Sicoob não tiver permissões
+adicionais.
 
-Crie o diretório restrito e, para produção, envie o certificado:
+O webhook tipo 7 é opcional. Para habilitá-lo, solicite ao banco e confirme no
+Portal Sicoob os três escopos `webhooks_inclusao`, `webhooks_consulta` e
+`webhooks_alteracao`; só então acrescente **os três juntos** a
+`SICOOB_SCOPES`. O Brisa não mostra nem executa o cadastro do webhook com um
+conjunto parcial. Sem webhook, a sincronização do arquivo tipo 5 / LIQUI
+continua sendo o caminho oficial de confirmação de pagamento.
+
+Crie no servidor o diretório restrito que será montado como somente leitura no
+container:
 
 ```bash
 cd /srv/stack/acamargo
-mkdir -p auth/sicoob
-chmod 700 auth auth/sicoob
-# produção: envie o PFX como auth/sicoob/client.pfx por SCP/SFTP e então:
-if [ -f auth/sicoob/client.pfx ]; then chmod 600 auth/sicoob/client.pfx; fi
+install -d -m 700 auth auth/sicoob
 ```
 
-Edite `.env` com permissão `600` e acrescente as chaves documentadas em
-`.env.sicoob.example`. `SICOOB_WEBHOOK_SECRET` e `SICOOB_SYNC_SECRET` aceitam
-somente Base64URL/hex forte com **43 a 128 caracteres**. Execute o comando
-abaixo duas vezes e use valores diferentes (a saída hexadecimal tem 64
-caracteres válidos):
+Na estação que contém o certificado, copie-o diretamente para esse diretório
+(ajuste apenas o caminho local). O PFX fica fora do repositório e não entra no
+contexto da imagem:
+
+```powershell
+scp "C:\caminho-seguro\client.pfx" root@76.13.161.105:/srv/stack/acamargo/auth/sicoob/client.pfx
+```
+
+De volta ao servidor, restrinja a leitura e confirme apenas existência e
+permissões — não imprima nem converta o conteúdo do certificado em logs:
+
+```bash
+cd /srv/stack/acamargo
+chmod 600 auth/sicoob/client.pfx
+test -r auth/sicoob/client.pfx
+```
+
+Edite **no próprio servidor** o `.env` com permissão `600` e acrescente as
+chaves documentadas em `.env.sicoob.example`. Digite a senha do certificado
+somente em `SICOOB_PFX_PASSPHRASE` nesse arquivo; não a passe na linha de
+comando, não a envie por chat e não a copie para nenhum arquivo versionado.
+O carregador acusa separadamente PFX ausente/ilegível e senha não preenchida,
+sem incluir o caminho ou a senha no diagnóstico. `SICOOB_SYNC_SECRET` aceita
+somente Base64URL/hex forte com **43 a 128 caracteres**. O mesmo vale para
+`SICOOB_WEBHOOK_SECRET`, mas ele só é necessário quando o webhook opcional for
+habilitado. Gere um valor para a sincronização e, nesse caso, um segundo valor
+diferente para o webhook (a saída hexadecimal tem 64 caracteres válidos):
 
 ```bash
 openssl rand -hex 32
@@ -140,16 +170,22 @@ SICOOB_AMBIENTE=producao
 SICOOB_TOKEN_URL=https://auth.sicoob.com.br/auth/realms/cooperado/protocol/openid-connect/token
 SICOOB_CLIENT_ID=IDENTIFICADOR_DO_APLICATIVO
 SICOOB_ACCESS_TOKEN=
-SICOOB_SCOPES="boletos_inclusao boletos_consulta webhooks_inclusao webhooks_consulta webhooks_alteracao"
+SICOOB_SCOPES="boletos_inclusao boletos_consulta boletos_alteracao"
 SICOOB_PFX_PATH=/run/secrets/sicoob/client.pfx
-SICOOB_PFX_PASSPHRASE=SENHA_DO_CERTIFICADO
-SICOOB_WEBHOOK_SECRET=SEGREDO_DE_64_CARACTERES_HEX
+SICOOB_PFX_PASSPHRASE=
+SICOOB_WEBHOOK_SECRET=
 SICOOB_SYNC_SECRET=OUTRO_SEGREDO_DE_64_CARACTERES_HEX
-SICOOB_WEBHOOK_EMAIL=financeiro@empresa.com.br
+SICOOB_WEBHOOK_EMAIL=
 ```
 
-Depois, reconstrua o container, confira as contas e cadastre o webhook pela
-própria tela:
+Antes de reconstruir o container, preencha no `.env` do servidor o
+`SICOOB_CLIENT_ID` liberado pelo banco e o campo
+`SICOOB_PFX_PASSPHRASE`, que está vazio no exemplo. O bloco acima omite a senha
+de propósito para que ela nunca seja copiada da documentação.
+
+Depois, reconstrua o container e confira as contas. Cadastre o webhook pela
+própria tela somente se os três escopos opcionais tiverem sido autorizados e
+incluídos explicitamente em `SICOOB_SCOPES`:
 
 ```bash
 docker compose up -d --build

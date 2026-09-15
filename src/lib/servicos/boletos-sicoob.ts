@@ -11,6 +11,12 @@ import {
   totalDevido,
 } from "@/lib/dominio/boletos";
 import {
+  assinaturaPoliticaEmissaoSicoob,
+  resolverPoliticaEmissaoSicoob,
+  type ConfiguracaoPoliticaCobrancaSicoob,
+  type PoliticaEmissaoSicoob,
+} from "@/lib/dominio/politica-cobranca-sicoob";
+import {
   criarClienteSicoob,
   chaveIdempotenciaLiquidacaoSicoob,
   ErroApiSicoob,
@@ -49,6 +55,22 @@ export class ErroOperacaoBoleto extends Error {
     super(mensagem);
     this.name = "ErroOperacaoBoleto";
     this.codigo = codigo;
+  }
+}
+
+function politicaCobrancaParaEmissao(
+  configuracao: ConfiguracaoPoliticaCobrancaSicoob | null | undefined,
+  dataVencimento: string,
+): PoliticaEmissaoSicoob {
+  try {
+    return resolverPoliticaEmissaoSicoob(configuracao, dataVencimento);
+  } catch (erro) {
+    throw new ErroOperacaoBoleto(
+      erro instanceof Error
+        ? erro.message
+        : "A política de cobrança Sicoob é inválida.",
+      "POLITICA_COBRANCA_INVALIDA",
+    );
   }
 }
 
@@ -341,7 +363,10 @@ export async function emitirBoletoSicoob({
         },
       },
     }),
-    prisma.contaBancaria.findUnique({ where: { id: contaBancariaId } }),
+    prisma.contaBancaria.findUnique({
+      where: { id: contaBancariaId },
+      include: { configuracaoCobrancaSicoob: true },
+    }),
   ]);
   if (!recebimento) throw new ErroOperacaoBoleto("Lançamento não encontrado.");
   if (!conta) throw new ErroOperacaoBoleto("Conta bancária não encontrada.");
@@ -377,6 +402,11 @@ export async function emitirBoletoSicoob({
     );
   }
   validarContaEmissora(conta);
+  const politicaInicial = politicaCobrancaParaEmissao(
+    conta.configuracaoCobrancaSicoob,
+    dataVencimento,
+  );
+  const assinaturaPoliticaInicial = assinaturaPoliticaEmissaoSicoob(politicaInicial);
   await validarPerfilCredencialUnico(conta.id);
   const contaApi = contaParaApi(conta);
   const chaveIdempotencia = chaveHex(
@@ -386,6 +416,7 @@ export async function emitirBoletoSicoob({
     String(valor),
     dataVencimento,
     String(recebimento.boletos.length + 1),
+    assinaturaPoliticaInicial,
   );
   const numeroInterno = seuNumero(chaveIdempotencia);
   const existente = await prisma.boleto.findUnique({ where: { chaveIdempotencia } });
@@ -447,6 +478,7 @@ export async function emitirBoletoSicoob({
 
   let boletoLocal: Boleto;
   let deveEmitirNoBanco = true;
+  let politicaConfirmada = politicaInicial;
   const reservaEmissaoToken = randomUUID();
   try {
     boletoLocal = await prisma.$transaction(async (tx) => {
@@ -476,12 +508,19 @@ export async function emitirBoletoSicoob({
       }
       const contaAtual = await tx.contaBancaria.findUnique({
         where: { id: conta.id },
+        include: { configuracaoCobrancaSicoob: true },
       });
       if (!contaAtual) {
         throw new ErroOperacaoBoleto("A conta bancária deixou de existir durante a emissão.");
       }
       validarContaEmissora(contaAtual);
       const contaApiAtual = contaParaApi(contaAtual);
+      const politicaAtual = politicaCobrancaParaEmissao(
+        contaAtual.configuracaoCobrancaSicoob,
+        dataVencimento,
+      );
+      const politicaFoiAlterada =
+        assinaturaPoliticaEmissaoSicoob(politicaAtual) !== assinaturaPoliticaInicial;
       const outraContaIntegrada = await tx.contaBancaria.count({
         where: {
           id: { not: contaAtual.id },
@@ -497,13 +536,15 @@ export async function emitirBoletoSicoob({
         contaApiAtual.numeroCliente !== contaApi.numeroCliente ||
         contaApiAtual.numeroContaCorrente !== contaApi.numeroContaCorrente ||
         contaApiAtual.codigoModalidade !== contaApi.codigoModalidade ||
-        contaApiAtual.numeroContratoCobranca !== contaApi.numeroContratoCobranca
+        contaApiAtual.numeroContratoCobranca !== contaApi.numeroContratoCobranca ||
+        politicaFoiAlterada
       ) {
         throw new ErroOperacaoBoleto(
           "A configuração Sicoob mudou durante a emissão. Atualize a tela e tente novamente.",
           "CONTA_SICOOB_ALTERADA",
         );
       }
+      politicaConfirmada = politicaAtual;
       const ativoAtual = await tx.boleto.findFirst({
         where: {
           recebimentoId: recebimento.id,
@@ -571,6 +612,7 @@ export async function emitirBoletoSicoob({
       dataVencimento,
       identificacaoBoletoEmpresa: `BRISA-${recebimento.mesLancamento}`,
       codigoEspecieDocumento: conta.codigoEspecieDocumento!,
+      ...politicaConfirmada,
       pagador: {
         numeroCpfCnpj: locatario.cpfCnpj!,
         nome: locatario.nome,
@@ -2828,6 +2870,12 @@ export async function registrarWebhookDaConta(
   contaBancariaId: string,
   usuarioId: string,
 ): Promise<{ idWebhook: string; status: string }> {
+  if (!obterEstadoConfiguracaoSicoob().escoposWebhookConfigurados) {
+    throw new ErroOperacaoBoleto(
+      "O webhook tipo 7 é opcional. Para cadastrá-lo, autorize e informe explicitamente webhooks_inclusao, webhooks_consulta e webhooks_alteracao em SICOOB_SCOPES.",
+      "WEBHOOK_ESCOPOS_NAO_CONFIGURADOS",
+    );
+  }
   const conta = await prisma.contaBancaria.findUnique({ where: { id: contaBancariaId } });
   if (!conta) throw new ErroOperacaoBoleto("Conta bancária não encontrada.");
   if (!conta.integracaoHabilitada) {

@@ -10,6 +10,14 @@ const BASES_PADRAO: Record<AmbienteSicoob, string> = {
   producao: "https://api.sicoob.com.br/cobranca-bancaria/v3",
 };
 
+const ESCOPO_PADRAO =
+  "boletos_inclusao boletos_consulta boletos_alteracao";
+const ESCOPOS_WEBHOOK = [
+  "webhooks_inclusao",
+  "webhooks_consulta",
+  "webhooks_alteracao",
+] as const;
+
 export type ConfiguracaoSicoob = {
   ambiente: AmbienteSicoob;
   baseUrl: string;
@@ -30,6 +38,7 @@ export type EstadoConfiguracaoSicoob = {
   baseUrl: string;
   autenticacao: "token_estatico" | "oauth_client_credentials";
   mtlsConfigurado: boolean;
+  escoposWebhookConfigurados: boolean;
   pendencias: string[];
 };
 
@@ -47,6 +56,13 @@ function ambiente(env: NodeJS.ProcessEnv): AmbienteSicoob {
   return env.SICOOB_AMBIENTE?.trim().toLowerCase() === "producao"
     ? "producao"
     : "sandbox";
+}
+
+function possuiEscoposWebhookExplicitos(env: NodeJS.ProcessEnv): boolean {
+  const escoposInformados = env.SICOOB_SCOPES?.trim();
+  if (!escoposInformados) return false;
+  const escopos = new Set(escoposInformados.split(/\s+/).filter(Boolean));
+  return ESCOPOS_WEBHOOK.every((escopo) => escopos.has(escopo));
 }
 
 function urlHttps(valor: string, nome: string): string {
@@ -68,12 +84,14 @@ function caminhosMtls(env: NodeJS.ProcessEnv): {
   tls: SecureContextOptions;
 } {
   const pfxPath = env.SICOOB_PFX_PATH?.trim();
+  const pfxPassphrase = env.SICOOB_PFX_PASSPHRASE;
   const certPath = env.SICOOB_CERT_PATH?.trim();
   const keyPath = env.SICOOB_KEY_PATH?.trim();
   const pendencias: string[] = [];
 
   if (pfxPath) {
     if (!existsSync(pfxPath)) pendencias.push("SICOOB_PFX_PATH não encontrado");
+    if (!pfxPassphrase?.trim()) pendencias.push("SICOOB_PFX_PASSPHRASE");
     let pfx: Buffer | undefined;
     if (pendencias.length === 0) {
       try {
@@ -89,9 +107,7 @@ function caminhosMtls(env: NodeJS.ProcessEnv): {
         ? {}
         : {
             pfx,
-            ...(env.SICOOB_PFX_PASSPHRASE
-              ? { passphrase: env.SICOOB_PFX_PASSPHRASE }
-              : {}),
+            passphrase: pfxPassphrase,
           },
     };
   }
@@ -180,6 +196,7 @@ function inspecionar(env: NodeJS.ProcessEnv): {
       baseUrl,
       autenticacao: tokenEstatico ? "token_estatico" : "oauth_client_credentials",
       mtlsConfigurado: mtls.configurado,
+      escoposWebhookConfigurados: possuiEscoposWebhookExplicitos(env),
       pendencias: [...new Set(pendencias)],
     },
     tls: mtls.tls,
@@ -207,8 +224,7 @@ export function carregarConfiguracaoSicoob(
   const tokenUrl = env.SICOOB_TOKEN_URL?.trim() || null;
   const clientId = env.SICOOB_CLIENT_ID!.trim();
   const scopes =
-    env.SICOOB_SCOPES?.trim() ||
-    "boletos_inclusao boletos_consulta webhooks_inclusao webhooks_consulta";
+    env.SICOOB_SCOPES?.trim() || ESCOPO_PADRAO;
 
   return {
     ambiente: estado.ambiente,
