@@ -48,6 +48,14 @@ async function tokenValido(token: string | undefined): Promise<boolean> {
 }
 
 export async function proxy(request: NextRequest) {
+  // Callback externo: não possui cookie Brisa e aplica autenticação própria
+  // por segredo de alta entropia no Route Handler. Nunca ampliar esta exceção.
+  if (request.nextUrl.pathname.startsWith("/api/integracoes/sicoob/webhook/")) {
+    return NextResponse.next();
+  }
+  if (request.nextUrl.pathname === "/api/integracoes/sicoob/sincronizar") {
+    return NextResponse.next();
+  }
   const token = request.cookies.get(COOKIE_SESSAO)?.value;
   if (await tokenValido(token)) return NextResponse.next();
 

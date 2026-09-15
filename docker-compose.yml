@@ -6,9 +6,23 @@ services:
     environment:
       - DATABASE_URL=file:/data/brisa.db
       - AUTH_SECRET=${AUTH_SECRET:?defina AUTH_SECRET no .env (openssl rand -hex 32)}
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-https://brisa.tescod.com}
+      - SICOOB_AMBIENTE=${SICOOB_AMBIENTE:-sandbox}
+      - SICOOB_TOKEN_URL=${SICOOB_TOKEN_URL:-https://auth.sicoob.com.br/auth/realms/cooperado/protocol/openid-connect/token}
+      - SICOOB_CLIENT_ID=${SICOOB_CLIENT_ID:-}
+      - SICOOB_ACCESS_TOKEN=${SICOOB_ACCESS_TOKEN:-}
+      - SICOOB_SCOPES=${SICOOB_SCOPES:-boletos_inclusao boletos_consulta webhooks_inclusao webhooks_consulta webhooks_alteracao}
+      # Deixe vazio no sandbox quando usar o token estático do portal.
+      # Em produção, defina /run/secrets/sicoob/client.pfx no .env.
+      - SICOOB_PFX_PATH=${SICOOB_PFX_PATH:-}
+      - SICOOB_PFX_PASSPHRASE=${SICOOB_PFX_PASSPHRASE:-}
+      - SICOOB_WEBHOOK_SECRET=${SICOOB_WEBHOOK_SECRET:-}
+      - SICOOB_SYNC_SECRET=${SICOOB_SYNC_SECRET:-}
+      - SICOOB_WEBHOOK_EMAIL=${SICOOB_WEBHOOK_EMAIL:-}
     volumes:
       - ./dados:/data          # banco SQLite (backup = copiar esta pasta)
       - ./data:/app/data       # dataset.json p/ seed + relatório de exceções
+      - ./auth/sicoob:/run/secrets/sicoob:ro # certificado A1, nunca entra na imagem/git
     networks:
       - proxy
     labels:

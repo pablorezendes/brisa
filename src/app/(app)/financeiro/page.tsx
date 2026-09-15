@@ -15,6 +15,7 @@ import {
 } from "@/components/ui";
 import { dadosExecutivos, mesPadrao } from "@/lib/consultas/executivo";
 import { formatarBRL } from "@/lib/dominio/dinheiro";
+import { prisma } from "@/lib/db";
 import {
   formatarCompetencia,
   parseCompetencia,
@@ -35,7 +36,7 @@ const RE_MES = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 type IconeFinanceiro = Extract<
   IconeMenuNome,
-  "recebimentos" | "cobranca" | "caixa" | "comissoes" | "reajustes"
+  "recebimentos" | "boletos" | "contas-bancarias" | "cobranca" | "caixa" | "comissoes" | "reajustes"
 >;
 
 function percentual(valor: number | null): string {
@@ -160,7 +161,21 @@ export default async function PaginaFinanceiro({
 }) {
   const sp = await searchParams;
   const mes = sp.mes && RE_MES.test(sp.mes) ? sp.mes : await mesPadrao();
-  const dados = await dadosExecutivos(mes);
+  const [dados, totalBoletos, boletosAtencao, contasBancarias, conciliacoesPendentes] = await Promise.all([
+    dadosExecutivos(mes),
+    prisma.boleto.count({ where: { recebimento: { mesLancamento: mes } } }),
+    prisma.boleto.count({
+      where: {
+        recebimento: { mesLancamento: mes },
+        OR: [
+          { status: { in: ["ERRO", "RESULTADO_DESCONHECIDO", "PAGAMENTO_REPORTADO"] } },
+          { conciliacaoStatus: "DIVERGENTE" },
+        ],
+      },
+    }),
+    prisma.contaBancaria.count({ where: { ativa: true } }),
+    prisma.pagamentoRecebimento.count({ where: { conciliadoEm: null } }),
+  ]);
   const { ano, mes: mesNumero } = parseCompetencia(mes);
   const linhaAnterior = mesNumero > 1 ? dados.porMes[mesNumero - 2] : null;
 
@@ -449,6 +464,27 @@ export default async function PaginaFinanceiro({
         </ModuloFinanceiro>
 
         <ModuloFinanceiro
+          icone="boletos"
+          titulo="Boletos Sicoob"
+          descricao="Emita, consulte o banco e acompanhe cada etapa até a baixa."
+          nivel={boletosAtencao > 0 ? "atencao" : totalBoletos > 0 ? "info" : "neutro"}
+          status={boletosAtencao > 0 ? `${boletosAtencao} a revisar` : `${totalBoletos} no mês`}
+          href={`/financeiro/boletos?mes=${mes}`}
+          acao="Abrir central"
+          hrefSecundario="/financeiro/conciliacao"
+          acaoSecundaria="Ver conciliação"
+          className="xl:col-span-4"
+        >
+          <div className="grid grid-cols-2 gap-4">
+            <MiniValor rotulo="Títulos no mês" valor={totalBoletos} destaque />
+            <MiniValor rotulo="Exigem atenção" valor={boletosAtencao} />
+          </div>
+          <p className="mt-4 border-t border-contorno pt-3 text-[11px] leading-relaxed text-tinta-suave">
+            Aviso de pagamento e liquidação são estados separados; a baixa só entra depois da confirmação autenticada.
+          </p>
+        </ModuloFinanceiro>
+
+        <ModuloFinanceiro
           icone="cobranca"
           titulo="Cobrança"
           descricao="Priorize quem ainda não teve pagamento registrado."
@@ -494,6 +530,27 @@ export default async function PaginaFinanceiro({
         </ModuloFinanceiro>
 
         <ModuloFinanceiro
+          icone="contas-bancarias"
+          titulo="Contas e conciliação"
+          descricao="Configure contas emissoras e trate divergências bancárias."
+          nivel={conciliacoesPendentes > 0 ? "critico" : contasBancarias > 0 ? "otimo" : "atencao"}
+          status={conciliacoesPendentes > 0 ? `${conciliacoesPendentes} pendente(s)` : `${contasBancarias} conta(s)`}
+          href="/financeiro/contas-bancarias"
+          acao="Gerenciar contas"
+          hrefSecundario="/financeiro/conciliacao"
+          acaoSecundaria="Conciliar"
+          className="xl:col-span-6"
+        >
+          <div className="grid grid-cols-2 gap-4">
+            <MiniValor rotulo="Contas ativas" valor={contasBancarias} destaque />
+            <MiniValor rotulo="Divergências" valor={conciliacoesPendentes} />
+          </div>
+          <p className="mt-4 border-t border-contorno pt-3 text-[11px] leading-relaxed text-tinta-suave">
+            Certificado, token e segredos permanecem fora do banco e do navegador.
+          </p>
+        </ModuloFinanceiro>
+
+        <ModuloFinanceiro
           icone="caixa"
           titulo="Movimentações e caixa"
           descricao="Registre entradas e saídas por centro de custo."
@@ -509,7 +566,7 @@ export default async function PaginaFinanceiro({
           acao="Abrir caixa"
           hrefSecundario={`/caixa/novo?mes=${mes}`}
           acaoSecundaria="Novo lançamento"
-          className="xl:col-span-4"
+          className="xl:col-span-6"
         >
           {dados.caixaMes ? (
             <div className="grid grid-cols-3 gap-3">

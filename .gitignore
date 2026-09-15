@@ -23,6 +23,10 @@
 # misc
 .DS_Store
 *.pem
+*.pfx
+*.p12
+*.key
+*.crt
 
 # debug
 npm-debug.log*
@@ -32,6 +36,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.sicoob.example
 
 # vercel
 .vercel

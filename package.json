@@ -9,6 +9,7 @@
     "lint": "eslint",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
+    "db:contas-sicoob": "tsx scripts/cadastrar-contas-sicoob.ts",
     "reconciliar": "tsx scripts/reconciliar.ts",
     "test": "vitest run",
     "usuario": "tsx scripts/usuario.ts"

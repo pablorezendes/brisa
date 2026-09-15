@@ -55,8 +55,10 @@ const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
         itens: [
           { tipo: "link", href: "/financeiro", rotulo: "Visão financeira", correspondencia: "exata" },
           { tipo: "link", href: "/recebimentos", rotulo: "Contas a receber", icone: "recebimentos" },
+          { tipo: "link", href: "/financeiro/boletos", rotulo: "Boletos", icone: "boletos" },
           { tipo: "link", href: "/paineis/cobranca", rotulo: "Cobrança e atrasos", icone: "cobranca" },
-          { tipo: "link", href: "/relatorios/inadimplencia", rotulo: "Relatório de inadimplência", icone: "relatorios" },
+          { tipo: "link", href: "/financeiro/contas-bancarias", rotulo: "Contas bancárias", icone: "contas-bancarias" },
+          { tipo: "link", href: "/financeiro/conciliacao", rotulo: "Conciliação bancária", icone: "conciliacao" },
           { tipo: "link", href: "/caixa", rotulo: "Movimentações de caixa", icone: "caixa" },
           { tipo: "link", href: "/relatorios/comissao", rotulo: "Comissões", icone: "comissoes" },
         ],
@@ -78,6 +80,7 @@ const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
         icone: "analises",
         itens: [
           { tipo: "link", href: "/relatorios", rotulo: "Central de relatórios", icone: "relatorios", correspondencia: "exata" },
+          { tipo: "link", href: "/relatorios/inadimplencia", rotulo: "Inadimplência", icone: "cobranca" },
           { tipo: "link", href: "/relatorios/resultado", rotulo: "Resultado por unidade", icone: "performance" },
           { tipo: "link", href: "/paineis/empreendimentos", rotulo: "Performance por imóvel", icone: "empreendimentos" },
           { tipo: "link", href: "/paineis/caixa", rotulo: "Análise de caixa", icone: "analitico" },

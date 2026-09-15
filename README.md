@@ -1,36 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Brisa — gestão financeira e imobiliária
 
-## Getting Started
+Sistema interno da operação A. Camargo/Brisa, construído com Next.js 16,
+Prisma e SQLite. Reúne painéis executivos, cadastros, contas a pagar/receber,
+conciliação, boletos e relatórios em uma interface responsiva.
 
-First, run the development server:
+## Desenvolvimento local
+
+Requisitos: Node.js compatível com o projeto e npm.
 
 ```bash
+npm ci
+npm run db:push
+npm run db:contas-sicoob
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abra `http://localhost:3000`. Na primeira visita, o sistema conduz a criação
+do administrador. Defina `AUTH_SECRET` no ambiente antes de usar dados reais.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Comandos de verificação:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm test
+npm run lint
+npm run build
+```
 
-## Learn More
+## Contas Sicoob
 
-To learn more about Next.js, take a look at the following resources:
+`npm run db:contas-sicoob` cadastra de forma idempotente o banco 756, agência
+3299, e as contas 1180-0 (Sicoob Brisa Azul), 11801 (Aplicação), 126764
+(AC), 466395 (Sicoob IPTU) e 67407 (Paolla). O script não grava titular,
+credenciais, certificados ou tokens e não habilita a integração.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+A API usa um perfil global de credenciais neste release; portanto, somente a
+conta autorizada no aplicativo Sicoob pode ficar com a integração ativa. No
+sandbox, o token estático do portal pode ser usado sem mTLS. Em produção, a
+autenticação é OAuth `client_credentials` com certificado mTLS.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+O webhook tipo 7 registra apenas o aviso de pagamento. A baixa é feita somente
+após a confirmação do movimento tipo 5/LIQUI, processado pela mesma rota de
+sincronização usada pelo cron. Consulte [DEPLOY.md](./DEPLOY.md) e
+[.env.sicoob.example](./.env.sicoob.example) antes de habilitar a emissão.
 
-## Deploy on Vercel
+## Produção
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+O deploy alvo usa Docker Compose, Traefik e o banco persistido em
+`/srv/stack/acamargo/dados/brisa.db`. O procedimento completo — incluindo backup,
+segredos, certificado, cron e atualização por fast-forward — está em
+[DEPLOY.md](./DEPLOY.md).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Arquivos reais de banco, datasets, certificados e `.env` nunca devem ser
+versionados.

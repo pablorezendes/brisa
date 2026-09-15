@@ -19,6 +19,10 @@ export type IconeMenuNome =
   | "locatarios"
   | "contratos"
   | "recebimentos"
+  | "boletos"
+  | "contas-bancarias"
+  | "conciliacao"
+  | "integracao"
   | "cobranca"
   | "caixa"
   | "comissoes"
@@ -121,6 +125,31 @@ const DESENHOS: Record<IconeMenuNome, ReactNode> = {
       <path d="M16.5 5v5M18.2 6h-2.5a1.1 1.1 0 0 0 0 2.2h1.6a1.1 1.1 0 0 1 0 2.2h-2.6" />
       <path d="M3 14.5h4l2 2h5.5a2 2 0 0 1 2 2H9" />
       <path d="M3 19.5h10.5a4 4 0 0 0 2.6-1l4.2-3.5a1.7 1.7 0 0 0-2.2-2.5L15 14.8" />
+    </>
+  ),
+  boletos: (
+    <>
+      <path d="M6 3h12v18l-2-1.4L14 21l-2-1.4L10 21l-2-1.4L6 21V3Z" />
+      <path d="M9 8h6M9 12h1M12 12h1M15 12h1M9 16h6" />
+    </>
+  ),
+  "contas-bancarias": (
+    <>
+      <rect x="3" y="6" width="18" height="13" rx="2" />
+      <path d="M3 10h18M7 15h3M15.5 15h1.5" />
+      <path d="M7 6V4h10v2" />
+    </>
+  ),
+  conciliacao: (
+    <>
+      <path d="M4 7h12M13 4l3 3-3 3M20 17H8M11 14l-3 3 3 3" />
+      <path d="m15.5 13.5 1.7 1.7 3.3-3.7" />
+    </>
+  ),
+  integracao: (
+    <>
+      <path d="M8 12H3M21 12h-5M8 8V5a4 4 0 0 1 8 0v3M8 16v3a4 4 0 0 0 8 0v-3" />
+      <rect x="8" y="8" width="8" height="8" rx="2" />
     </>
   ),
   cobranca: (

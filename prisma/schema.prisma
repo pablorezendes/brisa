@@ -19,41 +19,56 @@ datasource db {
 // ---------- Autenticação ----------
 
 model Usuario {
-  id        String   @id @default(uuid())
-  nome      String
-  usuario   String   @unique // login
-  senhaHash String // scrypt: salt:hash (hex)
-  criadoEm  DateTime @default(now())
+  id                         String                  @id @default(uuid())
+  nome                       String
+  usuario                    String                  @unique // login
+  senhaHash                  String // scrypt: salt:hash (hex)
+  perfil                     String                  @default("ADMINISTRADOR") // ADMINISTRADOR|FINANCEIRO|OPERADOR|CONSULTA
+  criadoEm                   DateTime                @default(now())
+  contasBancariasAtualizadas ContaBancaria[]         @relation("ContaBancariaAtualizadaPor")
+  boletosCriados             Boleto[]                @relation("BoletoCriadoPor")
+  pagamentosRegistrados      PagamentoRecebimento[]  @relation("PagamentoRegistradoPor")
+  sincronizacoesIniciadas    SincronizacaoBancaria[] @relation("SincronizacaoIniciadaPor")
 }
 
 // ---------- Núcleo de locação ----------
 
 model Empreendimento {
-  id           String         @id @default(uuid())
-  nome         String         @unique // normalizado (upper, sem acento)
-  ativo        Boolean        @default(true)
+  id           String        @id @default(uuid())
+  nome         String        @unique // normalizado (upper, sem acento)
+  ativo        Boolean       @default(true)
   unidades     Unidade[]
   recebimentos Recebimento[]
 }
 
 model Locatario {
-  id        String     @id @default(uuid())
-  nome      String
-  nomeNorm  String     // chave de matching (upper, sem acento, espaços colapsados)
-  cpfCnpj   String?    // só dígitos
-  contato   String?
-  contratos Contrato[]
+  id                  String     @id @default(uuid())
+  nome                String
+  nomeNorm            String // chave de matching (upper, sem acento, espaços colapsados)
+  cpfCnpj             String? // só dígitos
+  contato             String? // campo legado; mantido por compatibilidade
+  email               String?
+  telefone            String?
+  cep                 String? // só dígitos
+  endereco            String?
+  numeroEndereco      String?
+  complementoEndereco String?
+  bairro              String?
+  cidade              String?
+  uf                  String? // sigla com 2 caracteres
+  contratos           Contrato[]
+  boletos             Boleto[]
 
   @@index([nomeNorm])
 }
 
 model Unidade {
-  id               String         @id @default(uuid())
+  id               String             @id @default(uuid())
   empreendimentoId String
-  identificacao    String         // "PIO XII SALA 01"
-  tipo             String         @default("residencial") // residencial|comercial|temporada
-  ativo            Boolean        @default(true)
-  empreendimento   Empreendimento @relation(fields: [empreendimentoId], references: [id])
+  identificacao    String // "PIO XII SALA 01"
+  tipo             String             @default("residencial") // residencial|comercial|temporada
+  ativo            Boolean            @default(true)
+  empreendimento   Empreendimento     @relation(fields: [empreendimentoId], references: [id])
   contratos        Contrato[]
   unidadeTemporada UnidadeTemporada[]
 
@@ -88,26 +103,231 @@ model ParametroComissao {
 }
 
 model Recebimento {
-  id               String         @id @default(uuid())
-  contratoId       String
-  empreendimentoId String // denormalizado p/ relatório de comissão
-  mesLancamento    String // "YYYY-MM" — mês da aba RECEB (dimensão da matriz COMISSÃO e do fechamento)
-  competencia      String // "YYYY-MM" (mês de referência; pode diferir do lançamento — atrasos/adiantamentos)
-  valor            Int            @default(0) // insumos em centavos
-  iptu             Int            @default(0)
-  cond             Int            @default(0)
-  recebido         Int? // NULL = não recebido
-  dataPagamento    String? // "YYYY-MM-DD"
-  via              String? // BOLETO|PIX|DINHEIRO
-  taxaComissaoBps  Int            @default(1000) // snapshot da taxa do mês
-  observacao       String?
-  origemAgregada   Boolean        @default(false) // true na linha AIRBNB/TODOS
-  contrato         Contrato       @relation(fields: [contratoId], references: [id])
-  empreendimento   Empreendimento @relation(fields: [empreendimentoId], references: [id])
+  id                  String                 @id @default(uuid())
+  contratoId          String
+  empreendimentoId    String // denormalizado p/ relatório de comissão
+  mesLancamento       String // "YYYY-MM" — mês da aba RECEB (dimensão da matriz COMISSÃO e do fechamento)
+  competencia         String // "YYYY-MM" (mês de referência; pode diferir do lançamento — atrasos/adiantamentos)
+  valor               Int                    @default(0) // insumos em centavos
+  iptu                Int                    @default(0)
+  cond                Int                    @default(0)
+  recebido            Int? // NULL = não recebido
+  dataPagamento       String? // "YYYY-MM-DD"
+  via                 String? // BOLETO|PIX|DINHEIRO
+  taxaComissaoBps     Int                    @default(1000) // snapshot da taxa do mês
+  observacao          String?
+  origemAgregada      Boolean                @default(false) // true na linha AIRBNB/TODOS
+  reservaEmissaoToken String? // lease transacional enquanto nasce o primeiro registro de boleto
+  contrato            Contrato               @relation(fields: [contratoId], references: [id])
+  empreendimento      Empreendimento         @relation(fields: [empreendimentoId], references: [id])
+  boletos             Boleto[]
+  pagamentos          PagamentoRecebimento[]
 
   @@index([mesLancamento, empreendimentoId])
   @@index([competencia])
   @@index([contratoId])
+}
+
+// ---------- Bancos, cobrança e conciliação ----------
+
+// Credenciais, tokens e certificados não pertencem ao banco de dados. Eles são
+// fornecidos ao servidor por variáveis de ambiente/arquivos de segredo.
+model ContaBancaria {
+  id                          String                  @id @default(uuid())
+  codigoBanco                 String // código COMPE; 756 = Bancoob/Sicoob
+  nomeBanco                   String
+  agencia                     String // texto para preservar zeros e dígito
+  numero                      String // texto para preservar zeros e dígito
+  apelido                     String
+  finalidade                  String? // OPERACIONAL|APLICACAO|IPTU|OUTRA
+  ativa                       Boolean                 @default(true)
+  padrao                      Boolean                 @default(false)
+  integracaoHabilitada        Boolean                 @default(false)
+  boletosHabilitados          Boolean                 @default(false)
+  integracaoStatus            String                  @default("NAO_CONFIGURADA") // NAO_CONFIGURADA|PRONTA|ERRO
+  ambiente                    String                  @default("SANDBOX") // SANDBOX|PRODUCAO
+  numeroCliente               String?
+  codigoModalidade            Int?
+  numeroContaCorrenteApi      String? // sem dígito; confirmado no convênio, nunca inferido da tela legada
+  codigoEspecieDocumento      String? // RC|DS|DM... conforme contrato; nunca inferido pela aplicação
+  numeroContratoCobranca      String?
+  webhookId                   String?
+  webhookStatus               String? // AGUARDANDO_VALIDACAO|VALIDADO|INATIVO|ERRO
+  liquidacoesSincronizadasAte String? // último dia civil concluído; a próxima janela o sobrepõe por segurança
+  liquidacoesReprocessarDesde String? // cursor durável para refazer janelas antigas/sem conteúdo sem recuar o avanço principal
+  ultimaSincronizacaoEm       DateTime?
+  mensagemIntegracao          String?
+  atualizadoPorUsuarioId      String?
+  criadoEm                    DateTime                @default(now())
+  atualizadoEm                DateTime                @updatedAt
+  atualizadoPor               Usuario?                @relation("ContaBancariaAtualizadaPor", fields: [atualizadoPorUsuarioId], references: [id], onDelete: SetNull)
+  boletos                     Boleto[]
+  pagamentos                  PagamentoRecebimento[]
+  sincronizacoes              SincronizacaoBancaria[]
+
+  @@unique([codigoBanco, agencia, numero])
+  @@index([ativa, padrao])
+}
+
+// O webhook pertence ao aplicativo/credencial Sicoob, não a uma conta isolada.
+// A impressão digital identifica o client_id sem persistir qualquer segredo.
+model PerfilIntegracaoSicoob {
+  id                    String   @id @default(uuid())
+  ambiente              String
+  credencialFingerprint String
+  webhookId             String?
+  webhookStatus         String?
+  webhookUrlHash        String?
+  criadoEm              DateTime @default(now())
+  atualizadoEm          DateTime @updatedAt
+
+  @@unique([ambiente, credencialFingerprint])
+  @@unique([ambiente, webhookId])
+}
+
+// Um recebimento pode ter mais de um boleto ao longo do tempo (por exemplo,
+// baixa e reemissão). A aplicação impede dois títulos ativos simultâneos.
+model Boleto {
+  id                    String                 @id @default(uuid())
+  contaBancariaId       String
+  recebimentoId         String
+  locatarioId           String?
+  criadoPorUsuarioId    String?
+  chaveIdempotencia     String                 @unique
+  slotRecebimentoAtivo  String?                @unique // recebimentoId enquanto o título ainda bloqueia nova emissão
+  seuNumero             String                 @unique
+  nossoNumero           String?
+  ambienteBanco         String // snapshot: SANDBOX|PRODUCAO
+  numeroClienteBanco    Int
+  numeroContaBanco      Int
+  codigoModalidadeBanco Int
+  contratoCobrancaBanco Int?
+  especieDocumentoBanco String
+  respostaCodigo        String? // código de correlação devolvido pela API
+  status                String                 @default("RASCUNHO") // RASCUNHO|EMITINDO|RESULTADO_DESCONHECIDO|REGISTRADO|VENCIDO|PAGAMENTO_REPORTADO|CANCELAMENTO_REPORTADO|LIQUIDADO|BAIXADO_SEM_PAGAMENTO|ESTORNADO|ERRO
+  situacaoBanco         String?
+  conciliacaoStatus     String                 @default("PENDENTE") // PENDENTE|CONCILIADO|DIVERGENTE|IGNORADO
+  conciliacaoMotivo     String? // código estruturado; não usar mensagem humana como estado de máquina
+  valor                 Int // centavos; valor enviado no registro
+  valorPago             Int? // centavos; informado pelo banco
+  dataVencimento        String // "YYYY-MM-DD"
+  linhaDigitavel        String?
+  codigoBarras          String?
+  qrCode                String?
+  pagadorNome           String
+  pagadorCpfCnpj        String // só dígitos; snapshot imutável
+  pagadorEmail          String?
+  pagadorTelefone       String?
+  pagadorCep            String?
+  pagadorEndereco       String?
+  pagadorNumeroEndereco String?
+  pagadorComplemento    String?
+  pagadorBairro         String?
+  pagadorCidade         String?
+  pagadorUf             String?
+  emitidoEm             DateTime?
+  ultimaConsultaEm      DateTime?
+  liquidadoEm           DateTime?
+  mensagemErro          String?
+  tentativas            Int                    @default(0)
+  criadoEm              DateTime               @default(now())
+  atualizadoEm          DateTime               @updatedAt
+  contaBancaria         ContaBancaria          @relation(fields: [contaBancariaId], references: [id])
+  recebimento           Recebimento            @relation(fields: [recebimentoId], references: [id])
+  locatario             Locatario?             @relation(fields: [locatarioId], references: [id], onDelete: SetNull)
+  criadoPor             Usuario?               @relation("BoletoCriadoPor", fields: [criadoPorUsuarioId], references: [id], onDelete: SetNull)
+  eventos               EventoBoleto[]
+  pagamentos            PagamentoRecebimento[]
+
+  @@unique([contaBancariaId, nossoNumero])
+  @@index([recebimentoId, status])
+  @@index([contaBancariaId, status])
+  @@index([conciliacaoStatus])
+}
+
+// Guarda somente metadados necessários à idempotência/auditoria. O corpo bruto
+// do webhook pode conter dados pessoais e não deve ser persistido neste modelo.
+model EventoBoleto {
+  id                  String                 @id @default(uuid())
+  boletoId            String?
+  sincronizacaoId     String?
+  chaveEvento         String                 @unique
+  origem              String // WEBHOOK|CONSULTA|MOVIMENTACAO|EMISSAO
+  tipo                String
+  nossoNumero         String?
+  seuNumero           String?
+  situacaoBanco       String?
+  payloadHash         String
+  statusProcessamento String                 @default("PENDENTE") // PENDENTE|PROCESSADO|IGNORADO|ERRO
+  recebidoEm          DateTime               @default(now())
+  processadoEm        DateTime?
+  erro                String?
+  boleto              Boleto?                @relation(fields: [boletoId], references: [id], onDelete: SetNull)
+  sincronizacao       SincronizacaoBancaria? @relation(fields: [sincronizacaoId], references: [id], onDelete: SetNull)
+  pagamento           PagamentoRecebimento?
+
+  @@index([boletoId, recebidoEm])
+  @@index([statusProcessamento, recebidoEm])
+  @@index([nossoNumero])
+}
+
+// Trilha financeira normalizada. Os campos recebido/dataPagamento/via de
+// Recebimento continuam existindo durante a transição e são atualizados pela
+// conciliação de forma transacional.
+model PagamentoRecebimento {
+  id                     String         @id @default(uuid())
+  recebimentoId          String
+  boletoId               String?
+  eventoBoletoId         String?        @unique
+  contaBancariaId        String?
+  registradoPorUsuarioId String?
+  identificadorBanco     String?        @unique
+  chaveIdempotencia      String         @unique
+  valor                  Int // centavos
+  dataPagamento          String // "YYYY-MM-DD"
+  dataCredito            String? // "YYYY-MM-DD"
+  forma                  String         @default("BOLETO") // BOLETO|PIX|DINHEIRO|TRANSFERENCIA|OUTRO
+  origem                 String         @default("SICOOB") // SICOOB|MANUAL|LEGADO
+  status                 String         @default("CONFIRMADO") // PENDENTE|CONFIRMADO|ESTORNADO
+  conciliadoEm           DateTime?
+  motivoPendencia        String?
+  criadoEm               DateTime       @default(now())
+  atualizadoEm           DateTime       @updatedAt
+  recebimento            Recebimento    @relation(fields: [recebimentoId], references: [id])
+  boleto                 Boleto?        @relation(fields: [boletoId], references: [id], onDelete: SetNull)
+  eventoBoleto           EventoBoleto?  @relation(fields: [eventoBoletoId], references: [id], onDelete: SetNull)
+  contaBancaria          ContaBancaria? @relation(fields: [contaBancariaId], references: [id], onDelete: SetNull)
+  registradoPor          Usuario?       @relation("PagamentoRegistradoPor", fields: [registradoPorUsuarioId], references: [id], onDelete: SetNull)
+
+  @@index([recebimentoId, dataPagamento])
+  @@index([boletoId])
+  @@index([status, dataPagamento])
+}
+
+model SincronizacaoBancaria {
+  id                    String         @id @default(uuid())
+  contaBancariaId       String
+  iniciadoPorUsuarioId  String?
+  tipo                  String // BOLETOS|MOVIMENTACOES|WEBHOOK
+  status                String         @default("PENDENTE") // PENDENTE|EM_ANDAMENTO|CONCLUIDA|ERRO
+  janelaInicio          String? // "YYYY-MM-DD"
+  janelaFim             String? // "YYYY-MM-DD"
+  cursor                String?
+  slotExecucao          String?        @unique // reserva enquanto a mesma conta/tipo está em processamento
+  lockToken             String? // lease curto: impede duas invocações de processarem o mesmo cursor
+  lockExpiraEm          DateTime?
+  quantidadeLidos       Int            @default(0)
+  quantidadeProcessados Int            @default(0)
+  quantidadeErros       Int            @default(0)
+  mensagemErro          String?
+  iniciadaEm            DateTime       @default(now())
+  concluidaEm           DateTime?
+  contaBancaria         ContaBancaria  @relation(fields: [contaBancariaId], references: [id])
+  iniciadoPor           Usuario?       @relation("SincronizacaoIniciadaPor", fields: [iniciadoPorUsuarioId], references: [id], onDelete: SetNull)
+  eventos               EventoBoleto[]
+
+  @@index([contaBancariaId, iniciadaEm])
+  @@index([status, iniciadaEm])
 }
 
 model FechamentoMensal {

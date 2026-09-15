@@ -13,6 +13,7 @@ import {
   inputBase,
 } from "@/components/ui";
 import { calcularRecebimento, comissaoTotal } from "@/lib/dominio/comissao";
+import { statusVisualBoleto } from "@/lib/dominio/boletos";
 import { formatarBRL } from "@/lib/dominio/dinheiro";
 import { formatarCompetencia } from "@/lib/dominio/normalizacao";
 import { parsePeriodo } from "@/lib/dominio/periodo";
@@ -442,6 +443,10 @@ export default async function PaginaRecebimentos({
                   Recebido{" "}
                   <Ajuda dica="O que de fato entrou. Pode ser maior que o total (locatário quitando mês atrasado junto) ou menor (parcial/acordo) — nesses casos, explique na Observação. Vazio = pendente." />
                 </th>
+                <th>
+                  Boleto{" "}
+                  <Ajuda dica="Situação do título no Sicoob. 'Pagamento informado' ainda aguarda a confirmação de liquidação antes da baixa financeira." />
+                </th>
                 <th style={{ textAlign: "right" }}>
                   Base de cálculo{" "}
                   <Ajuda dica="Recebido − IPTU − condomínio: só a parte de aluguel do que entrou. É sobre ela que incide a comissão. Calculada automaticamente." />
@@ -467,7 +472,7 @@ export default async function PaginaRecebimentos({
               {linhas.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={comMes ? 16 : 15}
+                    colSpan={comMes ? 17 : 16}
                     className="py-6 text-center text-tinta-suave/60"
                   >
                     {periodo
@@ -478,7 +483,10 @@ export default async function PaginaRecebimentos({
                   </td>
                 </tr>
               ) : (
-                linhas.map(({ r, calc }) => (
+                linhas.map(({ r, calc }) => {
+                  const boleto = r.boletos[0];
+                  const estadoBoleto = boleto ? statusVisualBoleto(boleto.status) : null;
+                  return (
                   <tr key={r.id} className={r.recebido === null ? "bg-ambar/5" : ""}>
                     {comMes ? (
                       <td className="font-mono text-[12px]">
@@ -502,6 +510,19 @@ export default async function PaginaRecebimentos({
                         <Badge cor="ambar">Pendente</Badge>
                       ) : (
                         <Dinheiro centavos={r.recebido} destaque />
+                      )}
+                    </td>
+                    <td>
+                      {boleto && estadoBoleto ? (
+                        <Link href={`/financeiro/boletos?mes=${r.mesLancamento}&boleto=${boleto.id}`}>
+                          <Badge nivel={estadoBoleto.nivel}>{estadoBoleto.rotulo}</Badge>
+                        </Link>
+                      ) : r.recebido === null && !r.origemAgregada ? (
+                        <Link href={`/financeiro/boletos?mes=${r.mesLancamento}`} className="text-[11px] font-semibold text-oliva-escura hover:underline">
+                          A emitir
+                        </Link>
+                      ) : (
+                        <span className="text-tinta-suave">—</span>
                       )}
                     </td>
                     <td className="text-right"><Dinheiro centavos={calc.baseCalculo} /></td>
@@ -537,7 +558,8 @@ export default async function PaginaRecebimentos({
                       ) : null}
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
             {linhas.length > 0 ? (
@@ -556,6 +578,7 @@ export default async function PaginaRecebimentos({
                   <td className="text-right"><Dinheiro centavos={totais.cond} /></td>
                   <td className="text-right"><Dinheiro centavos={totais.total} /></td>
                   <td className="text-right"><Dinheiro centavos={totais.recebido} /></td>
+                  <td></td>
                   <td className="text-right"><Dinheiro centavos={totais.base} /></td>
                   <td className="text-right"><Dinheiro centavos={totalComissao} destaque /></td>
                   <td colSpan={5}></td>

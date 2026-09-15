@@ -30,6 +30,11 @@ export function formatarDataBR(data: string | null | undefined): string {
 const incluirRelacoesRecebimento = {
   contrato: { include: { unidade: true, locatario: true } },
   empreendimento: true,
+  boletos: {
+    select: { id: true, status: true, nossoNumero: true },
+    orderBy: { criadoEm: "desc" as const },
+    take: 1,
+  },
 } satisfies Prisma.RecebimentoInclude;
 
 export type RecebimentoComRelacoes = Prisma.RecebimentoGetPayload<{

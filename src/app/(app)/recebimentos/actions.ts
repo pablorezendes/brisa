@@ -8,6 +8,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { exigirPermissaoFinanceira } from "@/lib/autorizacao";
 import { parseBRL } from "@/lib/dominio/dinheiro";
 import {
   comissaoTotal,
@@ -17,11 +18,12 @@ import {
   RE_MES,
   RE_DATA,
   VIAS_PAGAMENTO,
-  recebimentosDoMes,
   taxaComissaoParaMes,
 } from "@/lib/consultas/locacao";
 
 // ---------- utilitários internos ----------
+
+class ErroFechamentoMes extends Error {}
 
 function campo(fd: FormData, nome: string): string {
   const v = fd.get(nome);
@@ -102,6 +104,7 @@ function viaValida(via: string): string | null {
  * lançamento no mês, cria o recebimento devido (recebido=null). Idempotente.
  */
 export async function gerarDevidosDoMes(formData: FormData): Promise<void> {
+  await exigirPermissaoFinanceira("CONCILIAR_PAGAMENTOS");
   const mes = campo(formData, "mes");
   if (!RE_MES.test(mes)) voltar(mes, { erro: "Mês inválido." });
   await exigirMesAberto(mes);
@@ -150,6 +153,7 @@ export async function gerarDevidosDoMes(formData: FormData): Promise<void> {
 // ---------- 2. Registrar / editar recebimento ----------
 
 export async function registrarRecebimento(formData: FormData): Promise<void> {
+  await exigirPermissaoFinanceira("CONCILIAR_PAGAMENTOS");
   const retorno = retornoSeguro(formData);
   const id = campo(formData, "id");
   const lancamento = await prisma.recebimento.findUnique({ where: { id } });
@@ -171,8 +175,13 @@ export async function registrarRecebimento(formData: FormData): Promise<void> {
     voltar(mes, { erro: "Competência inválida (use AAAA-MM)." }, retorno);
   }
 
-  await prisma.recebimento.update({
-    where: { id },
+  const alterado = await prisma.recebimento.updateMany({
+    where: {
+      id,
+      reservaEmissaoToken: null,
+      boletos: { none: {} },
+      pagamentos: { none: {} },
+    },
     data: {
       recebido,
       dataPagamento: dataPagamento || null,
@@ -181,22 +190,48 @@ export async function registrarRecebimento(formData: FormData): Promise<void> {
       observacao: campo(formData, "observacao") || null,
     },
   });
+  if (alterado.count !== 1) {
+    voltar(
+      mes,
+      {
+        erro:
+          "O lançamento entrou em uma operação bancária. Faça a conferência em Boletos/Conciliação para preservar a auditoria.",
+      },
+      retorno,
+    );
+  }
   revalidarLocacao();
   voltar(mes, { ok: "Recebimento registrado." }, retorno);
 }
 
 /** Limpa o recebimento (volta a pendente); mantém os insumos do devido. */
 export async function limparRecebimento(formData: FormData): Promise<void> {
+  await exigirPermissaoFinanceira("CONCILIAR_PAGAMENTOS");
   const retorno = retornoSeguro(formData);
   const id = campo(formData, "id");
   const lancamento = await prisma.recebimento.findUnique({ where: { id } });
   if (!lancamento) voltar("", { erro: "Lançamento não encontrado." }, retorno);
   await exigirMesAberto(lancamento.mesLancamento, retorno);
 
-  await prisma.recebimento.update({
-    where: { id },
+  const alterado = await prisma.recebimento.updateMany({
+    where: {
+      id,
+      reservaEmissaoToken: null,
+      boletos: { none: {} },
+      pagamentos: { none: {} },
+    },
     data: { recebido: null, dataPagamento: null, via: null },
   });
+  if (alterado.count !== 1) {
+    voltar(
+      lancamento.mesLancamento,
+      {
+        erro:
+          "O lançamento possui histórico ou reserva bancária e não pode ser limpo aqui.",
+      },
+      retorno,
+    );
+  }
   revalidarLocacao();
   voltar(
     lancamento.mesLancamento,
@@ -208,13 +243,31 @@ export async function limparRecebimento(formData: FormData): Promise<void> {
 // ---------- 3. Excluir lançamento ----------
 
 export async function excluirRecebimento(formData: FormData): Promise<void> {
+  await exigirPermissaoFinanceira("CONCILIAR_PAGAMENTOS");
   const retorno = retornoSeguro(formData);
   const id = campo(formData, "id");
   const lancamento = await prisma.recebimento.findUnique({ where: { id } });
   if (!lancamento) voltar("", { erro: "Lançamento não encontrado." }, retorno);
   await exigirMesAberto(lancamento.mesLancamento, retorno);
 
-  await prisma.recebimento.delete({ where: { id } });
+  const removido = await prisma.recebimento.deleteMany({
+    where: {
+      id,
+      reservaEmissaoToken: null,
+      boletos: { none: {} },
+      pagamentos: { none: {} },
+    },
+  });
+  if (removido.count !== 1) {
+    voltar(
+      lancamento.mesLancamento,
+      {
+        erro:
+          "O lançamento possui histórico ou reserva bancária e não pode ser excluído.",
+      },
+      retorno,
+    );
+  }
   revalidarLocacao();
   voltar(lancamento.mesLancamento, { ok: "Lançamento excluído." }, retorno);
 }
@@ -222,6 +275,7 @@ export async function excluirRecebimento(formData: FormData): Promise<void> {
 // ---------- Lançamento avulso ----------
 
 export async function criarLancamentoAvulso(formData: FormData): Promise<void> {
+  await exigirPermissaoFinanceira("CONCILIAR_PAGAMENTOS");
   const mes = campo(formData, "mes");
   if (!RE_MES.test(mes)) voltar(mes, { erro: "Mês inválido." });
   await exigirMesAberto(mes);
@@ -273,45 +327,83 @@ export async function criarLancamentoAvulso(formData: FormData): Promise<void> {
 // ---------- 4. Fechar / reabrir mês ----------
 
 export async function fecharMes(formData: FormData): Promise<void> {
+  await exigirPermissaoFinanceira("CONCILIAR_PAGAMENTOS");
   const mes = campo(formData, "mes");
   if (!RE_MES.test(mes)) voltar(mes, { erro: "Mês inválido." });
 
-  const jaFechado = await prisma.fechamentoMensal.findUnique({
-    where: { mesLancamento: mes },
-  });
-  if (jaFechado) voltar(mes, { erro: "Este mês já está fechado." });
+  try {
+    await prisma.$transaction(async (tx) => {
+      // A criação provisória é a primeira escrita e serializa o fechamento
+      // contra uma baixa LIQUI concorrente. Qualquer erro abaixo reverte tudo.
+      const fechamento = await tx.fechamentoMensal.create({
+        data: { mesLancamento: mes, comissaoTotal: 0, detalhe: "[]" },
+      });
+      const pendenciasBancarias = await tx.boleto.count({
+        where: {
+          recebimento: { mesLancamento: mes },
+          OR: [
+            {
+              status: {
+                in: ["EMITINDO", "RESULTADO_DESCONHECIDO", "PAGAMENTO_REPORTADO"],
+              },
+            },
+            { pagamentos: { some: { conciliadoEm: null } } },
+          ],
+        },
+      });
+      if (pendenciasBancarias > 0) {
+        throw new ErroFechamentoMes(
+          `${pendenciasBancarias} cobrança(s) bancária(s) ainda aguardam confirmação ou conciliação. Resolva-as antes de fechar o mês.`,
+        );
+      }
+      const recebimentos = await tx.recebimento.findMany({
+        where: { mesLancamento: mes },
+        include: { empreendimento: true },
+        orderBy: [
+          { empreendimento: { nome: "asc" } },
+          { contrato: { unidade: { identificacao: "asc" } } },
+        ],
+      });
+      if (recebimentos.length === 0) {
+        throw new ErroFechamentoMes("Não há lançamentos neste mês para fechar.");
+      }
 
-  const recebimentos = await recebimentosDoMes(mes);
-  if (recebimentos.length === 0) {
-    voltar(mes, { erro: "Não há lançamentos neste mês para fechar." });
+      // Snapshot pela regra canônica — nunca recalculado à mão.
+      const total = comissaoTotal(recebimentos);
+      const matriz = comissaoPorEmpreendimento(recebimentos);
+      const nomePorId = new Map(
+        recebimentos.map((r) => [r.empreendimentoId, r.empreendimento.nome]),
+      );
+      const detalhe = Array.from(matriz.entries())
+        .map(([empreendimentoId, porMes]) => ({
+          empreendimento: nomePorId.get(empreendimentoId) ?? empreendimentoId,
+          comissao: porMes.get(mes) ?? 0,
+        }))
+        .filter((item) => item.comissao !== 0)
+        .sort((a, b) => a.empreendimento.localeCompare(b.empreendimento, "pt-BR"));
+
+      await tx.fechamentoMensal.update({
+        where: { id: fechamento.id },
+        data: { comissaoTotal: total, detalhe: JSON.stringify(detalhe) },
+      });
+    });
+  } catch (erro) {
+    if (erro instanceof ErroFechamentoMes) {
+      voltar(mes, { erro: erro.message });
+    }
+    const jaFechado = await prisma.fechamentoMensal.findUnique({
+      where: { mesLancamento: mes },
+      select: { id: true },
+    });
+    if (jaFechado) voltar(mes, { erro: "Este mês já está fechado." });
+    throw erro;
   }
-
-  // Snapshot pela regra canônica — nunca recalculado à mão.
-  const total = comissaoTotal(recebimentos);
-  const matriz = comissaoPorEmpreendimento(recebimentos);
-  const nomePorId = new Map(
-    recebimentos.map((r) => [r.empreendimentoId, r.empreendimento.nome])
-  );
-  const detalhe = Array.from(matriz.entries())
-    .map(([empreendimentoId, porMes]) => ({
-      empreendimento: nomePorId.get(empreendimentoId) ?? empreendimentoId,
-      comissao: porMes.get(mes) ?? 0,
-    }))
-    .filter((d) => d.comissao !== 0)
-    .sort((a, b) => a.empreendimento.localeCompare(b.empreendimento, "pt-BR"));
-
-  await prisma.fechamentoMensal.create({
-    data: {
-      mesLancamento: mes,
-      comissaoTotal: total,
-      detalhe: JSON.stringify(detalhe),
-    },
-  });
   revalidarLocacao();
   voltar(mes, { ok: "Mês fechado — lançamentos travados." });
 }
 
 export async function reabrirMes(formData: FormData): Promise<void> {
+  await exigirPermissaoFinanceira("CONCILIAR_PAGAMENTOS");
   const mes = campo(formData, "mes");
   if (!RE_MES.test(mes)) voltar(mes, { erro: "Mês inválido." });
 

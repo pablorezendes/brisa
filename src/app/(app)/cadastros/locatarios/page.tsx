@@ -70,6 +70,8 @@ export default async function PaginaLocatarios({ searchParams }: { searchParams:
     where.OR = [
       { nomeNorm: { contains: termo } },
       { contato: { contains: q } },
+      { email: { contains: q } },
+      { telefone: { contains: q } },
       ...(documento ? [{ cpfCnpj: { contains: documento } }] : []),
     ];
   }
@@ -133,7 +135,7 @@ export default async function PaginaLocatarios({ searchParams }: { searchParams:
               {editando ? "Editar inquilino" : "Novo inquilino"}
             </h2>
             <p className="mt-1 text-[12px] leading-relaxed text-tinta-suave">
-              CPF/CNPJ e contato são opcionais, mas ajudam a identificar e cobrar sem ambiguidades.
+              CPF/CNPJ e endereço completo são necessários para registrar boletos no Sicoob.
             </p>
           </div>
           <form
@@ -196,6 +198,50 @@ export default async function PaginaLocatarios({ searchParams }: { searchParams:
                 </Link>
               ) : null}
             </div>
+            <details className="rounded-lg border border-contorno bg-[#f8fafb] p-3 md:col-span-2 xl:col-span-4 2xl:mt-4" open={Boolean(editando)}>
+              <summary className="cursor-pointer text-[12px] font-bold text-tinta">
+                Dados para cobrança bancária
+                <span className="ml-2 font-normal text-tinta-suave">endereço e contato do pagador</span>
+              </summary>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-2">
+                <label className="text-[12px] font-semibold text-tinta">
+                  E-mail
+                  <input name="email" type="email" maxLength={254} autoComplete="email" defaultValue={editando?.email ?? ""} className={`${inputBase} mt-1.5 block w-full`} />
+                </label>
+                <label className="text-[12px] font-semibold text-tinta">
+                  Telefone
+                  <input name="telefone" maxLength={30} autoComplete="tel" defaultValue={editando?.telefone ?? ""} className={`${inputBase} mt-1.5 block w-full`} />
+                </label>
+                <label className="text-[12px] font-semibold text-tinta">
+                  CEP
+                  <input name="cep" inputMode="numeric" maxLength={9} autoComplete="postal-code" defaultValue={editando?.cep ?? ""} placeholder="00000-000" className={`${inputBase} mt-1.5 block w-full`} />
+                </label>
+                <label className="text-[12px] font-semibold text-tinta">
+                  UF
+                  <input name="uf" maxLength={2} autoComplete="address-level1" defaultValue={editando?.uf ?? ""} placeholder="BA" className={`${inputBase} mt-1.5 block w-full uppercase`} />
+                </label>
+                <label className="text-[12px] font-semibold text-tinta sm:col-span-2">
+                  Endereço
+                  <input name="endereco" maxLength={180} autoComplete="street-address" defaultValue={editando?.endereco ?? ""} placeholder="Rua, avenida ou praça" className={`${inputBase} mt-1.5 block w-full`} />
+                </label>
+                <label className="text-[12px] font-semibold text-tinta">
+                  Número
+                  <input name="numeroEndereco" maxLength={30} defaultValue={editando?.numeroEndereco ?? ""} className={`${inputBase} mt-1.5 block w-full`} />
+                </label>
+                <label className="text-[12px] font-semibold text-tinta">
+                  Complemento
+                  <input name="complementoEndereco" maxLength={80} defaultValue={editando?.complementoEndereco ?? ""} className={`${inputBase} mt-1.5 block w-full`} />
+                </label>
+                <label className="text-[12px] font-semibold text-tinta">
+                  Bairro
+                  <input name="bairro" maxLength={100} autoComplete="address-level3" defaultValue={editando?.bairro ?? ""} className={`${inputBase} mt-1.5 block w-full`} />
+                </label>
+                <label className="text-[12px] font-semibold text-tinta">
+                  Cidade
+                  <input name="cidade" maxLength={100} autoComplete="address-level2" defaultValue={editando?.cidade ?? ""} className={`${inputBase} mt-1.5 block w-full`} />
+                </label>
+              </div>
+            </details>
           </form>
         </Card>
 
@@ -247,7 +293,7 @@ export default async function PaginaLocatarios({ searchParams }: { searchParams:
                     <th>Inquilino</th>
                     <th>CPF/CNPJ</th>
                     <th>Contato</th>
-                    <th>Cadastro</th>
+                    <th>Boletos</th>
                     <th>Vínculo atual</th>
                     <th className="text-right">Contratos</th>
                     <th className="text-right">Ação</th>
@@ -257,7 +303,15 @@ export default async function PaginaLocatarios({ searchParams }: { searchParams:
                   {locatarios.map((locatario) => {
                     const abertos = locatario.contratos;
                     const principal = abertos[0];
-                    const completo = Boolean(locatario.cpfCnpj && locatario.contato);
+                    const completo = Boolean(
+                      locatario.cpfCnpj &&
+                      locatario.cep &&
+                      locatario.endereco &&
+                      locatario.numeroEndereco &&
+                      locatario.bairro &&
+                      locatario.cidade &&
+                      locatario.uf,
+                    );
                     return (
                       <tr key={locatario.id}>
                         <td className="font-semibold text-tinta">{locatario.nome}</td>
@@ -272,7 +326,7 @@ export default async function PaginaLocatarios({ searchParams }: { searchParams:
                           )}
                         </td>
                         <td>
-                          <Badge cor={completo ? "verde" : "ambar"}>{completo ? "Completo" : "Revisar"}</Badge>
+                          <Badge cor={completo ? "verde" : "ambar"}>{completo ? "Pronto" : "Dados pendentes"}</Badge>
                         </td>
                         <td>
                           {principal ? (

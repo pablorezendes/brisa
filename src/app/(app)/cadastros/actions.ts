@@ -47,6 +47,66 @@ function nomeValido(valor: string, maximo: number): string | null {
   return limpo.length > 0 && limpo.length <= maximo ? limpo : null;
 }
 
+function campoOpcional(formData: FormData, nome: string, maximo: number): string | null {
+  const valor = campo(formData, nome).replace(/\s+/g, " ");
+  return valor && valor.length <= maximo ? valor : null;
+}
+
+function dadosCobrancaLocatario(formData: FormData): {
+  dados: {
+    email: string | null;
+    telefone: string | null;
+    cep: string | null;
+    endereco: string | null;
+    numeroEndereco: string | null;
+    complementoEndereco: string | null;
+    bairro: string | null;
+    cidade: string | null;
+    uf: string | null;
+  };
+  erro?: string;
+} {
+  const informado = (nome: string) => campo(formData, nome);
+  const email = informado("email").toLowerCase();
+  const cep = informado("cep").replace(/\D/g, "");
+  const uf = informado("uf").toUpperCase();
+  const limites: [string, number, string][] = [
+    ["telefone", 30, "telefone"],
+    ["endereco", 180, "endereço"],
+    ["numeroEndereco", 30, "número do endereço"],
+    ["complementoEndereco", 80, "complemento"],
+    ["bairro", 100, "bairro"],
+    ["cidade", 100, "cidade"],
+  ];
+  for (const [nome, maximo, rotulo] of limites) {
+    if (informado(nome).length > maximo) {
+      return { dados: null as never, erro: `O ${rotulo} deve ter até ${maximo} caracteres.` };
+    }
+  }
+  if (email && (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
+    return { dados: null as never, erro: "Informe um e-mail válido para o boleto." };
+  }
+  if (cep && cep.length !== 8) {
+    return { dados: null as never, erro: "O CEP deve ter 8 dígitos." };
+  }
+  if (uf && !/^[A-Z]{2}$/.test(uf)) {
+    return { dados: null as never, erro: "A UF deve ter duas letras (ex.: BA)." };
+  }
+  return {
+    dados: {
+      email: email || null,
+      telefone: campoOpcional(formData, "telefone", 30),
+      cep: cep || null,
+      endereco: campoOpcional(formData, "endereco", 180),
+      numeroEndereco: campoOpcional(formData, "numeroEndereco", 30),
+      complementoEndereco: campoOpcional(formData, "complementoEndereco", 80),
+      bairro: campoOpcional(formData, "bairro", 100),
+      cidade: campoOpcional(formData, "cidade", 100),
+      uf: uf || null,
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Empreendimentos
 // ---------------------------------------------------------------------------
@@ -297,6 +357,7 @@ export async function criarLocatario(formData: FormData): Promise<void> {
   const nome = nomeValido(campo(formData, "nome"), 160);
   const contato = nomeValido(campo(formData, "contato"), 200);
   const cpf = validarCpfCnpj(campo(formData, "cpfCnpj"));
+  const cobranca = dadosCobrancaLocatario(formData);
 
   if (!nome) {
     voltar(ROTAS.locatarios, { erro: "Informe o nome do inquilino com até 160 caracteres." });
@@ -305,6 +366,7 @@ export async function criarLocatario(formData: FormData): Promise<void> {
     voltar(ROTAS.locatarios, { erro: "O contato deve ter até 200 caracteres." });
   }
   if (cpf.erro) voltar(ROTAS.locatarios, { erro: cpf.erro });
+  if (cobranca.erro) voltar(ROTAS.locatarios, { erro: cobranca.erro });
   if (cpf.valor && (await cpfJaUsado(cpf.valor))) {
     voltar(ROTAS.locatarios, { erro: "Já existe um inquilino com esse CPF/CNPJ." });
   }
@@ -316,6 +378,7 @@ export async function criarLocatario(formData: FormData): Promise<void> {
         nomeNorm: normalizar(nome),
         cpfCnpj: cpf.valor,
         contato,
+        ...cobranca.dados,
       },
     });
   } catch {
@@ -333,6 +396,7 @@ export async function atualizarLocatario(formData: FormData): Promise<void> {
   const contatoInformado = campo(formData, "contato");
   const contato = nomeValido(contatoInformado, 200);
   const cpf = validarCpfCnpj(campo(formData, "cpfCnpj"));
+  const cobranca = dadosCobrancaLocatario(formData);
 
   if (!id || !nome) {
     voltar(ROTAS.locatarios, {
@@ -344,6 +408,7 @@ export async function atualizarLocatario(formData: FormData): Promise<void> {
     voltar(ROTAS.locatarios, { erro: "O contato deve ter até 200 caracteres.", editar: id });
   }
   if (cpf.erro) voltar(ROTAS.locatarios, { erro: cpf.erro, editar: id });
+  if (cobranca.erro) voltar(ROTAS.locatarios, { erro: cobranca.erro, editar: id });
 
   const existente = await prisma.locatario.findUnique({ where: { id } });
   if (!existente) voltar(ROTAS.locatarios, { erro: "Inquilino não encontrado." });
@@ -362,6 +427,7 @@ export async function atualizarLocatario(formData: FormData): Promise<void> {
         nomeNorm: normalizar(nome),
         cpfCnpj: cpf.valor,
         contato,
+        ...cobranca.dados,
       },
     });
   } catch {
