@@ -47,21 +47,18 @@ import {
   pendentesDoPeriodo,
 } from "@/lib/consultas/relatorios";
 import {
-  AneisRadiais,
   BarraComposicao,
-  BarrasCaixa,
-  BarrasDuplas,
-  BarrasMensais,
   COR_1,
   COR_2,
-  COR_SAIDA,
-  COR_SAIDA_2,
-  Cascata,
-  Legenda,
   MapaCalor,
-  Medidor,
-  Rosca,
+  Sparkline,
 } from "@/components/graficos";
+import {
+  ComposicaoComissao,
+  FluxoCaixaInterativo,
+  PulsoFinanceiro,
+  SinaisVitais,
+} from "@/components/graficos-interativos";
 
 export const dynamic = "force-dynamic";
 
@@ -304,6 +301,9 @@ export default async function PaginaExecutivo({
   /** Desempenho da janela contra o melhor mês da série (100% = é o melhor). */
   const melhorMes = Math.max(...vm.serieComissao, 0);
   const vsMelhor = melhorMes > 0 ? vm.comissao / melhorMes : 0;
+  const rotuloDestaque = vm.destaque
+    ? (vm.rotulos ?? NOME_MES_ABREV.slice(1))[vm.destaque - 1]
+    : undefined;
 
   /** Mapa de calor comissão × período: linhas = empreendimentos com movimento. */
   const linhasMapa = vm.porEmp
@@ -693,226 +693,170 @@ export default async function PaginaExecutivo({
         />
       </div>
 
-      {/* ---------- central de instrumentos: anéis + cascata do caixa -------- */}
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-5">
-        <Card className="p-5 lg:col-span-2">
-          <TituloCard
-            titulo="Sinais vitais"
-            ajuda="Três taxas independentes (não são partes de um todo): quanto do devido já entrou; o quanto o resultado depende de um único empreendimento; e como esta janela se compara ao melhor mês da série. Anel cheio = 100%."
-          />
-          <div className="pt-2">
-            <AneisRadiais
-              aneis={[
+      {/* ---------- cockpit visual: comparação primeiro, detalhe depois ---------- */}
+      <section className="mt-6">
+        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#6d8285]">
+              Análise visual
+            </p>
+            <h2 className="mt-1 font-serif text-[23px] font-semibold tracking-[-0.025em] text-tinta">
+              O pulso da operação
+            </h2>
+          </div>
+          <p className="max-w-xl text-xs leading-relaxed text-tinta-suave sm:text-right">
+            Compare receita, cobrança e resultado sem trocar de contexto. Toque nas séries para isolar o que importa.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 min-[1180px]:grid-cols-12">
+          <Card className="p-5 min-[1180px]:col-span-8">
+            <TituloCard
+              titulo={periodo ? `Fluxo financeiro — ${periodo.rotulo}` : `Fluxo financeiro de ${ano}`}
+              ajuda="Camadas sincronizadas no mesmo eixo temporal: barras para devido e recebido; área azul para a comissão. Desative qualquer série pelos controles acima do gráfico e passe o cursor para ver valores exatos."
+              direita={
+                <span className="rounded-full border border-[#d7e2e3] bg-[#f5f8f8] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.11em] text-[#557074]">
+                  interativo
+                </span>
+              }
+            />
+            <PulsoFinanceiro dados={vm.linhasSerie} destaqueRotulo={rotuloDestaque} />
+            <details className="mt-2 text-xs text-tinta-suave">
+              <summary className="cursor-pointer select-none">Ver dados do gráfico</summary>
+              <div className="mt-2 overflow-x-auto">
+                <table className="tabela">
+                  <thead>
+                    <tr>
+                      <th>Mês</th>
+                      <th className="text-right">Comissão</th>
+                      <th className="text-right">Devido</th>
+                      <th className="text-right">Recebido</th>
+                      <th className="text-right">Pendentes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {vm.linhasSerie.map((linha) => (
+                      <tr key={linha.rotulo}>
+                        <td>{linha.rotulo}</td>
+                        <td className="text-right"><Dinheiro centavos={linha.comissao} /></td>
+                        <td className="text-right"><Dinheiro centavos={linha.devido} /></td>
+                        <td className="text-right"><Dinheiro centavos={linha.recebido} /></td>
+                        <td className="text-right">{linha.pendentes}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </Card>
+
+          <Card className="p-5 min-[1180px]:col-span-4">
+            <TituloCard
+              titulo="Sinais vitais"
+              ajuda="Três leituras independentes para orientar a decisão: eficiência de recebimento, concentração no maior empreendimento e ritmo contra o melhor mês da série."
+            />
+            <SinaisVitais
+              itens={[
                 {
-                  rotulo: "do devido já entrou",
-                  fracao: vm.taxa ?? 0,
-                  texto:
-                    vm.taxa !== null
-                      ? `${(vm.taxa * 100).toFixed(0)}%`
-                      : "—",
+                  rotulo: "Do devido já entrou",
+                  valor: vm.taxa ?? 0,
+                  texto: vm.taxa !== null ? `${(vm.taxa * 100).toFixed(0)}%` : "—",
                   nivel: nvTaxa,
+                  detalhe: `${formatarBRL(vm.recebido)} de ${formatarBRL(vm.devido)} recebidos`,
                 },
                 {
-                  rotulo: "vem do maior empreendimento",
-                  fracao: concentracao,
+                  rotulo: "Vem do maior empreendimento",
+                  valor: concentracao,
+                  texto: `${(concentracao * 100).toFixed(0)}%`,
                   nivel: concentracao >= 0.5 ? "atencao" : "info",
+                  detalhe: empOrdenados[0]
+                    ? `${empOrdenados[0].nome} lidera a composição`
+                    : "Sem comissão nesta janela",
                 },
                 {
-                  rotulo: "do melhor mês da série",
-                  fracao: Math.min(vsMelhor, 1),
+                  rotulo: "Do melhor mês da série",
+                  valor: Math.min(vsMelhor, 1),
                   texto: `${(vsMelhor * 100).toFixed(0)}%`,
                   nivel: vsMelhor >= 0.95 ? "otimo" : "info",
+                  detalhe: vsMelhor >= 1 ? "Ritmo no pico da série" : "Distância até o melhor resultado",
                 },
               ]}
             />
-          </div>
-        </Card>
+          </Card>
 
-        <Card className="p-5 lg:col-span-3">
-          <TituloCard
-            titulo={periodo ? "Caixa do período, passo a passo" : "Caixa do mês, passo a passo"}
-            nivel={nvCaixa}
-            ajuda="A história do saldo em degraus: começa no que entrou, desce o que saiu e fecha no que sobrou. O degrau vermelho mostra o tamanho real da saída — se ele quase zera a coluna verde, o mês fechou apertado."
-          />
-          {vm.temCaixa ? (
-            <>
-              <Cascata
-                etapas={[
-                  { rotulo: "ENTROU", valor: vm.caixaReceita, tipo: "total" },
-                  { rotulo: "SAIU", valor: vm.caixaDespesa, tipo: "saida" },
-                  { rotulo: "SOBROU", valor: vm.saldoCaixa, tipo: "total" },
-                ]}
-                rotuloAcessivel="Entradas, saídas e saldo do caixa"
-              />
-              <p className="mt-1 text-xs text-tinta-suave">
-                Entrou {formatarBRL(vm.caixaReceita)}, saiu{" "}
-                {formatarBRL(vm.caixaDespesa)} — sobrou{" "}
-                <strong className="font-mono text-tinta">
-                  {formatarBRL(vm.saldoCaixa)}
-                </strong>
-                .
-              </p>
-            </>
-          ) : (
-            <p className="py-10 text-center text-sm text-tinta-suave">
-              Sem lançamentos de caixa {periodo ? "neste período" : "neste mês"}.
-            </p>
-          )}
-        </Card>
-      </div>
-
-      {/* ---------- visão rápida: medidor + rosca ---------- */}
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card className="p-5">
-          <TituloCard
-            titulo={periodo ? "Quanto do período já entrou" : "Quanto do mês já entrou"}
-            nivel={nvTaxa}
-            ajuda={`Do total que era devido ${periodo ? "no período" : "no mês"}, quanto já foi recebido. O arco traz as três zonas do semáforo desenhadas: verde a partir de 95%, âmbar de 80% a 95%, vermelho abaixo disso. Passa de 100% quando alguém quita atrasos de meses anteriores.`}
-          />
-          {vm.taxa !== null ? (
-            <>
-              <Medidor fracao={vm.taxa} rotulo="Taxa de recebimento" />
-              <p className="mt-1 text-center text-xs text-tinta-suave">
-                recebido{" "}
-                <strong className="font-mono text-tinta">
-                  {formatarBRL(vm.recebido)}
-                </strong>{" "}
-                de {formatarBRL(vm.devido)} devidos
-              </p>
-              {vm.inadValor > 0 ? (
-                <p className="mt-2 text-center text-xs text-tinta-suave">
-                  faltam {formatarBRL(vm.inadValor)} em {vm.inadQtde}{" "}
-                  cobrança(s) —{" "}
-                  <Link
-                    href={`/paineis/cobranca?${qs}`}
-                    className="font-semibold text-oliva-escura hover:underline"
-                  >
-                    ver quem falta
-                  </Link>
-                </p>
-              ) : null}
-            </>
-          ) : (
-            <p className="py-8 text-center text-sm text-tinta-suave">
-              Nada devido {periodo ? "neste período" : "neste mês"} ainda.
-            </p>
-          )}
-        </Card>
-
-        <Card className="p-5">
-          <TituloCard
-            titulo={
-              periodo
-                ? "De onde veio a comissão do período"
-                : "De onde veio a comissão do mês"
-            }
-            ajuda={`Participação de cada empreendimento na comissão ${periodo ? "do período" : "do mês"}. Mostra os 3 maiores e agrupa o resto em Outros — útil para enxergar de quem o resultado depende e o que aconteceria se aquele contrato encerrasse.`}
-          />
-          {roscaFatias.length > 0 ? (
-            <Rosca
-              fatias={roscaFatias}
-              centroTitulo="total"
-              centroValor={formatarBRL(vm.comissao).replace("R$ ", "")}
+          <Card className="p-5 min-[1180px]:col-span-8">
+            <TituloCard
+              titulo="Entradas, saídas e saldo"
+              nivel={nvCaixa}
+              ajuda="As saídas aparecem empilhadas por centro de custo e a linha azul mostra o saldo final de cada mês. Assim, a causa de qualquer aperto de caixa fica visível sem abrir outra tela."
+              direita={
+                <span className="font-mono text-[11px] text-tinta-suave">
+                  saldo em foco: <strong className="text-tinta">{formatarBRL(vm.saldoCaixa)}</strong>
+                </span>
+              }
             />
-          ) : (
-            <p className="py-8 text-center text-sm text-tinta-suave">
-              Sem comissão registrada {periodo ? "neste período" : "neste mês"}.
-            </p>
-          )}
-        </Card>
-      </div>
-
-      {/* ---------- gráficos do núcleo ---------- */}
-      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <Card className="p-5">
-          <TituloCard
-            titulo={
-              periodo
-                ? `Comissão mês a mês — ${periodo.rotulo}`
-                : "Comissão mês a mês"
-            }
-            ajuda={
-              periodo
-                ? "Cada coluna é o ganho da administradora em um mês da janela escolhida no calendário, pelo mês de lançamento da cobrança. Passe o mouse em qualquer coluna para ver o valor exato."
-                : "Cada coluna é o ganho da administradora naquele mês, pelo mês de lançamento da cobrança. A coluna com halo é o mês em tela. Passe o mouse em qualquer coluna para ver o valor exato."
-            }
-            direita={
-              <span className="font-mono text-[12px] text-tinta-suave">
-                {periodo ? "total do período:" : `total ${ano}:`}{" "}
-                <strong className="text-tinta">
-                  {formatarBRL(vm.serieComissao.reduce((a, v) => a + v, 0))}
-                </strong>
-              </span>
-            }
-          />
-          <BarrasMensais
-            valores={vm.serieComissao}
-            mesSelecionado={vm.destaque}
-            rotulos={vm.rotulos}
-          />
-          <p className="mt-2 text-xs text-tinta-suave">
-            {periodo
-              ? "O eixo mostra exatamente os meses escolhidos no calendário; a etiqueta de valor aparece no melhor mês da janela."
-              : "A coluna destacada é o mês que você está vendo; a etiqueta de valor aparece nele e no melhor mês do ano."}
-          </p>
-          <details className="mt-2 text-xs text-tinta-suave">
-            <summary className="cursor-pointer select-none">Ver dados</summary>
-            <div className="mt-2 overflow-x-auto">
-              <table className="tabela">
-                <thead>
-                  <tr>
-                    <th>Mês</th>
-                    <th className="text-right">Comissão</th>
-                    <th className="text-right">Devido</th>
-                    <th className="text-right">Recebido</th>
-                    <th className="text-right">Pendentes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {vm.linhasSerie.map((l) => (
-                    <tr key={l.rotulo}>
-                      <td>{l.rotulo}</td>
-                      <td className="text-right"><Dinheiro centavos={l.comissao} /></td>
-                      <td className="text-right"><Dinheiro centavos={l.devido} /></td>
-                      <td className="text-right"><Dinheiro centavos={l.recebido} /></td>
-                      <td className="text-right">{l.pendentes}</td>
+            {vm.caixaLinhas.some((linha) => linha.receita || linha.despesaAL || linha.despesaCH) ? (
+              <>
+                <FluxoCaixaInterativo
+                  dados={vm.caixaLinhas.map((linha) => ({
+                    rotulo: linha.rotulo,
+                    receita: linha.receita,
+                    despesaAL: linha.despesaAL,
+                    despesaCH: linha.despesaCH,
+                    saldo: linha.saldo,
+                  }))}
+                />
+                <p className="mt-2 text-xs leading-relaxed text-tinta-suave">
+                  {periodo ? "Na janela selecionada" : `Em ${nomeMes}`}, entraram {formatarBRL(vm.caixaReceita)} e saíram {formatarBRL(vm.caixaDespesa)} — saldo de{" "}
+                  <strong className="font-mono text-tinta">{formatarBRL(vm.saldoCaixa)}</strong>.
+                </p>
+              </>
+            ) : (
+              <p className="py-12 text-center text-sm text-tinta-suave">Sem lançamentos de caixa nesta janela.</p>
+            )}
+            <details className="mt-2 text-xs text-tinta-suave">
+              <summary className="cursor-pointer select-none">Ver dados do caixa</summary>
+              <div className="mt-2 overflow-x-auto">
+                <table className="tabela">
+                  <thead>
+                    <tr>
+                      <th>Mês</th>
+                      <th className="text-right">Receita</th>
+                      <th className="text-right">Despesa AL</th>
+                      <th className="text-right">Despesa CH</th>
+                      <th className="text-right">Saldo</th>
+                      <th className="text-right">Receb. dinheiro*</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </details>
-        </Card>
+                  </thead>
+                  <tbody>
+                    {vm.caixaLinhas
+                      .filter((linha) => linha.receita || linha.despesaAL || linha.despesaCH || linha.dinheiro)
+                      .map((linha) => (
+                        <tr key={linha.mes}>
+                          <td>{linha.rotulo}</td>
+                          <td className="text-right"><Dinheiro centavos={linha.receita} /></td>
+                          <td className="text-right"><Dinheiro centavos={linha.despesaAL} /></td>
+                          <td className="text-right"><Dinheiro centavos={linha.despesaCH} /></td>
+                          <td className="text-right"><Dinheiro centavos={linha.saldo} destaque /></td>
+                          <td className="text-right"><Dinheiro centavos={linha.dinheiro} /></td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+                <p className="mt-1 text-[11px] text-tinta-suave">* registro paralelo de espécie — não entra no saldo.</p>
+              </div>
+            </details>
+          </Card>
 
-        <Card className="p-5">
-          <TituloCard
-            titulo="Devido × Recebido"
-            ajuda="Lado a lado, mês a mês: a coluna ocre é o que era para entrar, a verde é o que entrou. Verde menor que ocre = mês com pendência. Verde maior = alguém quitou atraso de outro mês ali."
-            direita={
-              <Legenda
-                itens={[
-                  { cor: COR_2, nome: "Devido" },
-                  { cor: COR_1, nome: "Recebido" },
-                ]}
-              />
-            }
-          />
-          <BarrasDuplas
-            serieA={vm.serieDevido}
-            serieB={vm.serieRecebido}
-            nomeA="Devido"
-            nomeB="Recebido"
-            corA={COR_2}
-            corB={COR_1}
-            mesSelecionado={vm.destaque}
-            rotulos={vm.rotulos}
-          />
-          <p className="mt-2 text-xs text-tinta-suave">
-            Recebido acima do devido indica atrasos quitados no mês; abaixo,
-            inadimplência ou pagamentos parciais.
-          </p>
-        </Card>
-      </div>
+          <Card className="p-5 min-[1180px]:col-span-4">
+            <TituloCard
+              titulo={periodo ? "Origem da comissão no período" : "Origem da comissão no mês"}
+              ajuda="Composição da comissão pelos maiores empreendimentos. Passe o cursor ou navegue pela lista para destacar uma fatia e enxergar valor e participação."
+            />
+            <ComposicaoComissao fatias={roscaFatias} total={vm.comissao} />
+          </Card>
+        </div>
+      </section>
 
       {/* ---------- mapa de calor: quem rendeu, quando ---------- */}
       {linhasMapa.length > 1 ? (
@@ -1040,74 +984,6 @@ export default async function PaginaExecutivo({
             </tfoot>
           </table>
         </div>
-      </Card>
-
-      {/* ---------- caixa ---------- */}
-      <Card className="mt-4 p-5">
-        <TituloCard
-          titulo="Caixa — receita × despesas por centro"
-          nivel={nvCaixa}
-          ajuda="Mês a mês: a coluna verde é quanto entrou no livro-caixa; a coluna ao lado empilha as saídas dos dois centros de custo (Antonio/Laura embaixo, Chácara Brisa em cima). Mês saudável é aquele em que o verde supera a pilha."
-          direita={
-            <Legenda
-              itens={[
-                { cor: COR_1, nome: "Receita (entradas)" },
-                { cor: COR_SAIDA, nome: "Despesa Antonio/Laura" },
-                { cor: COR_SAIDA_2, nome: "Despesa Chácara Brisa" },
-              ]}
-            />
-          }
-        />
-        <BarrasCaixa
-          receita={vm.caixaLinhas.map((c) => c.receita)}
-          despesaAL={vm.caixaLinhas.map((c) => c.despesaAL)}
-          despesaCH={vm.caixaLinhas.map((c) => c.despesaCH)}
-          rotulos={vm.rotulos}
-        />
-        <p className="mt-2 text-xs text-tinta-suave">
-          Verde = quanto entrou; a pilha ocre + índigo = quanto saiu em cada
-          centro. Mês bom é o verde maior que a pilha.
-        </p>
-        <details className="mt-2 text-xs text-tinta-suave">
-          <summary className="cursor-pointer select-none">Ver dados</summary>
-          <div className="mt-2 overflow-x-auto">
-            <table className="tabela">
-              <thead>
-                <tr>
-                  <th>Mês</th>
-                  <th className="text-right">Receita</th>
-                  <th className="text-right">Despesa AL</th>
-                  <th className="text-right">Despesa CH</th>
-                  <th className="text-right">Saldo</th>
-                  <th className="text-right">Receb. dinheiro*</th>
-                </tr>
-              </thead>
-              <tbody>
-                {vm.caixaLinhas
-                  .filter(
-                    (c) =>
-                      c.receita > 0 ||
-                      c.despesaAL > 0 ||
-                      c.despesaCH > 0 ||
-                      c.dinheiro > 0
-                  )
-                  .map((c) => (
-                    <tr key={c.mes}>
-                      <td>{c.rotulo}</td>
-                      <td className="text-right"><Dinheiro centavos={c.receita} /></td>
-                      <td className="text-right"><Dinheiro centavos={c.despesaAL} /></td>
-                      <td className="text-right"><Dinheiro centavos={c.despesaCH} /></td>
-                      <td className="text-right"><Dinheiro centavos={c.saldo} destaque /></td>
-                      <td className="text-right"><Dinheiro centavos={c.dinheiro} /></td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-            <p className="mt-1 text-[11px] text-tinta-suave">
-              * registro paralelo de espécie — não entra no saldo.
-            </p>
-          </div>
-        </details>
       </Card>
 
       {/* ---------- listas operacionais ---------- */}
@@ -1267,8 +1143,6 @@ export default async function PaginaExecutivo({
   );
 }
 
-/** wrapper para import dinâmico do sparkline (mantém page enxuta) */
-import { Sparkline } from "@/components/graficos";
 function BarraSparkline({
   valores,
   rotulos,

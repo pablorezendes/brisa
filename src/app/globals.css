@@ -1,20 +1,20 @@
 @import "tailwindcss";
 
-/* Design system "Paper & Ink Editorial" (stile/DESIGN.md):
-   papel quente, tinta azul-preta, oliva como ação, flat com bordas de 1px,
-   serifa (Source Serif 4) em títulos, Public Sans no corpo, JetBrains Mono
-   em dados. Sem sombras, sem gradientes, sem pílulas. */
+/* Design system Brisa 2026 — operação imobiliária clara e precisa.
+   A navegação escura cria orientação; o plano de trabalho claro preserva
+   legibilidade e densidade. Verde-petróleo identifica a marca, enquanto as
+   cores de estado aparecem apenas onde carregam significado. */
 :root {
-  --papel: #faf7f1; /* fundo da página */
-  --carta: #fdfbf8; /* superfície de cards */
-  --tinta: #1c2430; /* texto principal */
-  --tinta-suave: #444840; /* texto secundário */
-  --contorno: #e5e1d8; /* bordas estruturais */
-  --contorno-forte: #75786f;
-  --oliva: #5e6e52; /* ação primária */
-  --oliva-escura: #46563b;
-  --erro: #ba1a1a; /* terracota */
-  --ambar: #b3801a;
+  --papel: #f3f6f7; /* fundo do plano de trabalho */
+  --carta: #ffffff; /* superfície de cards */
+  --tinta: #17282c; /* texto principal */
+  --tinta-suave: #657579; /* texto secundário */
+  --contorno: #dce4e6; /* bordas estruturais */
+  --contorno-forte: #9aa9ac;
+  --oliva: #347c69; /* ação primária Brisa */
+  --oliva-escura: #245f51;
+  --erro: #c83c48;
+  --ambar: #b67818;
   --background: var(--papel);
   --foreground: var(--tinta);
 
@@ -24,7 +24,7 @@
   --sem-otimo: var(--oliva);
   --sem-atencao: var(--ambar);
   --sem-critico: var(--erro);
-  --sem-info: #4a68a8; /* índigo da paleta de dados */
+  --sem-info: #3579b9;
   --sem-neutro: var(--contorno-forte);
 }
 
@@ -59,14 +59,60 @@ body {
   color: var(--tinta);
   font-family: var(--font-public-sans), Arial, Helvetica, sans-serif;
   overflow-x: hidden;
+  font-feature-settings: "ss01" 1, "cv02" 1, "cv03" 1;
 }
 
-/* títulos editoriais em serifa */
+/* Interface: títulos limpos e compactos. A serifa fica restrita a contextos
+   explicitamente marcados com `font-serif` (marca e peças editoriais). */
 h1,
 h2,
 h3 {
-  font-family: var(--font-source-serif), Georgia, serif;
-  letter-spacing: -0.01em;
+  font-family: var(--font-public-sans), Arial, Helvetica, sans-serif;
+  letter-spacing: -0.025em;
+}
+
+button,
+a,
+input,
+select,
+textarea,
+summary {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a,
+summary {
+  outline-offset: 3px;
+}
+
+::selection {
+  background: #cce7df;
+  color: #153b33;
+}
+
+/* As páginas antigas trazem limites editoriais diferentes. Dentro do novo
+   shell todas usam a mesma largura fluida, alinhada ao viewport disponível. */
+.app-content > div {
+  width: 100%;
+  max-width: 100%;
+}
+
+.login-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(to bottom right, black 8%, transparent 72%);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #aab8ba transparent;
+}
+
+*:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--oliva) 55%, transparent);
 }
 
 /* ---------------------------------------------------------------------------
@@ -76,19 +122,19 @@ h3 {
    Os valores são os pigmentos editoriais sobre papel (stile/DESIGN.md).
 --------------------------------------------------------------------------- */
 :root {
-  --g-tinta: #1c2430; /* texto forte do gráfico */
-  --g-rotulo: #444840; /* rótulos de eixo */
-  --g-eixo: #75786f; /* espinha e marcas */
-  --g-grade: #e5e1d8; /* grade recessiva */
-  --g-carta: #fdfbf8; /* fundo de tooltip / miolo de ponto */
-  --g-s1: #4f7a33; /* dinheiro que ENTRA */
-  --g-s1-forte: #33511f;
-  --g-s2: #b3801a; /* o que era DEVIDO */
-  --g-s3: #4a68a8; /* série neutra */
-  --g-saida: #ba1a1a; /* dinheiro que SAI */
-  --g-saida-2: #7a1f1f;
-  --g-mapa-de: #eef2e4; /* extremos da rampa do mapa de calor */
-  --g-mapa-para: #33511f;
+  --g-tinta: #17282c;
+  --g-rotulo: #657579;
+  --g-eixo: #aebabc;
+  --g-grade: #e7edef;
+  --g-carta: #ffffff;
+  --g-s1: #347c69;
+  --g-s1-forte: #245f51;
+  --g-s2: #d38a24;
+  --g-s3: #3579b9;
+  --g-saida: #c83c48;
+  --g-saida-2: #8f2630;
+  --g-mapa-de: #e9f3f0;
+  --g-mapa-para: #245f51;
 }
 
 
@@ -288,26 +334,27 @@ h3 {
 /* tabelas: sem bordas verticais, réguas horizontais sutis,
    cabeçalho em serifa (qualidade de "relatório editorial") */
 .tabela {
-  @apply w-full text-sm;
+  @apply w-full text-[13px];
 }
 .tabela th {
-  @apply px-3 py-2.5 text-left text-[13px] font-medium whitespace-nowrap;
-  font-family: var(--font-source-serif), Georgia, serif;
+  @apply px-3 py-3 text-left text-[10px] font-bold whitespace-nowrap uppercase tracking-[0.08em];
+  font-family: var(--font-public-sans), Arial, sans-serif;
   color: var(--tinta-suave);
-  border-bottom: 1px solid var(--tinta);
+  border-bottom: 1px solid var(--contorno);
+  background: #f8fafb;
 }
 .tabela td {
-  @apply px-3 py-2 whitespace-nowrap;
-  border-bottom: 1px solid color-mix(in srgb, var(--contorno) 60%, transparent);
+  @apply px-3 py-3 whitespace-nowrap;
+  border-bottom: 1px solid color-mix(in srgb, var(--contorno) 72%, transparent);
 }
 .tabela tbody tr:hover {
-  background: #f5f3ef;
+  background: #f6f9f9;
 }
 .tabela tfoot td {
   @apply font-semibold;
-  border-top: 2px solid var(--tinta);
+  border-top: 1px solid var(--contorno-forte);
   border-bottom: none;
-  background: transparent;
+  background: #fbfcfc;
 }
 
 /* "i" de informação — o mesmo botão em todo card, cabeçalho e coluna.
@@ -315,10 +362,11 @@ h3 {
    itálico para ler como "informação" mesmo em 16px; a cor fica reservada
    ao semáforo. */
 .dica {
-  @apply relative inline-flex h-4 w-4 shrink-0 cursor-help items-center justify-center rounded-full border align-middle text-[11px] font-bold leading-none;
-  font-family: var(--font-source-serif), Georgia, serif;
-  font-style: italic;
-  border-color: var(--contorno-forte);
+  @apply relative inline-flex h-4 w-4 shrink-0 cursor-help items-center justify-center rounded-full border align-middle text-[10px] font-bold leading-none;
+  font-family: var(--font-public-sans), Arial, sans-serif;
+  font-style: normal;
+  border-color: var(--contorno);
+  background: #f6f8f9;
   color: var(--tinta-suave);
   transition:
     border-color 0.15s ease,
@@ -326,8 +374,8 @@ h3 {
 }
 .dica:hover,
 .dica:focus-visible {
-  border-color: var(--tinta);
-  color: var(--tinta);
+  border-color: var(--oliva);
+  color: var(--oliva-escura);
   outline: none;
 }
 
@@ -343,9 +391,10 @@ h3 {
   width: max-content;
   max-width: min(288px, calc(100vw - 2rem));
   padding: 10px 12px;
-  background: var(--carta);
-  border: 1px solid var(--tinta);
-  color: var(--tinta);
+  background: #102326;
+  border: 1px solid #294448;
+  border-radius: 8px;
+  color: #edf5f3;
   font-family: var(--font-public-sans), sans-serif;
   font-size: 12px;
   font-style: normal;
@@ -355,14 +404,22 @@ h3 {
   letter-spacing: normal;
   white-space: normal;
   text-align: left;
-  z-index: 50;
+  z-index: 60;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.12s ease;
+  box-shadow: 0 10px 24px rgba(10, 28, 31, 0.18);
+  transition: opacity 0.12s ease, transform 0.12s ease;
 }
 .dica:hover .dica-balao,
 .dica:focus-visible .dica-balao {
   opacity: 1;
+}
+
+.status-badge {
+  --status-cor: var(--contorno-forte);
+  color: color-mix(in srgb, var(--status-cor) 72%, var(--tinta));
+  border-color: color-mix(in srgb, var(--status-cor) 28%, var(--contorno));
+  background: color-mix(in srgb, var(--status-cor) 8%, white);
 }
 
 /* Dentro de tabelas com rolagem horizontal o contêiner recorta os dois eixos
@@ -465,5 +522,7 @@ h3 {
    corta filho nenhum. */
 .card-sem {
   position: relative;
-  box-shadow: inset 3px 0 0 0 var(--sem-cor, transparent);
+  box-shadow:
+    inset 3px 0 0 0 var(--sem-cor, transparent),
+    0 1px 2px rgba(16, 35, 38, 0.035);
 }

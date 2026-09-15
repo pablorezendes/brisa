@@ -1748,17 +1748,27 @@ export function Cascata({
   const n = etapas.length;
   if (n === 0) return null;
 
-  // acumula para posicionar cada degrau
-  let corrente = 0;
-  const barras = etapas.map((e) => {
-    if (e.tipo === "total") {
-      corrente = e.valor;
-      return { ...e, de: 0, ate: e.valor };
-    }
-    const de = corrente;
-    corrente = corrente - Math.abs(e.valor);
-    return { ...e, de: corrente, ate: de };
-  });
+  // acumula para posicionar cada degrau sem mutação durante a renderização
+  const barras = etapas.reduce<{
+    corrente: number;
+    itens: Array<(typeof etapas)[number] & { de: number; ate: number }>;
+  }>(
+    (acumulado, etapa) => {
+      if (etapa.tipo === "total") {
+        return {
+          corrente: etapa.valor,
+          itens: [...acumulado.itens, { ...etapa, de: 0, ate: etapa.valor }],
+        };
+      }
+      const de = acumulado.corrente;
+      const ate = de - Math.abs(etapa.valor);
+      return {
+        corrente: ate,
+        itens: [...acumulado.itens, { ...etapa, de: ate, ate: de }],
+      };
+    },
+    { corrente: 0, itens: [] }
+  ).itens;
 
   const teto = Math.max(...barras.map((b) => Math.max(b.de, b.ate)), 1);
   const { max, ticks } = escalaAgradavel(teto);

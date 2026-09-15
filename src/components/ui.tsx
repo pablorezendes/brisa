@@ -22,7 +22,7 @@ function BotaoSigilo() {
       <label
         htmlFor="ver-valores"
         title="Mostrar ou ocultar os valores da tela"
-        className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-contorno bg-carta px-2.5 text-[11px] font-bold uppercase tracking-[0.06em] text-tinta-suave transition-colors hover:border-tinta hover:text-tinta"
+        className="flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-contorno bg-carta px-3 text-[11px] font-semibold text-tinta-suave shadow-[0_1px_2px_rgba(16,35,38,0.03)] transition-all hover:border-[#aebabc] hover:bg-[#f8fafb] hover:text-tinta focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oliva/25"
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path
@@ -57,14 +57,18 @@ export function PageHeader({
   acoes?: React.ReactNode;
 }) {
   return (
-    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+    <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
       <div className="min-w-0">
-        <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{titulo}</h1>
+        <div className="mb-1.5 flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.18em] text-oliva">
+          <span className="h-1.5 w-1.5 rounded-sm bg-oliva" />
+          Painel de gestão
+        </div>
+        <h1 className="text-[26px] font-bold leading-tight tracking-[-0.035em] text-tinta sm:text-[30px]">{titulo}</h1>
         {descricao ? (
-          <p className="mt-1 text-sm text-tinta-suave">{descricao}</p>
+          <p className="mt-1.5 max-w-3xl text-[13px] leading-relaxed text-tinta-suave">{descricao}</p>
         ) : null}
       </div>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
         <BotaoSigilo />
         {acoes}
       </div>
@@ -87,7 +91,7 @@ export function Card({
   const est = nivel && nivel !== "neutro" ? NIVEL[nivel] : null;
   return (
     <div
-      className={`rounded-lg border border-contorno bg-carta ${est ? "card-sem" : ""} ${className}`}
+      className={`rounded-xl border border-contorno bg-carta shadow-[0_1px_2px_rgba(16,35,38,0.035)] ${est ? "card-sem" : ""} ${className}`}
       style={{
         ...(est ? ({ "--sem-cor": est.cor } as React.CSSProperties) : {}),
         ...style,
@@ -127,7 +131,7 @@ export function Ponto({ nivel, titulo }: { nivel: Nivel; titulo?: string }) {
   const est = NIVEL[nivel];
   return (
     <span
-      className="inline-block h-2 w-2 shrink-0 rounded-full align-middle"
+      className="inline-block h-2 w-2 shrink-0 rounded-full align-middle ring-2 ring-white"
       style={{ background: est.cor }}
       title={titulo ?? est.rotulo}
       aria-label={titulo ?? est.rotulo}
@@ -154,7 +158,10 @@ export function Selo({
   void icone;
   const est = NIVEL[nivel];
   return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.09em] text-tinta-suave">
+    <span
+      className="status-badge inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-tinta-suave"
+      style={{ "--status-cor": est.cor } as React.CSSProperties}
+    >
       <Ponto nivel={nivel} />
       {children ?? est.rotulo}
     </span>
@@ -259,7 +266,7 @@ export function Kpi({
   const conteudo = (
     <>
       <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-tinta-suave">
+        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.095em] text-tinta-suave">
           {rotulo}
           {ajuda ? <Ajuda dica={ajuda} /> : null}
         </div>
@@ -268,10 +275,10 @@ export function Kpi({
         ) : null}
       </div>
       <div
-        className={`mt-2 font-serif font-semibold tabular-nums text-tinta ${
+        className={`mt-2 font-sans font-bold tabular-nums tracking-[-0.035em] text-tinta ${
           destaque
-            ? "text-2xl sm:text-[34px] sm:leading-tight"
-            : "text-xl sm:text-[26px] sm:leading-tight"
+            ? "text-[27px] leading-tight sm:text-[31px]"
+            : "text-2xl leading-tight sm:text-[27px]"
         }`}
       >
         <span className="sigilo">
@@ -279,7 +286,7 @@ export function Kpi({
         </span>
       </div>
       {secundario ? (
-        <div className="mt-1.5 flex items-baseline gap-1.5 border-t border-contorno/70 pt-1.5 text-[11px] text-tinta-suave">
+        <div className="mt-2 flex items-baseline gap-1.5 border-t border-contorno/70 pt-2 text-[10px] text-tinta-suave">
           <span className="font-bold uppercase tracking-[0.06em]">
             {secundario.rotulo}
           </span>
@@ -292,13 +299,13 @@ export function Kpi({
       ) : null}
       {variacao ? <div className="mt-1.5">{variacao}</div> : null}
       {detalhe ? (
-        <div className="mt-1.5 text-xs leading-snug text-tinta-suave">
+        <div className="mt-1.5 text-[11px] leading-snug text-tinta-suave">
           {detalhe}
         </div>
       ) : null}
       {grafico ? <div className="mt-3">{grafico}</div> : null}
       {nota && est ? (
-        <div className="mt-3 flex items-start gap-1.5 border-t border-contorno pt-2 text-[11px] font-medium leading-snug text-tinta-suave">
+        <div className="mt-3 flex items-start gap-2 border-t border-contorno pt-2.5 text-[11px] font-medium leading-snug text-tinta-suave">
           <span aria-hidden="true" className="mt-[3px]">
             <Ponto nivel={nivel!} />
           </span>
@@ -308,8 +315,8 @@ export function Kpi({
     </>
   );
 
-  const classe = `px-4 py-4 transition-colors sm:px-5 ${
-    href ? "block rounded-lg hover:bg-[#efeee9]" : ""
+  const classe = `px-4 py-4 transition-all sm:px-5 ${
+    href ? "group block rounded-xl hover:bg-[#f8fafb]" : ""
   }`;
 
   if (href) {
@@ -391,7 +398,7 @@ export function Alerta({ item }: { item: ItemAlerta }) {
   const est = NIVEL[item.nivel];
   return (
     <div
-      className="flex items-start gap-3 rounded border border-contorno px-3.5 py-2.5"
+      className="flex items-start gap-3 rounded-lg border border-contorno bg-[#fbfcfc] px-3.5 py-3"
       style={{ borderLeft: `3px solid ${est.cor}` }}
     >
       <span aria-hidden="true" className="mt-[5px]">
@@ -439,7 +446,7 @@ export function PainelAlertas({
   const atencoes = ordenados.filter((i) => i.nivel === "atencao").length;
 
   return (
-    <Card className="mb-6 px-5 py-3.5">
+    <Card className="mb-5 px-5 py-3.5">
       {/* dobrado por padrão: o resumo já diz QUANTO pede atenção, e o detalhe
           só aparece a pedido — a tela abre com menos texto na frente */}
       <details className="bloco-dobra">
@@ -481,7 +488,7 @@ export function PainelAlertas({
         <div className="mt-3">
           {ordenados.length === 0 ? (
             <div
-              className="flex items-center gap-3 rounded border border-contorno px-3.5 py-2.5 text-[13px] text-tinta"
+              className="flex items-center gap-3 rounded-lg border border-contorno bg-[#fbfcfc] px-3.5 py-2.5 text-[13px] text-tinta"
               style={{ borderLeft: `3px solid ${NIVEL.otimo.cor}` }}
             >
               <Ponto nivel="otimo" titulo="tudo em dia" />
@@ -530,11 +537,11 @@ export function BuscaCard({
         defaultValue={valor ?? ""}
         placeholder={placeholder}
         aria-label={placeholder}
-        className={`${inputBase} h-8 w-44 py-0 text-[12px]`}
+        className={`${inputBase} h-9 w-48 py-0 text-[12px]`}
       />
       <button
         type="submit"
-        className="h-8 rounded-lg border border-contorno bg-carta px-2.5 text-[11px] font-bold uppercase tracking-[0.06em] text-tinta-suave transition-colors hover:border-tinta hover:text-tinta"
+        className="h-9 rounded-lg border border-contorno bg-carta px-3 text-[11px] font-semibold text-tinta-suave transition-colors hover:border-[#aebabc] hover:bg-[#f8fafb] hover:text-tinta"
       >
         Buscar
       </button>
@@ -574,8 +581,8 @@ export function TituloCard({
   direita?: React.ReactNode;
 }) {
   return (
-    <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-      <h2 className="flex items-center gap-1.5 font-serif text-[15px] font-semibold text-tinta">
+    <div className="mb-3.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+      <h2 className="flex items-center gap-1.5 text-[14px] font-bold tracking-[-0.015em] text-tinta">
         {nivel && nivel !== "neutro" ? <Ponto nivel={nivel} /> : null}
         {titulo}
         {ajuda ? <Ajuda dica={ajuda} /> : null}
@@ -642,7 +649,7 @@ export function LinkCard({
   return (
     <Link
       href={href}
-      className="whitespace-nowrap text-[12px] font-bold text-oliva-escura hover:underline"
+      className="whitespace-nowrap text-[11px] font-semibold text-oliva-escura hover:text-oliva hover:underline"
     >
       {children} →
     </Link>
@@ -660,13 +667,13 @@ export function SeletorMes({ base, mes }: { base: string; mes: string }) {
   const proximo =
     m === 12 ? fmtCompetencia(ano + 1, 1) : fmtCompetencia(ano, m + 1);
   const seta =
-    "flex h-8 w-8 items-center justify-center rounded-lg border border-contorno bg-carta text-tinta-suave transition-colors hover:border-tinta hover:text-tinta";
+    "flex h-9 w-9 items-center justify-center rounded-lg border border-contorno bg-carta text-tinta-suave shadow-[0_1px_2px_rgba(16,35,38,0.03)] transition-colors hover:border-[#aebabc] hover:bg-[#f8fafb] hover:text-tinta";
   return (
     <div className="flex items-center gap-1.5 text-sm">
       <Link href={`${base}?mes=${anterior}`} className={seta} aria-label="Mês anterior">
         ‹
       </Link>
-      <span className="min-w-24 rounded-lg border border-contorno bg-carta px-3 py-1.5 text-center font-mono text-[13px] font-bold uppercase tracking-wider">
+      <span className="flex h-9 min-w-24 items-center justify-center rounded-lg border border-contorno bg-carta px-3 text-center font-mono text-[12px] font-bold uppercase tracking-wider shadow-[0_1px_2px_rgba(16,35,38,0.03)]">
         {formatarCompetencia(mes)}
       </span>
       <Link href={`${base}?mes=${proximo}`} className={seta} aria-label="Próximo mês">
@@ -723,7 +730,7 @@ export function SeletorPeriodo({
       ) : null}
       <details className="relative">
         <summary
-          className="flex h-8 cursor-pointer select-none items-center gap-1.5 rounded-lg border border-contorno bg-carta px-2.5 text-[12px] font-bold text-tinta-suave transition-colors hover:border-tinta hover:text-tinta [&::-webkit-details-marker]:hidden"
+          className="flex h-9 cursor-pointer select-none items-center gap-1.5 rounded-lg border border-contorno bg-carta px-3 text-[11px] font-semibold text-tinta-suave shadow-[0_1px_2px_rgba(16,35,38,0.03)] transition-colors hover:border-[#aebabc] hover:bg-[#f8fafb] hover:text-tinta [&::-webkit-details-marker]:hidden"
           aria-label="Escolher período no calendário"
         >
           <CalendarioIcone />
@@ -812,8 +819,8 @@ function CalendarioIcone() {
 }
 
 export const btnPrimario =
-  "inline-flex items-center gap-1.5 rounded-lg bg-oliva px-3 py-1.5 text-sm font-semibold text-white hover:bg-oliva-escura disabled:opacity-50";
+  "inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-oliva px-3.5 py-2 text-[13px] font-semibold text-white shadow-[0_1px_2px_rgba(20,73,60,0.2)] transition-all hover:bg-oliva-escura focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oliva/30 disabled:opacity-50";
 export const btnSecundario =
-  "inline-flex items-center gap-1.5 rounded-lg border border-tinta bg-transparent px-3 py-1.5 text-sm font-semibold text-tinta hover:bg-[#efeee9] disabled:opacity-50";
+  "inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-contorno bg-carta px-3.5 py-2 text-[13px] font-semibold text-tinta shadow-[0_1px_2px_rgba(16,35,38,0.03)] transition-all hover:border-[#aebabc] hover:bg-[#f8fafb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oliva/20 disabled:opacity-50";
 export const inputBase =
-  "rounded-lg border border-contorno bg-carta px-2.5 py-1.5 font-mono text-sm text-tinta focus:outline-none focus:border-tinta focus:ring-1 focus:ring-tinta";
+  "min-h-10 rounded-lg border border-contorno bg-carta px-3 py-2 text-[13px] text-tinta shadow-[0_1px_2px_rgba(16,35,38,0.025)] transition-colors placeholder:text-[#9aa8ab] focus:border-oliva focus:outline-none focus:ring-2 focus:ring-oliva/12";
