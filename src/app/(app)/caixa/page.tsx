@@ -23,6 +23,7 @@ import {
   Selo,
   SeletorMes,
   SeletorPeriodo,
+  Sigilo,
   btnPrimario,
   btnSecundario,
 } from "@/components/ui";
@@ -381,11 +382,9 @@ export default async function PaginaCaixa({
               </Selo>
             </div>
             <div className="mt-1 font-serif text-3xl font-semibold tabular-nums text-tinta sm:text-[40px] sm:leading-tight">
-              <span className="sigilo">
-                <span>
-                  <Dinheiro centavos={consolidacao.saldo} destaque />
-                </span>
-              </span>
+              <Sigilo>
+                <Dinheiro centavos={consolidacao.saldo} destaque />
+              </Sigilo>
             </div>
             <div className="mt-1 text-xs text-tinta-suave">
               receita − despesa AL − despesa CH

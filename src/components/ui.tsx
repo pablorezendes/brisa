@@ -18,11 +18,11 @@ import { NIVEL, PESO_NIVEL, type Nivel } from "@/lib/dominio/semaforo";
 function BotaoSigilo() {
   return (
     <>
-      <input type="checkbox" id="ver-valores" className="sr-only" />
+      <input type="checkbox" id="ver-valores" className="peer sr-only" />
       <label
         htmlFor="ver-valores"
         title="Mostrar ou ocultar os valores da tela"
-        className="flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-contorno bg-carta px-3 text-[11px] font-semibold text-tinta-suave shadow-[0_1px_2px_rgba(16,35,38,0.03)] transition-all hover:border-[#aebabc] hover:bg-[#f8fafb] hover:text-tinta focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oliva/25"
+        className="flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-contorno bg-carta px-3 text-[11px] font-semibold text-tinta-suave shadow-[0_1px_2px_rgba(16,35,38,0.03)] transition-all hover:border-[#aebabc] hover:bg-[#f8fafb] hover:text-tinta peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-oliva/30"
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path
@@ -40,7 +40,7 @@ function BotaoSigilo() {
           />
         </svg>
         <span className="olho-velado">Ver valores</span>
-        <span className="olho-revelado">Ocultar</span>
+        <span className="olho-revelado">Ocultar valores</span>
       </label>
     </>
   );
@@ -118,6 +118,16 @@ export function Dinheiro({
       }`}
     >
       {formatarBRL(centavos)}
+    </span>
+  );
+}
+
+/** Mantém números sensíveis velados até o controle "Ver valores" ser ativado. */
+export function Sigilo({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="sigilo">
+      <span className="valor-sigilo-status sr-only">Valor oculto</span>
+      <span className="valor-sigilo-real">{children}</span>
     </span>
   );
 }
@@ -243,7 +253,7 @@ export function Kpi({
 }: {
   rotulo: string;
   valor: React.ReactNode;
-  detalhe?: string;
+  detalhe?: React.ReactNode;
   variacao?: React.ReactNode;
   /** explicação da métrica em linguagem simples (vira o "i" com tooltip) */
   ajuda?: string;
@@ -281,9 +291,7 @@ export function Kpi({
             : "text-2xl leading-tight sm:text-[27px]"
         }`}
       >
-        <span className="sigilo">
-          <span>{valor}</span>
-        </span>
+        <Sigilo>{valor}</Sigilo>
       </div>
       {secundario ? (
         <div className="mt-2 flex items-baseline gap-1.5 border-t border-contorno/70 pt-2 text-[10px] text-tinta-suave">
@@ -291,9 +299,7 @@ export function Kpi({
             {secundario.rotulo}
           </span>
           <span className="font-mono font-semibold tabular-nums text-tinta">
-            <span className="sigilo">
-              <span>{secundario.valor}</span>
-            </span>
+            <Sigilo>{secundario.valor}</Sigilo>
           </span>
         </div>
       ) : null}
@@ -386,7 +392,7 @@ export interface ItemAlerta {
   nivel: Nivel;
   titulo: string;
   /** o que está acontecendo e o que fazer, em uma frase */
-  texto: string;
+  texto: React.ReactNode;
   acao?: { rotulo: string; href: string };
 }
 

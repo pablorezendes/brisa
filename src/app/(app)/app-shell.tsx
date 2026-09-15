@@ -2,109 +2,120 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { IconeMenu, type IconeMenuNome } from "@/components/icones-menu";
 
-type IconeNome =
-  | "inicio"
-  | "executivo"
-  | "recebimentos"
-  | "contratos"
-  | "temporada"
-  | "caixa"
-  | "cobranca"
-  | "empreendimentos"
-  | "analitico"
-  | "calendario"
-  | "relatorios"
-  | "ajuda";
+type ItemMenu = {
+  tipo: "link";
+  href: string;
+  rotulo: string;
+  icone?: IconeMenuNome;
+  correspondencia?: "exata" | "prefixo";
+};
 
-const MENU: {
-  titulo: string;
-  itens: { href: string; rotulo: string; icone: IconeNome }[];
-}[] = [
+type ModuloMenu = {
+  tipo: "modulo";
+  id: string;
+  rotulo: string;
+  icone: IconeMenuNome;
+  itens: ItemMenu[];
+};
+
+type EntradaMenu = ItemMenu | ModuloMenu;
+
+const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
   {
     titulo: "Visão",
     itens: [
-      { href: "/", rotulo: "Visão geral", icone: "inicio" },
-      { href: "/executivo", rotulo: "Executivo", icone: "executivo" },
+      { tipo: "link", href: "/", rotulo: "Visão geral", icone: "inicio", correspondencia: "exata" },
+      { tipo: "link", href: "/executivo", rotulo: "Executivo", icone: "executivo" },
     ],
   },
   {
-    titulo: "Operação",
+    titulo: "Módulos",
     itens: [
-      { href: "/recebimentos", rotulo: "Recebimentos", icone: "recebimentos" },
-      { href: "/contratos", rotulo: "Contratos", icone: "contratos" },
-      { href: "/temporada", rotulo: "Temporada", icone: "temporada" },
-      { href: "/caixa", rotulo: "Caixa", icone: "caixa" },
-    ],
-  },
-  {
-    titulo: "Análise",
-    itens: [
-      { href: "/paineis/cobranca", rotulo: "Cobrança", icone: "cobranca" },
       {
-        href: "/paineis/empreendimentos",
-        rotulo: "Empreendimentos",
-        icone: "empreendimentos",
+        tipo: "modulo",
+        id: "cadastros",
+        rotulo: "Cadastros",
+        icone: "cadastros",
+        itens: [
+          { tipo: "link", href: "/cadastros", rotulo: "Visão cadastral", correspondencia: "exata" },
+          { tipo: "link", href: "/cadastros/empreendimentos", rotulo: "Empreendimentos", icone: "empreendimentos" },
+          { tipo: "link", href: "/cadastros/unidades", rotulo: "Imóveis e unidades", icone: "unidades" },
+          { tipo: "link", href: "/cadastros/locatarios", rotulo: "Inquilinos", icone: "locatarios" },
+          { tipo: "link", href: "/contratos", rotulo: "Contratos", icone: "contratos" },
+        ],
       },
-      { href: "/paineis/caixa", rotulo: "Caixa analítico", icone: "analitico" },
       {
-        href: "/paineis/temporada",
-        rotulo: "Temporada anual",
-        icone: "calendario",
+        tipo: "modulo",
+        id: "financeiro",
+        rotulo: "Financeiro",
+        icone: "financeiro",
+        itens: [
+          { tipo: "link", href: "/financeiro", rotulo: "Visão financeira", correspondencia: "exata" },
+          { tipo: "link", href: "/recebimentos", rotulo: "Contas a receber", icone: "recebimentos" },
+          { tipo: "link", href: "/paineis/cobranca", rotulo: "Cobrança e atrasos", icone: "cobranca" },
+          { tipo: "link", href: "/relatorios/inadimplencia", rotulo: "Relatório de inadimplência", icone: "relatorios" },
+          { tipo: "link", href: "/caixa", rotulo: "Movimentações de caixa", icone: "caixa" },
+          { tipo: "link", href: "/relatorios/comissao", rotulo: "Comissões", icone: "comissoes" },
+        ],
       },
-      { href: "/relatorios", rotulo: "Relatórios", icone: "relatorios" },
+      {
+        tipo: "modulo",
+        id: "temporada",
+        rotulo: "Temporada",
+        icone: "temporada",
+        itens: [
+          { tipo: "link", href: "/temporada", rotulo: "Operação mensal", icone: "calendario", correspondencia: "exata" },
+          { tipo: "link", href: "/temporada/historico", rotulo: "Histórico", icone: "historico" },
+        ],
+      },
+      {
+        tipo: "modulo",
+        id: "analises",
+        rotulo: "Análises",
+        icone: "analises",
+        itens: [
+          { tipo: "link", href: "/relatorios", rotulo: "Central de relatórios", icone: "relatorios", correspondencia: "exata" },
+          { tipo: "link", href: "/relatorios/resultado", rotulo: "Resultado por unidade", icone: "performance" },
+          { tipo: "link", href: "/paineis/empreendimentos", rotulo: "Performance por imóvel", icone: "empreendimentos" },
+          { tipo: "link", href: "/paineis/caixa", rotulo: "Análise de caixa", icone: "analitico" },
+          { tipo: "link", href: "/paineis/temporada", rotulo: "Temporada anual", icone: "calendario" },
+        ],
+      },
     ],
   },
   {
     titulo: "Suporte",
-    itens: [{ href: "/ajuda", rotulo: "Como funciona", icone: "ajuda" }],
+    itens: [
+      { tipo: "link", href: "/ajuda", rotulo: "Como funciona", icone: "ajuda" },
+    ],
   },
 ];
 
-function Icone({ nome, className = "" }: { nome: IconeNome; className?: string }) {
-  const comum = {
-    width: 18,
-    height: 18,
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 1.8,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-    "aria-hidden": true,
-    className,
-  };
+const ITENS_COM_CONTEXTO = MENU.flatMap((grupo) =>
+  grupo.itens.flatMap((entrada) =>
+    entrada.tipo === "modulo"
+      ? entrada.itens.map((item) => ({ item, contexto: entrada.rotulo }))
+      : [{ item: entrada, contexto: grupo.titulo }]
+  )
+).sort((a, b) => b.item.href.length - a.item.href.length);
 
-  switch (nome) {
-    case "inicio":
-      return <svg {...comum}><path d="m3 11 9-8 9 8" /><path d="M5 10v10h14V10M9 20v-6h6v6" /></svg>;
-    case "executivo":
-      return <svg {...comum}><path d="M4 19V9M10 19V5M16 19v-7M22 19H2" /></svg>;
-    case "recebimentos":
-      return <svg {...comum}><rect x="3" y="6" width="18" height="13" rx="2" /><path d="M3 10h18M7 15h3" /></svg>;
-    case "contratos":
-      return <svg {...comum}><path d="M6 3h9l4 4v14H6z" /><path d="M14 3v5h5M9 13h6M9 17h5" /></svg>;
-    case "temporada":
-      return <svg {...comum}><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41" /></svg>;
-    case "caixa":
-      return <svg {...comum}><path d="M3 7h16a2 2 0 0 1 2 2v9H5a2 2 0 0 1-2-2z" /><path d="M3 7V6a2 2 0 0 1 2-2h12v3M16 12h5" /></svg>;
-    case "cobranca":
-      return <svg {...comum}><circle cx="12" cy="12" r="9" /><path d="M12 7v6M12 17h.01" /></svg>;
-    case "empreendimentos":
-      return <svg {...comum}><path d="M4 21V5l8-3v19M12 8h8v13M2 21h20M7 7h2M7 11h2M7 15h2M15 12h2M15 16h2" /></svg>;
-    case "analitico":
-      return <svg {...comum}><path d="M3 3v18h18" /><path d="m7 16 4-5 3 2 5-7" /></svg>;
-    case "calendario":
-      return <svg {...comum}><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01" /></svg>;
-    case "relatorios":
-      return <svg {...comum}><path d="M5 3h14v18H5z" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>;
-    case "ajuda":
-      return <svg {...comum}><circle cx="12" cy="12" r="9" /><path d="M9.8 9a2.4 2.4 0 1 1 3.7 2c-.9.6-1.5 1-1.5 2M12 17h.01" /></svg>;
+function rotaAtiva(pathname: string, item: ItemMenu) {
+  if (item.correspondencia === "exata" || item.href === "/") {
+    return pathname === item.href;
   }
+  return pathname === item.href || pathname.startsWith(`${item.href}/`);
 }
 
-function MarcaBrisa({ compacta = false, apenasIcone = false }: { compacta?: boolean; apenasIcone?: boolean }) {
+function MarcaBrisa({
+  compacta = false,
+  apenasIcone = false,
+}: {
+  compacta?: boolean;
+  apenasIcone?: boolean;
+}) {
   return (
     <Link href="/" className="group flex items-center gap-3" aria-label="Brisa — início">
       <span className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/15 bg-white/[0.07] text-[#72d3b4]">
@@ -116,102 +127,253 @@ function MarcaBrisa({ compacta = false, apenasIcone = false }: { compacta?: bool
       </span>
       {!apenasIcone ? (
         <span className={`min-w-0 ${compacta ? "lg:hidden" : ""}`}>
-          <span className="block text-[21px] font-bold leading-none tracking-[-0.03em] text-white">
-            Brisa
-          </span>
-          <span className="mt-1 block text-[9px] font-semibold uppercase tracking-[0.22em] text-[#8fa5a7]">
-            Gestão de imóveis
-          </span>
+          <span className="block text-[21px] font-bold leading-none tracking-[-0.03em] text-white">Brisa</span>
+          <span className="mt-1 block text-[9px] font-semibold uppercase tracking-[0.22em] text-[#8fa5a7]">Gestão de imóveis</span>
         </span>
       ) : null}
     </Link>
   );
 }
 
-function ItemNav({ href, rotulo, icone, ativo, aoNavegar, compacto }: {
-  href: string;
-  rotulo: string;
-  icone: IconeNome;
+function ItemNav({
+  item,
+  ativo,
+  aoNavegar,
+  compacto,
+  submenu = false,
+}: {
+  item: ItemMenu;
   ativo: boolean;
   aoNavegar: () => void;
   compacto: boolean;
+  submenu?: boolean;
 }) {
   return (
     <Link
-      href={href}
+      href={item.href}
       onClick={aoNavegar}
-      title={compacto ? rotulo : undefined}
+      title={compacto ? item.rotulo : undefined}
       aria-current={ativo ? "page" : undefined}
-      className={`group relative flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-semibold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#72d3b4] ${compacto ? "lg:justify-center lg:px-2" : ""} ${
+      className={`group relative flex min-h-10 items-center gap-3 rounded-lg py-2 text-[13px] font-semibold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#72d3b4] ${submenu ? "px-2.5" : "px-3"} ${compacto ? "lg:justify-center lg:px-2" : ""} ${
         ativo
           ? "bg-white/[0.09] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]"
           : "text-[#aebcbd] hover:bg-white/[0.055] hover:text-white"
       }`}
     >
       {ativo ? <span className="absolute -left-2 h-5 w-[3px] rounded-r-full bg-[#59c7a3]" /> : null}
-      <span className={`transition-colors ${ativo ? "text-[#72d3b4]" : "text-[#74898b] group-hover:text-[#a8bbb9]"}`}>
-        <Icone nome={icone} />
-      </span>
-      <span className={`truncate ${compacto ? "lg:sr-only" : ""}`}>{rotulo}</span>
+      {item.icone ? (
+        <span className={`shrink-0 transition-colors ${ativo ? "text-[#72d3b4]" : "text-[#74898b] group-hover:text-[#a8bbb9]"}`}>
+          <IconeMenu nome={item.icone} />
+        </span>
+      ) : (
+        <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full transition-colors ${ativo ? "bg-[#72d3b4]" : "bg-[#50676a] group-hover:bg-[#82999b]"}`} />
+      )}
+      <span className={`truncate ${compacto ? "lg:sr-only" : ""}`}>{item.rotulo}</span>
     </Link>
   );
 }
 
-export default function AppShell({ nome, sair, children }: {
+function ModuloNav({
+  modulo,
+  pathname,
+  expandido,
+  compacto,
+  aoAlternar,
+  aoNavegar,
+}: {
+  modulo: ModuloMenu;
+  pathname: string;
+  expandido: boolean;
+  compacto: boolean;
+  aoAlternar: () => void;
+  aoNavegar: () => void;
+}) {
+  const ativo = modulo.itens.some((item) => rotaAtiva(pathname, item));
+  const idConteudo = `submenu-${modulo.id}`;
+  const submenuVisivel = expandido && !compacto;
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={aoAlternar}
+        title={compacto ? `${modulo.rotulo} — abrir submenu` : undefined}
+        aria-expanded={submenuVisivel}
+        aria-controls={idConteudo}
+        className={`group relative flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[13px] font-semibold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#72d3b4] ${compacto ? "lg:justify-center lg:px-2" : ""} ${
+          ativo
+            ? "bg-white/[0.09] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]"
+            : "text-[#c0cbcc] hover:bg-white/[0.055] hover:text-white"
+        }`}
+      >
+        {ativo ? <span className="absolute -left-2 h-5 w-[3px] rounded-r-full bg-[#59c7a3]" /> : null}
+        <span className={`shrink-0 ${ativo ? "text-[#72d3b4]" : "text-[#829698] group-hover:text-[#b3c2c1]"}`}>
+          <IconeMenu nome={modulo.icone} />
+        </span>
+        <span className={`min-w-0 flex-1 truncate ${compacto ? "lg:sr-only" : ""}`}>{modulo.rotulo}</span>
+        <span className={`text-[#6f8587] transition-transform duration-200 ${expandido ? "rotate-90" : ""} ${compacto ? "lg:hidden" : ""}`}>
+          <IconeMenu nome="chevron-direita" className="h-4 w-4" />
+        </span>
+      </button>
+
+      <div
+        id={idConteudo}
+        aria-hidden={!submenuVisivel}
+        inert={!submenuVisivel ? true : undefined}
+        className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
+          submenuVisivel
+            ? "grid-rows-[1fr] opacity-100"
+            : "grid-rows-[0fr] opacity-0"
+        } ${compacto ? "lg:hidden" : ""}`}
+      >
+        <div className="overflow-hidden">
+          <div className="ml-5 mt-1 space-y-0.5 border-l border-white/[0.09] pl-2">
+            {modulo.itens.map((item) => (
+              <ItemNav
+                key={item.href}
+                item={item}
+                ativo={rotaAtiva(pathname, item)}
+                aoNavegar={aoNavegar}
+                compacto={false}
+                submenu
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function AppShell({
+  nome,
+  sair,
+  children,
+}: {
   nome: string;
   sair: () => Promise<void>;
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
   const [aberto, setAberto] = useState(false);
   const [recolhida, setRecolhida] = useState(false);
-  const pathname = usePathname();
+  const [estadoModulos, setEstadoModulos] = useState<{
+    pathname: string;
+    valores: Record<string, boolean>;
+  }>({ pathname: "", valores: {} });
+  const botaoAbrirRef = useRef<HTMLButtonElement>(null);
+  const botaoFecharRef = useRef<HTMLButtonElement>(null);
+  const painelMenuRef = useRef<HTMLElement>(null);
+  const modulosAbertos = estadoModulos.pathname === pathname
+    ? estadoModulos.valores
+    : {};
 
   useEffect(() => {
-    document.body.style.overflow = aberto ? "hidden" : "";
+    if (!aberto) return;
+
+    const focoAnterior = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : botaoAbrirRef.current;
+    document.body.style.overflow = "hidden";
+    const quadroFoco = window.requestAnimationFrame(() => botaoFecharRef.current?.focus());
+
+    function controlarTeclado(evento: KeyboardEvent) {
+      if (evento.key === "Escape") {
+        evento.preventDefault();
+        setAberto(false);
+        return;
+      }
+      if (evento.key !== "Tab" || !painelMenuRef.current) return;
+
+      const focaveis = Array.from(
+        painelMenuRef.current.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((elemento) => elemento.offsetParent !== null);
+      if (focaveis.length === 0) return;
+
+      const primeiro = focaveis[0];
+      const ultimo = focaveis[focaveis.length - 1];
+      if (evento.shiftKey && document.activeElement === primeiro) {
+        evento.preventDefault();
+        ultimo.focus();
+      } else if (!evento.shiftKey && document.activeElement === ultimo) {
+        evento.preventDefault();
+        primeiro.focus();
+      } else if (!painelMenuRef.current.contains(document.activeElement)) {
+        evento.preventDefault();
+        primeiro.focus();
+      }
+    }
+
+    document.addEventListener("keydown", controlarTeclado);
     return () => {
+      window.cancelAnimationFrame(quadroFoco);
       document.body.style.overflow = "";
+      document.removeEventListener("keydown", controlarTeclado);
+      if (focoAnterior?.isConnected) focoAnterior.focus();
     };
   }, [aberto]);
 
-  const rotaAtiva = (href: string) =>
-    href === "/" ? pathname === "/" : pathname.startsWith(href);
-  const itemAtual = MENU.flatMap((grupo) => grupo.itens).find((item) => rotaAtiva(item.href));
-  const iniciais = nome
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((parte) => parte[0]?.toUpperCase())
-    .join("") || "B";
+  const itemAtual = ITENS_COM_CONTEXTO.find(({ item }) => rotaAtiva(pathname, item));
+  const iniciais = nome.split(/\s+/).filter(Boolean).slice(0, 2).map((parte) => parte[0]?.toUpperCase()).join("") || "B";
+
+  function alternarModulo(modulo: ModuloMenu) {
+    if (recolhida) {
+      setRecolhida(false);
+      setEstadoModulos({ pathname, valores: { [modulo.id]: true } });
+      return;
+    }
+
+    const contemRotaAtiva = modulo.itens.some((item) => rotaAtiva(pathname, item));
+    setEstadoModulos((estadoAtual) => {
+      const atuais = estadoAtual.pathname === pathname ? estadoAtual.valores : {};
+      const foiAlterado = Object.prototype.hasOwnProperty.call(atuais, modulo.id);
+      const expandidoAgora = foiAlterado ? atuais[modulo.id] : contemRotaAtiva;
+      return {
+        pathname,
+        valores: { [modulo.id]: !expandidoAgora },
+      };
+    });
+  }
 
   return (
     <div className="min-h-screen bg-[#f3f6f7]">
-      <header className="fixed inset-x-0 top-0 z-30 flex h-[58px] items-center justify-between border-b border-white/10 bg-[#102326] px-4 lg:hidden">
+      <header
+        inert={aberto ? true : undefined}
+        className="fixed inset-x-0 top-0 z-30 flex h-[58px] items-center justify-between border-b border-white/10 bg-[#102326] px-4 lg:hidden"
+      >
         <button
+          ref={botaoAbrirRef}
           type="button"
-          onClick={() => setAberto(true)}
+          onClick={() => {
+            setRecolhida(false);
+            setAberto(true);
+          }}
           aria-label="Abrir menu"
           className="flex h-10 w-10 items-center justify-center rounded-lg text-white transition-colors hover:bg-white/10"
         >
-          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
+          <IconeMenu nome="menu" className="h-[21px] w-[21px]" />
         </button>
         <MarcaBrisa apenasIcone />
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-[11px] font-bold text-white">
-          {iniciais}
-        </span>
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-[11px] font-bold text-white">{iniciais}</span>
       </header>
 
       {aberto ? (
         <button
           type="button"
-          aria-label="Fechar menu"
+          tabIndex={-1}
+          aria-hidden="true"
           onClick={() => setAberto(false)}
           className="fixed inset-0 z-30 bg-[#071214]/70 backdrop-blur-[2px] lg:hidden"
         />
       ) : null}
 
       <aside
+        ref={painelMenuRef}
+        role={aberto ? "dialog" : undefined}
+        aria-modal={aberto ? "true" : undefined}
+        aria-label={aberto ? "Menu principal" : undefined}
         className={`fixed inset-y-0 left-0 z-40 w-[268px] flex-col border-r border-[#213b3e] bg-[#102326] transition-[width,transform] duration-200 ease-out lg:flex lg:h-screen lg:translate-x-0 ${recolhida ? "lg:w-[78px]" : "lg:w-[268px]"} ${
           aberto ? "flex translate-x-0 shadow-2xl" : "hidden -translate-x-full lg:shadow-none"
         }`}
@@ -223,43 +385,63 @@ export default function AppShell({ nome, sair, children }: {
           aria-label={recolhida ? "Expandir menu" : "Recolher menu"}
           className="absolute -right-3.5 top-6 z-10 hidden h-7 w-7 items-center justify-center rounded-full border border-[#d6e0e2] bg-white text-[#50666a] shadow-[0_3px_10px_rgba(11,30,33,0.14)] transition-colors hover:border-[#aebdc0] hover:text-oliva lg:flex"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" className={`transition-transform ${recolhida ? "rotate-180" : ""}`}>
-            <path d="m15 6-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <IconeMenu nome="recolher" className={`h-3.5 w-3.5 transition-transform ${recolhida ? "rotate-180" : ""}`} />
         </button>
 
         <div className={`flex h-[76px] items-center justify-between border-b border-white/[0.08] px-5 ${recolhida ? "lg:justify-center lg:px-0" : ""}`}>
           <MarcaBrisa compacta={recolhida} />
-          <button
-            type="button"
-            onClick={() => setAberto(false)}
-            aria-label="Fechar menu"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-[#9aabad] hover:bg-white/10 hover:text-white lg:hidden"
-          >
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
+          <button ref={botaoFecharRef} type="button" onClick={() => setAberto(false)} aria-label="Fechar menu" className="flex h-8 w-8 items-center justify-center rounded-lg text-[#9aabad] hover:bg-white/10 hover:text-white lg:hidden">
+            <IconeMenu nome="fechar" className="h-[19px] w-[19px]" />
           </button>
         </div>
 
-        <nav className={`flex-1 overflow-y-auto px-4 py-4 ${recolhida ? "lg:px-2.5" : ""}`}>
+        <nav aria-label="Navegação principal" className={`flex-1 overflow-y-auto px-4 py-4 ${recolhida ? "lg:px-2.5" : ""}`}>
           {MENU.map((grupo) => (
             <div key={grupo.titulo} className="mb-4 last:mb-0">
-              <div className={`mb-1.5 px-3 text-[9px] font-bold uppercase tracking-[0.19em] text-[#647a7c] ${recolhida ? "lg:sr-only" : ""}`}>
+              <div className={`mb-1.5 px-3 text-[10px] font-bold uppercase tracking-[0.17em] text-[#829698] ${recolhida ? "lg:sr-only" : ""}`}>
                 {grupo.titulo}
               </div>
               <div className="space-y-0.5">
-                {grupo.itens.map((item) => (
-                  <ItemNav
-                    key={item.href}
-                    href={item.href}
-                    rotulo={item.rotulo}
-                    icone={item.icone}
-                    ativo={rotaAtiva(item.href)}
-                    aoNavegar={() => setAberto(false)}
-                    compacto={recolhida}
-                  />
-                ))}
+                {grupo.itens.map((entrada) => {
+                  if (entrada.tipo === "link") {
+                    return (
+                      <ItemNav
+                        key={entrada.href}
+                        item={entrada}
+                        ativo={rotaAtiva(pathname, entrada)}
+                        aoNavegar={() => {
+                          setEstadoModulos({ pathname, valores: {} });
+                          setAberto(false);
+                        }}
+                        compacto={recolhida}
+                      />
+                    );
+                  }
+
+                  const moduloAtivo = entrada.itens.some((item) => rotaAtiva(pathname, item));
+                  const foiAlterado = Object.prototype.hasOwnProperty.call(
+                    modulosAbertos,
+                    entrada.id,
+                  );
+                  const expandido = foiAlterado
+                    ? modulosAbertos[entrada.id]
+                    : moduloAtivo;
+
+                  return (
+                    <ModuloNav
+                      key={entrada.id}
+                      modulo={entrada}
+                      pathname={pathname}
+                      expandido={expandido}
+                      compacto={recolhida}
+                      aoAlternar={() => alternarModulo(entrada)}
+                      aoNavegar={() => {
+                        setEstadoModulos({ pathname, valores: { [entrada.id]: true } });
+                        setAberto(false);
+                      }}
+                    />
+                  );
+                })}
               </div>
             </div>
           ))}
@@ -276,15 +458,8 @@ export default function AppShell({ nome, sair, children }: {
               <div className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[#7f9698]">Administrador</div>
             </div>
             <form action={sair}>
-              <button
-                type="submit"
-                title="Sair do sistema"
-                aria-label="Sair do sistema"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#829799] transition-colors hover:bg-white/10 hover:text-white"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M10 5H5v14h5M14 8l4 4-4 4M18 12H9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+              <button type="submit" title="Sair do sistema" aria-label="Sair do sistema" className="flex h-8 w-8 items-center justify-center rounded-lg text-[#829799] transition-colors hover:bg-white/10 hover:text-white">
+                <IconeMenu nome="sair" className="h-4 w-4" />
               </button>
             </form>
           </div>
@@ -294,15 +469,18 @@ export default function AppShell({ nome, sair, children }: {
         </div>
       </aside>
 
-      <div className={`min-w-0 transition-[margin] duration-200 ease-out ${recolhida ? "lg:ml-[78px]" : "lg:ml-[268px]"}`}>
+      <div
+        inert={aberto ? true : undefined}
+        className={`min-w-0 transition-[margin] duration-200 ease-out ${recolhida ? "lg:ml-[78px]" : "lg:ml-[268px]"}`}
+      >
         <div className="sticky top-0 z-20 hidden h-[64px] items-center justify-between border-b border-[#dde5e7] bg-white/95 px-8 backdrop-blur-sm lg:flex">
-          <div className="flex items-center gap-2 text-[12px] text-[#7b898d]">
-            <span className="font-medium">Gestão imobiliária</span>
+          <div className="flex items-center gap-2 text-[12px] text-[#596b6f]">
+            <span className="font-medium">{itemAtual?.contexto ?? "Gestão imobiliária"}</span>
             <span className="text-[#c0c9cb]">/</span>
-            <span className="font-semibold text-[#25383b]">{itemAtual?.rotulo ?? "Brisa"}</span>
+            <span className="font-semibold text-[#25383b]">{itemAtual?.item.rotulo ?? "Brisa"}</span>
           </div>
           <div className="flex items-center gap-4">
-            <span className="inline-flex items-center gap-2 text-[11px] font-medium text-[#718085]">
+            <span className="inline-flex items-center gap-2 text-[11px] font-medium text-[#596b6f]">
               <span className="h-1.5 w-1.5 rounded-full bg-[#35a56f] shadow-[0_0_0_3px_rgba(53,165,111,0.12)]" />
               Sistema atualizado
             </span>
@@ -311,9 +489,7 @@ export default function AppShell({ nome, sair, children }: {
           </div>
         </div>
 
-        <main className="app-content min-w-0 px-4 pb-12 pt-[78px] sm:px-6 lg:px-7 lg:py-6 xl:px-8 2xl:px-10">
-          {children}
-        </main>
+        <main className="app-content min-w-0 px-4 pb-12 pt-[78px] sm:px-6 lg:px-7 lg:py-6 xl:px-8 2xl:px-10">{children}</main>
       </div>
     </div>
   );
