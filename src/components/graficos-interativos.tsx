@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import {
   Area,
   Bar,
@@ -20,21 +20,21 @@ import { abreviarBRL, formatarBRL } from "@/lib/dominio/dinheiro";
 import type { Nivel } from "@/lib/dominio/semaforo";
 
 const CORES = {
-  recebido: "#347c69",
-  devido: "#d58b19",
-  comissao: "#5475d4",
-  saidaAL: "#d05160",
-  saidaCH: "#8b5f91",
-  grade: "#dbe4e6",
-  texto: "#6f7f83",
+  recebido: "var(--g-s1)",
+  devido: "var(--g-s2)",
+  comissao: "var(--g-s3)",
+  saidaAL: "var(--g-saida)",
+  saidaCH: "var(--g-saida-2)",
+  grade: "var(--g-grade)",
+  texto: "var(--g-rotulo)",
 };
 
 const CORES_NIVEL: Record<Nivel, string> = {
-  otimo: "#347c69",
-  atencao: "#d58b19",
-  critico: "#cb4655",
-  info: "#5475d4",
-  neutro: "#93a2a5",
+  otimo: "var(--g-n-otimo, #347c69)",
+  atencao: "var(--g-n-atencao, #d58b19)",
+  critico: "var(--g-n-critico, #cb4655)",
+  info: "var(--g-n-info, #5475d4)",
+  neutro: "var(--g-n-neutro, #93a2a5)",
 };
 
 function valorTooltip(valor: unknown): string {
@@ -102,6 +102,10 @@ export function PulsoFinanceiro({
   dados: LinhaFinanceira[];
   destaqueRotulo?: string;
 }) {
+  const uid = useId().replaceAll(":", "");
+  const gradienteRecebido = `${uid}-recebido`;
+  const gradienteDevido = `${uid}-devido`;
+  const gradienteComissao = `${uid}-comissao`;
   const [visiveis, setVisiveis] = useState<Record<SerieFinanceira, boolean>>({
     devido: true,
     recebido: true,
@@ -145,21 +149,25 @@ export function PulsoFinanceiro({
         </span>
       </div>
 
-      <div className="h-[300px] w-full" role="img" aria-label="Evolução mensal de devido, recebido e comissão">
+      <div
+        className="grafico-executivo h-[300px] min-w-0 w-full"
+        role="img"
+        aria-label="Evolução mensal de devido, recebido e comissão"
+      >
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={dados} margin={{ top: 16, right: 4, bottom: 0, left: 0 }} accessibilityLayer>
             <defs>
-              <linearGradient id="recebidoBarra" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#4f9a86" />
-                <stop offset="100%" stopColor="#2f7563" />
+              <linearGradient id={gradienteRecebido} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={CORES.recebido} stopOpacity={0.72} />
+                <stop offset="100%" stopColor={CORES.recebido} />
               </linearGradient>
-              <linearGradient id="devidoBarra" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#e5ae4d" />
-                <stop offset="100%" stopColor="#c77a10" />
+              <linearGradient id={gradienteDevido} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={CORES.devido} stopOpacity={0.72} />
+                <stop offset="100%" stopColor={CORES.devido} />
               </linearGradient>
-              <linearGradient id="comissaoArea" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#5475d4" stopOpacity="0.30" />
-                <stop offset="100%" stopColor="#5475d4" stopOpacity="0.02" />
+              <linearGradient id={gradienteComissao} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={CORES.comissao} stopOpacity="0.30" />
+                <stop offset="100%" stopColor={CORES.comissao} stopOpacity="0.02" />
               </linearGradient>
             </defs>
             <CartesianGrid vertical={false} stroke={CORES.grade} strokeDasharray="2 5" />
@@ -204,7 +212,7 @@ export function PulsoFinanceiro({
                 yAxisId="principal"
                 dataKey="devido"
                 name="Devido"
-                fill="url(#devidoBarra)"
+                fill={`url(#${gradienteDevido})`}
                 barSize={13}
                 radius={[4, 4, 1, 1]}
                 isAnimationActive={false}
@@ -215,7 +223,7 @@ export function PulsoFinanceiro({
                 yAxisId="principal"
                 dataKey="recebido"
                 name="Recebido"
-                fill="url(#recebidoBarra)"
+                fill={`url(#${gradienteRecebido})`}
                 barSize={13}
                 radius={[4, 4, 1, 1]}
                 isAnimationActive={false}
@@ -229,7 +237,7 @@ export function PulsoFinanceiro({
                 name="Comissão"
                 stroke={CORES.comissao}
                 strokeWidth={2.5}
-                fill="url(#comissaoArea)"
+                fill={`url(#${gradienteComissao})`}
                 dot={{ r: 3, fill: "#fff", stroke: CORES.comissao, strokeWidth: 2 }}
                 activeDot={{ r: 5, fill: CORES.comissao, stroke: "#fff", strokeWidth: 2 }}
                 isAnimationActive={false}
@@ -296,6 +304,8 @@ type LinhaCaixa = {
 };
 
 export function FluxoCaixaInterativo({ dados }: { dados: LinhaCaixa[] }) {
+  const uid = useId().replaceAll(":", "");
+  const gradienteEntrada = `${uid}-entrada`;
   return (
     <div>
       <div className="mb-2 flex flex-wrap gap-x-4 gap-y-2 text-[10px] font-bold uppercase tracking-[0.08em] text-[#65767a]">
@@ -311,13 +321,17 @@ export function FluxoCaixaInterativo({ dados }: { dados: LinhaCaixa[] }) {
           </span>
         ))}
       </div>
-      <div className="h-[280px] w-full" role="img" aria-label="Entradas, despesas e saldo mensal do caixa">
+      <div
+        className="grafico-executivo h-[280px] min-w-0 w-full"
+        role="img"
+        aria-label="Entradas, despesas e saldo mensal do caixa"
+      >
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={dados} margin={{ top: 16, right: 4, bottom: 0, left: 0 }} accessibilityLayer>
             <defs>
-              <linearGradient id="entradaCaixa" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#5b9e8c" />
-                <stop offset="100%" stopColor="#327764" />
+              <linearGradient id={gradienteEntrada} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={CORES.recebido} stopOpacity={0.72} />
+                <stop offset="100%" stopColor={CORES.recebido} />
               </linearGradient>
             </defs>
             <CartesianGrid vertical={false} stroke={CORES.grade} strokeDasharray="2 5" />
@@ -341,7 +355,7 @@ export function FluxoCaixaInterativo({ dados }: { dados: LinhaCaixa[] }) {
             <Bar
               dataKey="receita"
               name="Entradas"
-              fill="url(#entradaCaixa)"
+              fill={`url(#${gradienteEntrada})`}
               barSize={16}
               radius={[4, 4, 1, 1]}
               isAnimationActive={false}
@@ -381,7 +395,13 @@ export function FluxoCaixaInterativo({ dados }: { dados: LinhaCaixa[] }) {
   );
 }
 
-const CORES_FATIAS = ["#347c69", "#d58b19", "#5475d4", "#aebabc", "#765caa"];
+const CORES_FATIAS = [
+  "var(--g-s1)",
+  "var(--g-s2)",
+  "var(--g-s3)",
+  "var(--g-eixo)",
+  "var(--g-saida-2)",
+];
 
 export function ComposicaoComissao({
   fatias,
@@ -399,7 +419,7 @@ export function ComposicaoComissao({
 
   return (
     <div className="pt-1">
-      <div className="relative mx-auto h-[220px] max-w-[260px]">
+      <div className="grafico-executivo relative mx-auto h-[220px] max-w-[260px]">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart accessibilityLayer>
             <Pie

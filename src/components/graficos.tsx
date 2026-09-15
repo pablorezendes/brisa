@@ -1,17 +1,14 @@
 /**
  * Gráficos SVG server-side. Sem libs, sem JavaScript no cliente.
  *
- * Linguagem visual: flat editorial (stile/DESIGN.md) — sem gradientes, sem
- * sombras, sem brilhos. A riqueza vem dos DETALHES informativos: eixo de
- * valores à esquerda, grade pontilhada recessiva, realce da coluna no hover
- * (CSS puro, .g-col:hover — segue server component), etiquetas de valor e as
- * zonas do semáforo desenhadas no medidor.
+ * A linguagem visual segue o painel executivo: pigmentos semânticos, grade
+ * pontilhada recessiva, gradientes discretos, tooltip escuro, tipografia
+ * tabular e realce de leitura no hover. Os tokens vêm de globals.css para que
+ * todas as telas evoluam como um único sistema visual.
  *
- * Paleta "pigmentos naturais" do design editorial, validada p/ daltonismo:
- *   1 musgo #4f7a33 (dinheiro que entra) · 2 ocre #b3801a (o que era devido)
- *   3 índigo #4a68a8 (terceira série). Texto SEMPRE em tom de tinta, nunca na
- *   cor da série. Todo gráfico traz <title> (tooltip nativo) e a página oferece
- *   a mesma informação em tabela.
+ * Paleta semântica do Executivo: verde para entradas, ocre para devido,
+ * índigo para a terceira série e vermelho/roxo para saídas. Texto permanece
+ * em tom de tinta; toda informação também existe em título, tooltip ou tabela.
  */
 import { abreviarBRL, formatarBRL } from "@/lib/dominio/dinheiro";
 import { NOME_MES_ABREV } from "@/lib/dominio/normalizacao";
@@ -29,11 +26,9 @@ export const COR_2 = "var(--g-s2)"; // o que era DEVIDO, ainda não é saída
 /**
  * Dinheiro que SAI é sempre vermelho.
  *
- * Antes cada centro de custo usava a cor da identidade visual dele (ocre para
- * Antonio/Laura, índigo para a Chácara). Bonito, mas o olho não lia "isso é
- * despesa" — a cor não carregava o dado. Agora os dois centros são terracota,
- * distinguidos pela LUMINOSIDADE (um claro, um escuro), o que sobrevive tanto
- * ao daltonismo quanto à impressão em preto e branco.
+ * Os dois centros seguem o código semântico do Executivo: vermelho para a
+ * saída principal e roxo para a segunda série. A forma, a legenda e o contraste
+ * continuam diferenciando os dados sem depender apenas da cor.
  */
 export const COR_SAIDA = "var(--g-saida)"; // despesa
 export const COR_SAIDA_2 = "var(--g-saida-2)"; // segundo centro de custo
@@ -45,6 +40,9 @@ const EIXO = "var(--g-eixo)";
 const ROTULO = "var(--g-rotulo)";
 const TINTA = "var(--g-tinta)";
 const CARTA = "var(--g-carta)";
+const TIP_FUNDO = "var(--g-tip-bg)";
+const TIP_TEXTO = "var(--g-tip-text)";
+const TIP_MUTED = "var(--g-tip-muted)";
 
 // ---------------------------------------------------------------------------
 // utilitários premium: mistura de cor, ids únicos e tooltip rico
@@ -155,14 +153,23 @@ function Tip({
   const y = TOPO - 16;
   return (
     <g className={`g-tip g-t${i}`} aria-hidden="true">
-      <rect x={x} y={y} width={w} height={h} rx={5} fill={CARTA} stroke={TINTA} strokeWidth={1} />
+      <rect
+        x={x}
+        y={y}
+        width={w}
+        height={h}
+        rx={7}
+        fill={TIP_FUNDO}
+        stroke="var(--g-tip-border)"
+        strokeWidth={1}
+      />
       <text
         x={x + 11}
         y={y + 14}
         fontSize={10.5}
         fontWeight={700}
         letterSpacing="0.08em"
-        fill={ROTULO}
+        fill={TIP_MUTED}
         style={{ fontFamily: "var(--font-jetbrains), monospace" }}
       >
         {titulo.toUpperCase()}
@@ -176,7 +183,7 @@ function Tip({
               x={l.cor ? x + 24 : x + 11}
               y={ly}
               fontSize={12}
-              fill={TINTA}
+              fill={TIP_TEXTO}
               style={{ fontFamily: "var(--font-jetbrains), monospace" }}
             >
               {l.nome}
@@ -186,7 +193,7 @@ function Tip({
               y={ly}
               fontSize={12}
               fontWeight={700}
-              fill={TINTA}
+              fill={TIP_TEXTO}
               textAnchor="end"
               style={{ fontFamily: "var(--font-jetbrains), monospace" }}
             >
@@ -485,7 +492,7 @@ export function BarrasMensais({
   return (
     <svg
       viewBox={VIEWBOX}
-      className={`w-full ${uid}`}
+      className={`grafico-executivo ${uid}`}
       role="img"
       aria-label={rotuloAcessivel}
     >
@@ -612,7 +619,7 @@ export function BarrasDuplas({
   return (
     <svg
       viewBox={VIEWBOX}
-      className={`w-full ${uid}`}
+      className={`grafico-executivo ${uid}`}
       role="img"
       aria-label={`${nomeA} e ${nomeB} por mês`}
     >
@@ -710,7 +717,7 @@ export function BarrasCaixa({
   return (
     <svg
       viewBox={VIEWBOX}
-      className={`w-full ${uid}`}
+      className={`grafico-executivo ${uid}`}
       role="img"
       aria-label="Receita e despesas do caixa por mês"
     >
@@ -861,7 +868,7 @@ export function AreaTendencia({
   return (
     <svg
       viewBox={VIEWBOX}
-      className={`w-full ${uid}`}
+      className={`grafico-executivo ${uid}`}
       role="img"
       aria-label={rotuloAcessivel}
     >
@@ -1021,7 +1028,7 @@ export function BarrasHorizontais({
   return (
     <svg
       viewBox={`0 0 ${L} ${altura}`}
-      className="w-full"
+      className="grafico-executivo"
       role="img"
       aria-label="Ranking"
     >
@@ -1218,7 +1225,7 @@ export function Medidor({
   return (
     <svg
       viewBox="0 0 220 126"
-      className="w-full"
+      className="grafico-executivo"
       role="img"
       aria-label={`${rotulo ?? "medidor"}: ${pct.toFixed(0)}% — ${est.rotulo}`}
     >
@@ -1518,13 +1525,15 @@ export function BarraComposicao({
 // ---------------------------------------------------------------------------
 
 /**
- * Mapa de calor para matrizes (empreendimento × mês, ano × mês). A cor é uma
- * RAMPA SEQUENCIAL de um único matiz — do papel quase cru ao musgo escuro —
- * então "mais escuro = mais dinheiro" vale no mapa inteiro e o olho encontra
- * os melhores meses de cada linha em um segundo. Célula vazia é vazia (traço),
- * não é zero. O texto dentro da célula troca para papel quando o fundo
- * escurece, mantendo contraste sempre. Tooltip nativo por célula; a página
- * deve continuar oferecendo a mesma informação em tabela.
+ * Mapa de calor para matrizes (empreendimento × mês, ano × mês). A matriz
+ * usa HTML semântico em vez de um SVG escalável: tipografia e células mantêm
+ * dimensões legíveis em cards largos e, no mobile, a rolagem fica contida no
+ * componente com os rótulos de linha sempre visíveis. A cor é uma RAMPA
+ * SEQUENCIAL de um único matiz, portanto "mais escuro = maior valor" vale no
+ * mapa inteiro. Célula vazia é vazia (traço), não zero. O texto troca para
+ * papel quando o fundo escurece, mantendo contraste. Cada valor abreviado tem
+ * o valor completo em tooltip; caption e cabeçalhos preservam a leitura por
+ * tecnologia assistiva.
  */
 export function MapaCalor({
   colunas,
@@ -1532,9 +1541,10 @@ export function MapaCalor({
   formatar = abreviarBRL,
   formatarCheio = formatarBRL,
   rotuloAcessivel = "Mapa de calor",
+  rotuloLinhas = "Série",
   destaqueColuna,
-  rampaDe = "#eef2e4",
-  rampaPara = "#33511f",
+  rampaDe = "#edf6f3",
+  rampaPara = "#245f51",
 }: {
   colunas: string[];
   linhas: { rotulo: string; valores: (number | null)[] }[];
@@ -1543,6 +1553,8 @@ export function MapaCalor({
   /** número → texto completo do tooltip */
   formatarCheio?: (v: number) => string;
   rotuloAcessivel?: string;
+  /** cabeçalho da primeira coluna (ex.: Empreendimento, Ano) */
+  rotuloLinhas?: string;
   /** índice 0-based da coluna a sublinhar (ex.: mês selecionado) */
   destaqueColuna?: number;
   /** extremos da rampa (hex literais — a cor é interpolada aqui em JS) */
@@ -1553,19 +1565,17 @@ export function MapaCalor({
   const nl = linhas.length;
   if (nc === 0 || nl === 0) return null;
 
-  const ROT_W = 128;
-  const GAP = 3;
-  const CEL_H = 26;
-  const CAB_H = 20;
-  const celW = (LARG - ROT_W - 4) / nc;
-  const altura = CAB_H + nl * (CEL_H + GAP);
-
-  const todos = linhas.flatMap((l) => l.valores).filter((v): v is number => v !== null && v > 0);
-  const max = Math.max(...todos, 1);
+  const todos = linhas
+    .flatMap((l) => l.valores.slice(0, nc))
+    .filter((v): v is number => v !== null && v > 0);
+  const min = todos.length ? Math.min(...todos) : 0;
+  const max = todos.length ? Math.max(...todos) : 0;
+  const maxEscala = Math.max(max, 1);
 
   // rampa sequencial de um matiz só; gama 0.72 abre os tons baixos para que
   // valores pequenos não sumam no fundo
-  const corDe = (v: number) => mixHex(rampaDe, rampaPara, Math.pow(v / max, 0.72));
+  const corDe = (v: number) =>
+    mixHex(rampaDe, rampaPara, Math.pow(v / maxEscala, 0.72));
   // O texto não segue limiar chutado: mede a luminância REAL da célula e
   // escolhe o extremo de maior contraste. 0,19 é o ponto de cruzamento exato
   // entre #101720 e #f4f8fc — resolvendo √((Lclaro+0,05)(Lescuro+0,05))−0,05,
@@ -1573,157 +1583,131 @@ export function MapaCalor({
   // maior deixava as células de verde médio com 2,4:1, quase ilegíveis).
   const textoDe = (v: number) => (luminancia(corDe(v)) > 0.19 ? "#101720" : "#f4f8fc");
 
-  // muitas colunas (períodos multi-ano): cabeçalho raleado e célula sem
-  // texto — a cor responde, o tooltip e a tabela dão o número exato
-  const cabecalhoCada = nc <= 14 ? 1 : Math.ceil(nc / 14);
-  const celulaComTexto = celW >= 34;
+  // Largura intencionalmente limitada: o mapa não "infla" para ocupar um
+  // card grande. Acima disso a matriz fica centralizada; abaixo, rola dentro
+  // do próprio componente. Colunas adicionais mantêm sempre a mesma medida.
+  // inclui os 4 px de espaço entre as células definidos no CSS
+  const largura = 132 + nc * 61;
+  const temNegativo = linhas.some((linha) =>
+    linha.valores.slice(0, nc).some((valor) => valor !== null && valor < 0)
+  );
 
   return (
-    <svg
-      viewBox={`0 0 ${LARG} ${altura}`}
-      className="w-full"
-      role="img"
-      aria-label={rotuloAcessivel}
-    >
-      {/* cabeçalho de colunas (raleado quando não cabe um rótulo por coluna) */}
-      {colunas.map((c, j) =>
-        j % cabecalhoCada === 0 || destaqueColuna === j ? (
-          <text
-            key={j}
-            x={ROT_W + j * celW + celW / 2}
-            y={CAB_H - 7}
-            fontSize={9}
-            fontWeight={destaqueColuna === j ? 700 : 400}
-            fill={destaqueColuna === j ? TINTA : ROTULO}
-            textAnchor="middle"
-            style={{ fontFamily: "var(--font-jetbrains), monospace" }}
-          >
-            {c}
-          </text>
-        ) : null
-      )}
-      {destaqueColuna !== undefined && destaqueColuna >= 0 ? (
-        <line
-          x1={ROT_W + destaqueColuna * celW + 3}
-          x2={ROT_W + (destaqueColuna + 1) * celW - 3}
-          y1={CAB_H - 3}
-          y2={CAB_H - 3}
-          stroke={TINTA}
-          strokeWidth={1.5}
-        />
-      ) : null}
+    <div className="g-mapa">
+      <div
+        className="g-mapa-scroll"
+        role="region"
+        aria-label={`${rotuloAcessivel}. Use a rolagem para consultar todas as linhas e colunas.`}
+        tabIndex={0}
+      >
+        <table className="g-mapa-tabela" style={{ width: `${largura}px` }}>
+          <caption className="sr-only">
+            {rotuloAcessivel}. Valores maiores aparecem em tons mais intensos.
+            Células com traço não têm movimento.
+          </caption>
+          <colgroup>
+            <col className="g-mapa-col-rotulo" />
+            {colunas.map((coluna, indice) => (
+              <col key={`${coluna}-${indice}`} className="g-mapa-col-valor" />
+            ))}
+          </colgroup>
+          <thead>
+            <tr>
+              <th className="g-mapa-canto" scope="col">
+                {rotuloLinhas}
+              </th>
+              {colunas.map((coluna, indice) => {
+                const destaque = destaqueColuna === indice;
+                return (
+                  <th
+                    key={`${coluna}-${indice}`}
+                    className={`g-mapa-coluna ${destaque ? "g-mapa-coluna-destaque" : ""}`}
+                    scope="col"
+                    aria-current={destaque ? "true" : undefined}
+                    title={coluna}
+                  >
+                    <span>{coluna}</span>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {linhas.map((linha, indiceLinha) => (
+              <tr key={`${linha.rotulo}-${indiceLinha}`} className="g-mapa-linha">
+                <th className="g-mapa-rotulo" scope="row" title={linha.rotulo}>
+                  <span>{linha.rotulo}</span>
+                </th>
+                {Array.from({ length: nc }, (_, indiceColuna) => {
+                  const valor = linha.valores[indiceColuna] ?? null;
+                  const coluna = colunas[indiceColuna];
+                  const destaque = destaqueColuna === indiceColuna;
 
-      {linhas.map((linha, i) => {
-        const y = CAB_H + i * (CEL_H + GAP);
-        const rot =
-          linha.rotulo.length > 18 ? linha.rotulo.slice(0, 17) + "…" : linha.rotulo;
-        return (
-          <g key={i} className="g-mapa-linha">
-            <text
-              x={ROT_W - 10}
-              y={y + CEL_H / 2 + 3.5}
-              fontSize={10}
-              fill={TINTA}
-              textAnchor="end"
-            >
-              {rot}
-              <title>{linha.rotulo}</title>
-            </text>
-            {linha.valores.slice(0, nc).map((v, j) => {
-              const x = ROT_W + j * celW;
-              if (v === null || v === 0) {
-                return (
-                  <g key={j} className="g-cel">
-                    <rect
-                      x={x + 1.5}
-                      y={y}
-                      width={celW - GAP}
-                      height={CEL_H}
-                      rx={3.5}
-                      fill={GRADE}
-                      opacity={0.32}
-                    />
-                    <text
-                      x={x + celW / 2}
-                      y={y + CEL_H / 2 + 3}
-                      fontSize={8.5}
-                      fill={ROTULO}
-                      opacity={0.55}
-                      textAnchor="middle"
-                    >
-                      —
-                    </text>
-                    <title>{`${linha.rotulo} · ${colunas[j]}: sem movimento`}</title>
-                  </g>
-                );
-              }
-              // valor NEGATIVO (estorno/ajuste) não é "sem movimento":
-              // célula clara com contorno terracota e o valor real em tinta
-              if (v < 0) {
-                return (
-                  <g key={j} className="g-cel">
-                    <rect
-                      x={x + 1.5}
-                      y={y}
-                      width={celW - GAP}
-                      height={CEL_H}
-                      rx={3.5}
-                      fill={CARTA}
-                      stroke={COR_SAIDA}
-                      strokeWidth={1.2}
-                    />
-                    {celulaComTexto ? (
-                      <text
-                        x={x + celW / 2}
-                        y={y + CEL_H / 2 + 3}
-                        fontSize={8.5}
-                        fontWeight={700}
-                        fill={TINTA}
-                        textAnchor="middle"
-                        style={{ fontFamily: "var(--font-jetbrains), monospace" }}
+                  if (valor === null || valor === 0) {
+                    const tooltip = `${linha.rotulo} · ${coluna}: sem movimento`;
+                    return (
+                      <td
+                        key={indiceColuna}
+                        className={`g-mapa-celula g-mapa-celula-vazia ${destaque ? "g-mapa-celula-destaque" : ""}`}
                       >
-                        {formatar(v)}
-                      </text>
-                    ) : null}
-                    <title>{`${linha.rotulo} · ${colunas[j]}: ${formatarCheio(v)} (negativo)`}</title>
-                  </g>
-                );
-              }
-              return (
-                <g
-                  key={j}
-                  className="g-cel g-surgir"
-                  style={{ animationDelay: `${i * 55 + j * 16}ms` }}
-                >
-                  <rect
-                    x={x + 1.5}
-                    y={y}
-                    width={celW - GAP}
-                    height={CEL_H}
-                    rx={3.5}
-                    fill={corDe(v)}
-                  />
-                  {celulaComTexto ? (
-                    <text
-                      x={x + celW / 2}
-                      y={y + CEL_H / 2 + 3}
-                      fontSize={8.5}
-                      fontWeight={700}
-                      fill={textoDe(v)}
-                      textAnchor="middle"
-                      style={{ fontFamily: "var(--font-jetbrains), monospace" }}
+                        <span aria-hidden="true">—</span>
+                        <span className="sr-only">Sem movimento</span>
+                        <span className="g-mapa-tooltip" aria-hidden="true">
+                          {tooltip}
+                        </span>
+                      </td>
+                    );
+                  }
+
+                  const negativo = valor < 0;
+                  const valorCheio = formatarCheio(valor);
+                  const tooltip = `${linha.rotulo} · ${coluna}: ${valorCheio}${negativo ? " (negativo)" : ""}`;
+                  return (
+                    <td
+                      key={indiceColuna}
+                      className={`g-mapa-celula g-mapa-celula-valor ${negativo ? "g-mapa-celula-negativa" : ""} ${destaque ? "g-mapa-celula-destaque" : ""}`}
+                      style={
+                        negativo
+                          ? { animationDelay: `${indiceLinha * 36 + indiceColuna * 12}ms` }
+                          : {
+                              animationDelay: `${indiceLinha * 36 + indiceColuna * 12}ms`,
+                              backgroundColor: corDe(valor),
+                              color: textoDe(valor),
+                            }
+                      }
                     >
-                      {formatar(v)}
-                    </text>
-                  ) : null}
-                  <title>{`${linha.rotulo} · ${colunas[j]}: ${formatarCheio(v)}`}</title>
-                </g>
-              );
-            })}
-          </g>
-        );
-      })}
-    </svg>
+                      <abbr aria-label={valorCheio} tabIndex={0}>
+                        {formatar(valor)}
+                      </abbr>
+                      <span className="g-mapa-tooltip" aria-hidden="true">
+                        {tooltip}
+                      </span>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="g-mapa-legenda" aria-label={`Escala de ${formatarCheio(min)} a ${formatarCheio(max)}`}>
+        <div className="g-mapa-escala" aria-hidden="true">
+          <span>{formatar(min)}</span>
+          <span
+            className="g-mapa-rampa"
+            style={{ backgroundImage: `linear-gradient(90deg, ${rampaDe}, ${rampaPara})` }}
+          />
+          <span>{formatar(max)}</span>
+        </div>
+        {temNegativo ? (
+          <span className="g-mapa-chave-negativa">
+            <span aria-hidden="true" /> ajuste negativo
+          </span>
+        ) : null}
+        <span className="g-mapa-instrucao">Passe sobre uma célula para o valor completo</span>
+      </div>
+    </div>
   );
 }
 
@@ -1780,7 +1764,7 @@ export function Cascata({
   return (
     <svg
       viewBox={VIEWBOX}
-      className={`w-full ${uid}`}
+      className={`grafico-executivo ${uid}`}
       role="img"
       aria-label={rotuloAcessivel}
     >
@@ -1794,7 +1778,7 @@ export function Cascata({
         const alturaBarra = Math.abs(y(b.de) - y(b.ate));
         const ehSaida = b.tipo === "saida";
         const ehFinal = i === n - 1;
-        // entrada = musgo, saídas = terracota, saldo final = índigo (é um
+        // entrada = verde, saídas = vermelho, saldo final = índigo (é um
         // resultado, não um fluxo — cor neutra evita ler "sobrou" como receita)
         const idxCor = ehSaida ? 1 : ehFinal ? 2 : 0;
         const cor = ehSaida ? COR_SAIDA : ehFinal ? COR_3 : COR_1;

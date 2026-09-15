@@ -123,16 +123,25 @@ summary {
 --------------------------------------------------------------------------- */
 :root {
   --g-tinta: #17282c;
-  --g-rotulo: #657579;
+  --g-rotulo: #6f7f83;
   --g-eixo: #aebabc;
-  --g-grade: #e7edef;
+  --g-grade: #dbe4e6;
   --g-carta: #ffffff;
   --g-s1: #347c69;
   --g-s1-forte: #245f51;
-  --g-s2: #d38a24;
-  --g-s3: #3579b9;
-  --g-saida: #c83c48;
-  --g-saida-2: #8f2630;
+  --g-s2: #d58b19;
+  --g-s3: #5475d4;
+  --g-saida: #d05160;
+  --g-saida-2: #8b5f91;
+  --g-n-otimo: #347c69;
+  --g-n-atencao: #d58b19;
+  --g-n-critico: #cb4655;
+  --g-n-info: #5475d4;
+  --g-n-neutro: #93a2a5;
+  --g-tip-bg: rgba(21, 37, 41, 0.96);
+  --g-tip-border: rgba(255, 255, 255, 0.14);
+  --g-tip-text: #ffffff;
+  --g-tip-muted: #b9c8ca;
   --g-mapa-de: #e9f3f0;
   --g-mapa-para: #245f51;
 }
@@ -148,6 +157,22 @@ summary {
 @keyframes g-crescer-x {
   from { transform: scaleX(0); }
   to { transform: scaleX(1); }
+}
+
+/* Base visual compartilhada entre os SVGs server-side e os gráficos
+   interativos do Executivo. Mantém o desenho dentro do card e garante que a
+   tipografia numérica permaneça estável durante a responsividade. */
+.grafico-executivo {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  color: var(--g-tinta);
+  font-variant-numeric: tabular-nums;
+}
+svg.grafico-executivo {
+  height: auto;
+  overflow: visible;
 }
 @keyframes g-desenhar {
   to { stroke-dashoffset: 0; }
@@ -240,6 +265,7 @@ summary {
 .g-tip {
   opacity: 0;
   transform: translateY(3px);
+  filter: drop-shadow(0 10px 13px rgba(21, 37, 41, 0.2));
   transition:
     opacity 0.14s ease,
     transform 0.14s ease;
@@ -288,19 +314,279 @@ summary {
   animation: g-pulso 2.6s ease-out 1.2s infinite;
 }
 
-/* célula do mapa de calor: ganha moldura de tinta sob o mouse */
-.g-cel rect {
+/* ---------- mapa de calor -------------------------------------------------
+   A matriz não é SVG: números, células e espaços mantêm a mesma medida
+   em qualquer card. Em telas estreitas ela rola nos dois eixos; cabeçalhos de
+   coluna e de linha ficam presos para que o contexto nunca desapareça. */
+.g-mapa {
+  min-width: 0;
+  width: 100%;
+}
+.g-mapa-scroll {
+  max-height: min(34rem, 72vh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  border-radius: 0.6rem;
+}
+.g-mapa-tabela {
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 4px 5px;
+  margin-inline: auto;
+  padding: 0 1px 3px;
+}
+.g-mapa-col-rotulo {
+  width: 128px;
+}
+.g-mapa-col-valor {
+  width: 57px;
+}
+.g-mapa-canto,
+.g-mapa-coluna {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  height: 29px;
+  padding: 0 4px 4px;
+  background: var(--g-carta);
+  color: var(--g-rotulo);
+  font-family: var(--font-public-sans), Arial, sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  text-align: center;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.g-mapa-canto {
+  left: 0;
+  z-index: 5;
+  padding-left: 8px;
+  text-align: left;
+}
+.g-mapa-coluna > span {
+  display: inline-flex;
+  min-height: 23px;
+  max-width: 100%;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.g-mapa-coluna-destaque > span {
+  border-bottom: 2px solid var(--oliva-escura);
+  color: var(--g-tinta);
+}
+.g-mapa-rotulo {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  height: 40px;
+  padding: 0 10px 0 8px;
+  background: var(--g-carta);
+  box-shadow: 12px 0 14px -16px rgba(23, 40, 44, 0.72);
+  color: var(--g-tinta);
+  font-family: var(--font-public-sans), Arial, sans-serif;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.15;
+  text-align: left;
+  transition: color 0.14s ease;
+}
+.g-mapa-rotulo > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.g-mapa-celula {
+  position: relative;
+  z-index: 0;
+  height: 40px;
+  overflow: visible;
+  padding: 0 5px;
+  border-radius: 7px;
+  box-shadow: inset 0 0 0 1px rgba(23, 40, 44, 0.07);
+  font-family: var(--font-jetbrains), monospace;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
   transition:
-    filter 0.12s ease,
-    stroke 0.12s ease,
-    stroke-width 0.12s ease;
+    filter 0.14s ease,
+    transform 0.14s ease,
+    box-shadow 0.14s ease;
 }
-.g-cel:hover rect {
-  stroke: var(--tinta);
-  stroke-width: 1.4;
+@keyframes g-mapa-entrar {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
-.g-mapa-linha:hover .g-cel rect {
-  filter: saturate(1.12);
+.g-mapa-celula-valor {
+  animation: g-mapa-entrar 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.g-mapa-celula abbr {
+  display: block;
+  overflow: hidden;
+  cursor: help;
+  text-decoration: none;
+  text-overflow: ellipsis;
+}
+.g-mapa-celula abbr:focus-visible {
+  border-radius: 4px;
+  outline-color: currentColor;
+  outline-offset: 2px;
+}
+/* Tooltip próprio, imediato e também acionado por teclado. O valor completo
+   continua no aria-label do <abbr>; portanto a informação não depende de
+   hover, cor ou do comportamento inconsistente do atributo title. O balão é
+   aria-hidden para não duplicar o valor na árvore de acessibilidade. */
+.g-mapa-tooltip {
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 50%;
+  z-index: 20;
+  width: max-content;
+  max-width: min(260px, calc(100vw - 32px));
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--g-tinta) 78%, white);
+  border-radius: 6px;
+  background: var(--g-tinta);
+  box-shadow: 0 8px 20px -11px rgba(23, 40, 44, 0.78);
+  color: var(--g-carta);
+  font-family: var(--font-public-sans), Arial, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.35;
+  opacity: 0;
+  pointer-events: none;
+  text-align: left;
+  text-transform: none;
+  transform: translate(-50%, 3px);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+  white-space: normal;
+}
+.g-mapa-tabela tbody tr:first-child .g-mapa-tooltip {
+  top: calc(100% + 7px);
+  bottom: auto;
+  transform: translate(-50%, -3px);
+}
+.g-mapa-tabela tbody td:nth-child(2) .g-mapa-tooltip {
+  left: 0;
+  transform: translate(0, 3px);
+}
+.g-mapa-tabela tbody td:nth-last-child(-n + 2) .g-mapa-tooltip {
+  right: 0;
+  left: auto;
+  transform: translate(0, 3px);
+}
+.g-mapa-tabela tbody tr:first-child td:nth-child(2) .g-mapa-tooltip,
+.g-mapa-tabela tbody tr:first-child td:nth-last-child(-n + 2) .g-mapa-tooltip {
+  transform: translate(0, -3px);
+}
+.g-mapa-celula:hover .g-mapa-tooltip,
+.g-mapa-celula:focus-within .g-mapa-tooltip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.g-mapa-tabela tbody td:nth-child(2):hover .g-mapa-tooltip,
+.g-mapa-tabela tbody td:nth-child(2):focus-within .g-mapa-tooltip,
+.g-mapa-tabela tbody td:nth-last-child(-n + 2):hover .g-mapa-tooltip,
+.g-mapa-tabela tbody td:nth-last-child(-n + 2):focus-within .g-mapa-tooltip {
+  transform: translate(0, 0);
+}
+.g-mapa-celula-vazia {
+  background: #f4f7f7;
+  box-shadow: inset 0 0 0 1px rgba(101, 117, 121, 0.075);
+  color: color-mix(in srgb, var(--g-rotulo) 52%, transparent);
+  font-weight: 500;
+}
+.g-mapa-celula-negativa {
+  background: color-mix(in srgb, var(--g-saida) 5%, var(--g-carta));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--g-saida) 58%, transparent);
+  color: var(--g-saida);
+}
+.g-mapa-celula-destaque {
+  outline: 1.5px solid color-mix(in srgb, var(--oliva-escura) 74%, transparent);
+  outline-offset: -2px;
+}
+.g-mapa-linha:hover .g-mapa-rotulo {
+  color: var(--oliva-escura);
+}
+.g-mapa-linha:hover .g-mapa-celula:not(.g-mapa-celula-vazia) {
+  filter: saturate(1.07) brightness(1.025);
+}
+.g-mapa-celula:hover,
+.g-mapa-celula:focus-within {
+  z-index: 10;
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in srgb, var(--g-tinta) 68%, transparent),
+    0 5px 12px -9px rgba(23, 40, 44, 0.75);
+  filter: saturate(1.06) brightness(1.03);
+  transform: translateY(-1px);
+}
+.g-mapa-legenda {
+  display: flex;
+  min-height: 25px;
+  align-items: center;
+  gap: 14px;
+  margin-top: 7px;
+  padding-inline: 5px;
+  color: var(--g-rotulo);
+  font-size: 9px;
+  line-height: 1.2;
+}
+.g-mapa-escala {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-jetbrains), monospace;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.g-mapa-rampa {
+  width: 84px;
+  height: 5px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgba(23, 40, 44, 0.06);
+}
+.g-mapa-chave-negativa {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.g-mapa-chave-negativa > span {
+  width: 8px;
+  height: 8px;
+  border: 1px solid color-mix(in srgb, var(--g-saida) 58%, transparent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--g-saida) 5%, var(--g-carta));
+}
+.g-mapa-instrucao {
+  margin-left: auto;
+  text-align: right;
+}
+@media (max-width: 639px) {
+  .g-mapa-col-rotulo {
+    width: 110px;
+  }
+  .g-mapa-rotulo {
+    padding-inline: 6px 8px;
+    font-size: 10px;
+  }
+  .g-mapa-celula {
+    font-size: 10px;
+  }
+  .g-mapa-instrucao {
+    display: none;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .g-barra,
@@ -326,8 +612,18 @@ summary {
   .g-col path,
   .g-col rect,
   .g-fatia,
-  .g-cel rect {
+  .g-mapa-rotulo,
+  .g-mapa-celula {
     transition: none !important;
+  }
+  .g-mapa-celula-valor {
+    animation: none !important;
+  }
+  .g-mapa-tooltip {
+    transition: none !important;
+  }
+  .g-mapa-celula:hover {
+    transform: none !important;
   }
 }
 
@@ -420,6 +716,84 @@ summary {
   color: color-mix(in srgb, var(--status-cor) 72%, var(--tinta));
   border-color: color-mix(in srgb, var(--status-cor) 28%, var(--contorno));
   background: color-mix(in srgb, var(--status-cor) 8%, white);
+}
+
+/* ---------- números em cards ----------
+   Todo Card é também um contêiner de tamanho. Assim a tipografia dos KPIs
+   responde à largura REAL do cartão (inclusive em grades de 2 ou 5 colunas),
+   e não apenas à largura da janela. Os limites preservam a hierarquia do
+   painel executivo; `overflow-wrap` é a última defesa para valores atípicos
+   de muitos dígitos, que nunca devem escapar da borda. */
+.ui-card {
+  min-inline-size: 0;
+  container-type: inline-size;
+}
+
+.kpi-valor {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  font-size: 1.5rem;
+  font-size: clamp(1.05rem, calc(0.9rem + 3.75cqi), 1.6875rem);
+  line-height: 1.16;
+  overflow-wrap: anywhere;
+}
+
+.kpi-valor--destaque {
+  font-size: 1.6875rem;
+  font-size: clamp(1.125rem, calc(0.95rem + 5cqi), 1.9375rem);
+}
+
+/* Utilitário para os poucos números de destaque que vivem em cards próprios,
+   fora do componente Kpi (saldo consolidado, resumos e contadores). */
+.numero-card {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.numero-card--destaque {
+  font-size: 2rem;
+  font-size: clamp(1.5rem, calc(1.05rem + 6cqi), 2.5rem);
+}
+
+.numero-card--medio {
+  font-size: 1.25rem;
+  font-size: clamp(1.05rem, calc(0.95rem + 4cqi), 1.5rem);
+}
+
+.numero-card--compacto {
+  font-size: 0.875rem;
+  font-size: clamp(0.75rem, calc(0.65rem + 2.5cqi), 1.125rem);
+}
+
+.numero-dado {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Valores monetários herdam a proteção mesmo quando aparecem em resumos
+   próprios em vez de um Kpi. Tabelas recuperam o comportamento em uma linha,
+   pois já possuem rolagem horizontal dedicada. */
+.ui-card .numero-dado {
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.ui-card :is(.kpi-valor, .numero-card) :is(.sigilo, .valor-sigilo-real, .numero-dado),
+.ui-card :is(.kpi-valor, .numero-card).sigilo {
+  max-inline-size: 100%;
+}
+
+.ui-card :is(.kpi-valor, .numero-card) .numero-dado {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.tabela .numero-dado {
+  overflow-wrap: normal;
+  white-space: nowrap;
 }
 
 /* Dentro de tabelas com rolagem horizontal o contêiner recorta os dois eixos

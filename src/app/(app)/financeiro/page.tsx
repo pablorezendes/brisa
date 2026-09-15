@@ -78,13 +78,15 @@ function MiniValor({
   destaque?: boolean;
 }) {
   return (
-    <div>
+    <div className="min-w-0">
       <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-tinta-suave">
         {rotulo}
       </div>
       <div
-        className={`mt-1 tabular-nums text-tinta ${
-          destaque ? "text-lg font-bold" : "text-[13px] font-semibold"
+        className={`numero-card mt-1 tabular-nums text-tinta ${
+          destaque
+            ? "numero-card--compacto font-bold"
+            : "text-[13px] font-semibold"
         }`}
       >
         <Sigilo>{valor}</Sigilo>
@@ -335,7 +337,7 @@ export default async function PaginaFinanceiro({
               <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/70">
                 Recebido
               </div>
-              <div className="mt-1 text-lg font-bold text-white">
+              <div className="numero-card numero-card--compacto mt-1 font-bold text-white">
                 <Sigilo><Dinheiro centavos={dados.recebidoMes} destaque /></Sigilo>
               </div>
             </div>
@@ -343,7 +345,7 @@ export default async function PaginaFinanceiro({
               <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/70">
                 Em aberto
               </div>
-              <div className="mt-1 text-lg font-bold text-white">
+              <div className="numero-card numero-card--compacto mt-1 font-bold text-white">
                 <Sigilo><Dinheiro centavos={dados.inadimplentesValor} destaque /></Sigilo>
               </div>
             </div>
@@ -351,7 +353,7 @@ export default async function PaginaFinanceiro({
               <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/70">
                 Saldo caixa
               </div>
-              <div className="mt-1 text-lg font-bold text-white">
+              <div className="numero-card numero-card--compacto mt-1 font-bold text-white">
                 <Sigilo><Dinheiro centavos={dados.saldoCaixaMes} destaque /></Sigilo>
               </div>
             </div>
@@ -365,7 +367,7 @@ export default async function PaginaFinanceiro({
         vazio="Nenhuma cobrança integralmente pendente, caixa negativo ou reajuste na mesa para este mês."
       />
 
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
         <Kpi
           rotulo="Recebido no mês"
           valor={<Dinheiro centavos={dados.recebidoMes} destaque />}
@@ -569,7 +571,7 @@ export default async function PaginaFinanceiro({
           className="xl:col-span-6"
         >
           {dados.caixaMes ? (
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-3">
               <MiniValor
                 rotulo="Entradas"
                 valor={<Dinheiro centavos={dados.caixaMes.receita} />}

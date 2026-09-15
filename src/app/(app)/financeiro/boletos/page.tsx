@@ -206,7 +206,7 @@ export default async function PaginaBoletos({
         </Card>
       ) : null}
 
-      <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
         <Kpi rotulo="A emitir" valor={dados.kpis.aEmitir} nivel={dados.kpis.aEmitir ? "atencao" : "otimo"} selo={dados.kpis.aEmitir ? "fila" : "em dia"} ajuda="Lançamentos pendentes que ainda não possuem boleto ativo." />
         <Kpi rotulo="Em aberto" valor={dados.kpis.emAberto} nivel="info" ajuda="Boletos registrados e ainda não liquidados." />
         <Kpi rotulo="Pagamento informado" valor={dados.kpis.pagamentosReportados} nivel={dados.kpis.pagamentosReportados ? "atencao" : "neutro"} ajuda="Avisos operacionais recebidos pelo webhook; ainda não são baixa definitiva." />

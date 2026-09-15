@@ -16,6 +16,7 @@ import {
   Kpi,
   PageHeader,
   SeletorPeriodo,
+  TituloCard,
   btnPrimario,
   btnSecundario,
 } from "@/components/ui";
@@ -145,7 +146,7 @@ async function TemporadaDoPeriodo({ periodo }: { periodo: Periodo }) {
       />
 
       {/* ---------- KPIs do período ---------- */}
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi
           rotulo="Receita no período"
           valor={<Dinheiro centavos={d.totalReceita} destaque />}
@@ -367,7 +368,7 @@ export default async function PaginaPainelTemporada({
       />
 
       {/* ---------- KPIs ---------- */}
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi
           rotulo={
             d.anoNucleo !== null
@@ -444,24 +445,19 @@ export default async function PaginaPainelTemporada({
       {/* ---------- mapa de calor: todos os anos numa tela só ---------- */}
       {d.anos.length > 1 ? (
         <Card className="mt-6 p-5">
-          <div className="mb-3 flex items-center gap-1.5">
-            <h2 className="text-sm font-semibold">
-              Sazonalidade — receita ano × mês
-            </h2>
-            <Ajuda dica="Todos os anos lado a lado: quanto mais escuro o verde, maior a receita do mês. Dá para ver a estação forte do Airbnb repetindo de ano em ano — e comparar o ano atual com os anteriores de relance. Os números exatos estão nos cartões por ano, logo abaixo." />
-          </div>
-          <div className="overflow-x-auto">
-            <div className="min-w-[560px]">
-              <MapaCalor
-                colunas={NOME_MES_ABREV.slice(1)}
-                linhas={d.anos.map((a) => ({
-                  rotulo: String(a.ano),
-                  valores: a.receitaPorMes.map((v) => (v > 0 ? v : null)),
-                }))}
-                rotuloAcessivel="Receita da temporada por ano e mês"
-              />
-            </div>
-          </div>
+          <TituloCard
+            titulo="Sazonalidade — receita ano × mês"
+            ajuda="Todos os anos lado a lado: quanto mais intenso o verde, maior a receita do mês. Passe o cursor ou navegue até um valor para ver o total completo e comparar a estação forte entre os anos."
+          />
+          <MapaCalor
+            colunas={NOME_MES_ABREV.slice(1)}
+            linhas={d.anos.map((a) => ({
+              rotulo: String(a.ano),
+              valores: a.receitaPorMes.map((v) => (v > 0 ? v : null)),
+            }))}
+            rotuloLinhas="Ano"
+            rotuloAcessivel="Receita da temporada por ano e mês"
+          />
         </Card>
       ) : null}
 

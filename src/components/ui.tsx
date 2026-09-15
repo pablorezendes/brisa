@@ -91,7 +91,7 @@ export function Card({
   const est = nivel && nivel !== "neutro" ? NIVEL[nivel] : null;
   return (
     <div
-      className={`rounded-xl border border-contorno bg-carta shadow-[0_1px_2px_rgba(16,35,38,0.035)] ${est ? "card-sem" : ""} ${className}`}
+      className={`ui-card min-w-0 rounded-xl border border-contorno bg-carta shadow-[0_1px_2px_rgba(16,35,38,0.035)] ${est ? "card-sem" : ""} ${className}`}
       style={{
         ...(est ? ({ "--sem-cor": est.cor } as React.CSSProperties) : {}),
         ...style,
@@ -113,7 +113,7 @@ export function Dinheiro({
   const negativo = (centavos ?? 0) < 0;
   return (
     <span
-      className={`font-mono tabular-nums ${negativo ? "text-erro" : ""} ${
+      className={`numero-dado inline-block max-w-full font-mono tabular-nums ${negativo ? "text-erro" : ""} ${
         destaque ? "font-semibold" : ""
       }`}
     >
@@ -275,30 +275,30 @@ export function Kpi({
   const est = nivel ? NIVEL[nivel] : null;
   const conteudo = (
     <>
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.095em] text-tinta-suave">
+      <div className="flex min-w-0 items-start justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-bold leading-snug uppercase tracking-[0.095em] text-tinta-suave">
           {rotulo}
           {ajuda ? <Ajuda dica={ajuda} /> : null}
         </div>
         {nivel && nivel !== "neutro" ? (
-          <Selo nivel={nivel}>{selo}</Selo>
+          <span className="shrink-0">
+            <Selo nivel={nivel}>{selo}</Selo>
+          </span>
         ) : null}
       </div>
       <div
-        className={`mt-2 font-sans font-bold tabular-nums tracking-[-0.035em] text-tinta ${
-          destaque
-            ? "text-[27px] leading-tight sm:text-[31px]"
-            : "text-2xl leading-tight sm:text-[27px]"
+        className={`kpi-valor mt-2 font-sans font-bold tabular-nums tracking-[-0.035em] text-tinta ${
+          destaque ? "kpi-valor--destaque" : ""
         }`}
       >
         <Sigilo>{valor}</Sigilo>
       </div>
       {secundario ? (
-        <div className="mt-2 flex items-baseline gap-1.5 border-t border-contorno/70 pt-2 text-[10px] text-tinta-suave">
+        <div className="mt-2 flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 border-t border-contorno/70 pt-2 text-[10px] text-tinta-suave">
           <span className="font-bold uppercase tracking-[0.06em]">
             {secundario.rotulo}
           </span>
-          <span className="font-mono font-semibold tabular-nums text-tinta">
+          <span className="numero-card min-w-0 max-w-full font-mono font-semibold tabular-nums text-tinta">
             <Sigilo>{secundario.valor}</Sigilo>
           </span>
         </div>
@@ -321,7 +321,7 @@ export function Kpi({
     </>
   );
 
-  const classe = `px-4 py-4 transition-all sm:px-5 ${
+  const classe = `min-w-0 px-4 py-4 transition-all sm:px-5 ${
     href ? "group block rounded-xl hover:bg-[#f8fafb]" : ""
   }`;
 

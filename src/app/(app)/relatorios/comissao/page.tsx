@@ -1,9 +1,9 @@
 import {
-  Ajuda,
   Card,
   Dinheiro,
   PageHeader,
   SeletorPeriodo,
+  TituloCard,
   btnSecundario,
 } from "@/components/ui";
 import { MapaCalor } from "@/components/graficos";
@@ -92,28 +92,19 @@ export default async function ComissaoPage({
 
       {vm.linhas.length > 0 ? (
         <Card className="mb-4 p-5">
-          <div className="mb-3 flex items-center gap-1.5">
-            <h2 className="text-sm font-semibold">Mapa de calor</h2>
-            <Ajuda dica="Cada célula é a comissão de um empreendimento num mês. Quanto mais escuro o verde, maior o valor — os melhores meses de cada linha saltam aos olhos. Célula com traço = sem movimento. Os números exatos estão na tabela abaixo." />
-          </div>
-          <div className="overflow-x-auto">
-            {/* min-width acompanha o nº de colunas: períodos multi-ano rolam
-                dentro do card em vez de espremer as células */}
-            <div
-              style={{
-                minWidth: `${Math.max(560, 128 + vm.colunas.length * 40)}px`,
-              }}
-            >
-              <MapaCalor
-                colunas={vm.colunas}
-                linhas={vm.linhas.map((l) => ({
-                  rotulo: l.empreendimento,
-                  valores: l.porMes.map((v) => (v !== 0 ? v : null)),
-                }))}
-                rotuloAcessivel={`Mapa de calor da comissão ${vm.janela}`}
-              />
-            </div>
-          </div>
+          <TituloCard
+            titulo="Mapa de calor"
+            ajuda="Cada célula é a comissão de um empreendimento num mês. Quanto mais intenso o verde, maior o valor. Passe o cursor ou navegue até um valor para ver o total completo; traço significa sem movimento."
+          />
+          <MapaCalor
+            colunas={vm.colunas}
+            linhas={vm.linhas.map((l) => ({
+              rotulo: l.empreendimento,
+              valores: l.porMes.map((v) => (v !== 0 ? v : null)),
+            }))}
+            rotuloLinhas="Empreendimento"
+            rotuloAcessivel={`Mapa de calor da comissão ${vm.janela}`}
+          />
         </Card>
       ) : null}
 

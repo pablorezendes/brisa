@@ -233,7 +233,9 @@ export function CartaoModulo({
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e8f1ee] text-oliva-escura">
             <IconeMenu nome={icone} tamanho={19} />
           </span>
-          <span className="font-mono text-2xl font-bold tabular-nums text-tinta">{total}</span>
+          <span className="numero-card numero-card--medio max-w-[70%] text-right font-mono font-bold tabular-nums text-tinta">
+            {total}
+          </span>
         </div>
         <h2 className="mt-4 text-base font-bold tracking-tight text-tinta group-hover:text-oliva-escura">
           {titulo}

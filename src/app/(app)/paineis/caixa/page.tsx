@@ -59,8 +59,8 @@ function BadgeCentro({ centro }: { centro: string }) {
 /**
  * Duas barras horizontais na MESMA escala para comparar os centros.
  * (BarrasHorizontais compartilhado é série única de uma cor só — aqui cada
- * centro tem seu tom de terracota, como no gráfico mensal: saída é vermelha,
- * a luminosidade distingue os dois.) Mesma geometria do componente comum.
+ * centro usa a mesma paleta do Executivo: saída principal em vermelho e a
+ * segunda série em roxo.) Mesma geometria do componente comum.
  */
 function ComparativoCentros({ al, ch }: { al: number; ch: number }) {
   const LARG = 560;
@@ -78,7 +78,7 @@ function ComparativoCentros({ al, ch }: { al: number; ch: number }) {
   return (
     <svg
       viewBox={`0 0 ${LARG} ${altura}`}
-      className="w-full"
+      className="grafico-executivo"
       role="img"
       aria-label="Despesa da janela por centro de custo"
     >
@@ -91,23 +91,38 @@ function ComparativoCentros({ al, ch }: { al: number; ch: number }) {
               x={ROTULO_W - 8}
               y={y + ALT_BARRA / 2 + 3.5}
               fontSize={10}
-              fill="#1c2430"
+              fill="var(--g-tinta)"
               textAnchor="end"
             >
               {item.rotulo}
             </text>
-            <path
-              d={`M${ROTULO_W},${y} h${w - 4} q4,0 4,4 v${ALT_BARRA - 8} q0,4 -4,4 h${-(w - 4)} z`}
+            <rect
+              x={ROTULO_W}
+              y={y}
+              width={plotW}
+              height={ALT_BARRA}
+              rx={4}
+              fill="var(--g-grade)"
+              opacity={0.45}
+            />
+            <rect
+              x={ROTULO_W}
+              y={y}
+              width={w}
+              height={ALT_BARRA}
+              rx={4}
               fill={item.cor}
+              className="g-barra-x"
+              style={{ animationDelay: `${i * 80}ms` }}
             >
               <title>{`${item.rotulo}: ${formatarBRL(item.valor)}`}</title>
-            </path>
+            </rect>
             <text
               x={ROTULO_W + w + 6}
               y={y + ALT_BARRA / 2 + 3.5}
               fontSize={10}
               fontWeight={600}
-              fill="#444840"
+              fill="var(--g-rotulo)"
             >
               {formatarBRL(item.valor)}
             </text>
@@ -179,7 +194,7 @@ export default async function PaginaPainelCaixa({
       />
 
       {/* ---------- KPIs da janela ---------- */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
         <Kpi
           rotulo={periodo ? "Receita no período" : "Receita no ano"}
           valor={<Dinheiro centavos={t.receita} destaque />}
@@ -258,7 +273,7 @@ export default async function PaginaPainelCaixa({
           rotulos={rotulosMeses}
         />
         <p className="mt-2 text-xs text-tinta-suave">
-          Verde é o que entrou; a pilha ocre + índigo é o que saiu em cada
+          Verde é o que entrou; a pilha vermelha + roxa é o que saiu em cada
           centro. Mês bom é o verde maior que a pilha.
         </p>
         <div className="mt-3 overflow-x-auto">

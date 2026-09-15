@@ -490,7 +490,7 @@ function DadoImportado({
       <div className="text-[10px] font-bold uppercase tracking-[0.13em] text-tinta-suave">
         {rotulo}
       </div>
-      <div className="mt-1 font-mono text-[12px] font-semibold text-tinta">
+      <div className="numero-card mt-1 font-mono text-[12px] font-semibold text-tinta">
         {sigiloso ? <Sigilo>{valor}</Sigilo> : valor}
       </div>
     </div>
@@ -649,17 +649,17 @@ function PainelConfiguracaoCobranca({
 
           <div className="mt-4 grid grid-cols-3 gap-2 border-t border-contorno pt-3 text-center">
             <div>
-              <div className="font-mono text-[12px] font-bold text-tinta">
+              <div className="numero-card font-mono text-[12px] font-bold text-tinta">
                 <Sigilo>{configuracao.ultimoNossoNumeroLegado ?? "—"}</Sigilo>
               </div>
               <div className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-tinta-suave">último nº</div>
             </div>
             <div>
-              <div className="font-mono text-[12px] font-bold text-tinta">{configuracao.loteLegado ?? "—"}</div>
+              <div className="numero-card font-mono text-[12px] font-bold text-tinta">{configuracao.loteLegado ?? "—"}</div>
               <div className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-tinta-suave">lote antigo</div>
             </div>
             <div>
-              <div className="font-mono text-[12px] font-bold text-tinta">{configuracao.planoContaLegadoId ?? "—"}</div>
+              <div className="numero-card font-mono text-[12px] font-bold text-tinta">{configuracao.planoContaLegadoId ?? "—"}</div>
               <div className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-tinta-suave">plano tarifa</div>
             </div>
           </div>
@@ -951,15 +951,15 @@ export default async function PaginaContasBancarias({
             </div>
             <div className="grid w-full shrink-0 grid-cols-3 gap-2 text-center 2xl:w-auto">
               <div className="rounded-lg border border-contorno bg-[#f8faf9] px-3 py-2">
-                <div className="font-mono text-lg font-bold text-tinta">{ativas}</div>
+                <div className="numero-card numero-card--compacto font-mono font-bold text-tinta">{ativas}</div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-tinta-suave">ativas</div>
               </div>
               <div className="rounded-lg border border-contorno bg-[#f8faf9] px-3 py-2">
-                <div className="font-mono text-lg font-bold text-tinta">{integradas}</div>
+                <div className="numero-card numero-card--compacto font-mono font-bold text-tinta">{integradas}</div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-tinta-suave">na API</div>
               </div>
               <div className="rounded-lg border border-contorno bg-[#f8faf9] px-3 py-2">
-                <div className="font-mono text-lg font-bold text-tinta">{comBoletos}</div>
+                <div className="numero-card numero-card--compacto font-mono font-bold text-tinta">{comBoletos}</div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-tinta-suave">boletos</div>
               </div>
             </div>

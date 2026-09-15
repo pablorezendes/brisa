@@ -863,22 +863,15 @@ export default async function PaginaExecutivo({
         <Card className="mt-4 p-5">
           <TituloCard
             titulo="Mapa de calor — comissão por empreendimento e mês"
-            ajuda="Cada célula é a comissão de um empreendimento num mês: quanto mais luminoso o verde, maior o valor. Serve para achar em um segundo os meses fortes de cada prédio, as quedas fora de padrão e quem sustenta o resultado o ano todo. Célula com traço = sem movimento; os números exatos estão na tabela abaixo."
+            ajuda="Cada célula é a comissão de um empreendimento num mês: quanto mais intenso o verde, maior o valor. Serve para achar em um segundo os meses fortes de cada prédio, as quedas fora de padrão e quem sustenta o resultado o ano todo. Passe o cursor ou navegue até um valor para ver o total completo; traço significa sem movimento."
           />
-          <div className="overflow-x-auto">
-            <div
-              style={{
-                minWidth: `${Math.max(560, 128 + (vm.rotulos?.length ?? 12) * 40)}px`,
-              }}
-            >
-              <MapaCalor
-                colunas={vm.rotulos ?? NOME_MES_ABREV.slice(1)}
-                linhas={linhasMapa}
-                destaqueColuna={vm.destaque ? vm.destaque - 1 : undefined}
-                rotuloAcessivel="Comissão por empreendimento e mês"
-              />
-            </div>
-          </div>
+          <MapaCalor
+            colunas={vm.rotulos ?? NOME_MES_ABREV.slice(1)}
+            linhas={linhasMapa}
+            destaqueColuna={vm.destaque ? vm.destaque - 1 : undefined}
+            rotuloLinhas="Empreendimento"
+            rotuloAcessivel="Comissão por empreendimento e mês"
+          />
         </Card>
       ) : null}
 

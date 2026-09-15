@@ -99,7 +99,7 @@ export default async function PaginaContratos({
         </Card>
       ) : null}
 
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Kpi
           rotulo="Contratos ativos"
           valor={ativos.length}

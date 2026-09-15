@@ -381,7 +381,7 @@ export default async function PaginaCaixa({
                     : "zerado"}
               </Selo>
             </div>
-            <div className="mt-1 font-serif text-3xl font-semibold tabular-nums text-tinta sm:text-[40px] sm:leading-tight">
+            <div className="numero-card numero-card--destaque mt-1 font-serif font-semibold tabular-nums text-tinta">
               <Sigilo>
                 <Dinheiro centavos={consolidacao.saldo} destaque />
               </Sigilo>
@@ -423,7 +423,7 @@ export default async function PaginaCaixa({
         </div>
       </Card>
 
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Kpi
           rotulo="Receita (entradas)"
           valor={<Dinheiro centavos={consolidacao.receita} destaque />}

@@ -126,42 +126,42 @@ export default async function PaginaPainelEmpreendimentos({
                   </div>
                 </div>
 
-                <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
-                  <div>
+                <dl className="mt-4 grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+                  <div className="min-w-0">
                     <dt className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-tinta-suave">
                       {periodo ? "Comissão no período" : "Comissão no ano"}
                       <Ajuda dica="O que a administradora ganhou aqui: soma de (recebido − IPTU − condomínio) × taxa, lançamento a lançamento. IPTU e condomínio são repasses ao proprietário e nunca entram na conta." />
                     </dt>
-                    <dd className="mt-0.5 font-serif text-xl font-semibold tabular-nums">
+                    <dd className="numero-card numero-card--medio mt-0.5 font-serif font-semibold tabular-nums">
                       <Dinheiro centavos={c.comissaoJanela} destaque />
                     </dd>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <dt className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-tinta-suave">
                       {periodo ? "Recebido no período" : "Recebido no ano"}
                       <Ajuda
                         dica={`Tudo o que os locatários pagaram nos lançamentos ${periodo ? "do período" : "deste ano"} (aluguel + repasses). Só conta quando o campo Recebido do lançamento é preenchido.`}
                       />
                     </dt>
-                    <dd className="mt-0.5 font-mono text-sm tabular-nums">
+                    <dd className="numero-card mt-0.5 font-mono text-sm tabular-nums">
                       <Dinheiro centavos={c.recebidoJanela} />
                     </dd>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <dt className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-tinta-suave">
                       Ticket médio
                       <Ajuda dica={`Recebido ${periodo ? "no período" : "no ano"} ÷ ${c.lancamentosPagos || "nº de"} lançamento(s) pago(s): o "aluguel médio" que entra por cobrança. Ajuda a comparar prédios de tamanhos diferentes.`} />
                     </dt>
-                    <dd className="mt-0.5 font-mono text-sm tabular-nums">
+                    <dd className="numero-card mt-0.5 font-mono text-sm tabular-nums">
                       <Dinheiro centavos={c.ticketMedio} />
                     </dd>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <dt className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-tinta-suave">
                       Ocupação
                       <Ajuda dica="Unidades ativas com locatário no contrato vigente. Unidade desocupada não gera aluguel nem comissão — merece atenção comercial." />
                     </dt>
-                    <dd className="mt-0.5 font-mono text-sm tabular-nums">
+                    <dd className="numero-card mt-0.5 font-mono text-sm tabular-nums">
                       {c.ocupacao.ocupadas}/{c.ocupacao.ativas}
                     </dd>
                   </div>
