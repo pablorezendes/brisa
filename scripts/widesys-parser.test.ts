@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   extractAnchors,
   extractForms,
+  extractOnclickUrls,
   extractRecord,
   findLoginForm,
   isJoomlaLoginPage,
@@ -56,6 +57,17 @@ describe("parser do legado Widesys", () => {
     expect(parseTotal(html)).toBe(226);
   });
 
+  it("extrai navegação literal de onclick sem executar JavaScript", () => {
+    const html = `
+      <a href="javascript:void(0)"
+         onclick="window.location.href = 'index.php?option=com_widesys&amp;task=locacao.edit&amp;id=63'">Contrato</a>
+      <button onclick="carregar('/rota/dinamica')">Ignorar</button>`;
+
+    expect(extractOnclickUrls(html)).toEqual([
+      "index.php?option=com_widesys&task=locacao.edit&id=63",
+    ]);
+  });
+
   it("preserva campos repetíveis, selects e tabelas no registro bruto", () => {
     const html = `
       <title>Cadastro 42</title>
@@ -75,15 +87,79 @@ describe("parser do legado Widesys", () => {
     ]);
   });
 
+  it("preserva checkbox desmarcado como falso e separa rótulo do campo do valor exibido", () => {
+    const html = `
+      <input type="checkbox" name="ativo" value="1">
+      <input type="checkbox" name="notificar" value="1" checked>
+      <input type="radio" name="perfil" value="incorreto">
+      <input type="radio" name="perfil" value="correto" checked>
+      <label for="situacao">Situação</label>
+      <select id="situacao" name="jform[situacao]">
+        <option value="1">Pendente</option><option value="2" selected>Pago</option>
+      </select>`;
+
+    const record = extractRecord(html);
+    expect(record.fields.find((field) => field.name === "ativo")).toMatchObject({
+      checked: false,
+      displayValue: "Não",
+      value: "0",
+    });
+    expect(record.fields.find((field) => field.name === "notificar")).toMatchObject({
+      checked: true,
+      value: "1",
+    });
+    expect(record.fields.filter((field) => field.name === "perfil")).toEqual([
+      expect.objectContaining({ checked: true, value: "correto" }),
+    ]);
+    expect(record.fields.find((field) => field.name === "jform[situacao]")).toMatchObject({
+      displayValue: "Pago",
+      label: "Situação",
+      selectedLabels: ["Pago"],
+      value: ["2"],
+    });
+  });
+
   it("remove segredos do HTML persistido", () => {
     const html = `
       <input type="password" name="senha" value="nao-gravar">
+      <input name="client_secret" value=segredo-sem-aspas>
+      <textarea name="senha_certificado">segredo-textarea</textarea>
+      <select name="api_token"><option selected value="segredo-option">segredo-select</option></select>
       <input type="hidden" name="abcdefabcdefabcdefabcdefabcdefab" value="1">
-      <a href="?option=com_widesys&amp;abcdefabcdefabcdefabcdefabcdefab=1">Editar</a>`;
+      <form action="?option=com_widesys&amp;token=segredo-action">
+        <a href=?option=com_widesys&amp;senha=segredo-url>Editar</a>
+        <a href='?access_token=ACCESSLEAK&amp;refresh_token=REFRESHLEAK'>OAuth</a>
+        <span data-querystring="view=ajax&amp;csrf=segredo-query"></span>
+        <div data-options="{&quot;client_secret&quot;:&quot;SUPERSECRET&quot;,&quot;page&quot;:1}"></div>
+        <button onclick="location.href='?token=segredo-evento'">Abrir</button>
+      </form>
+      <div>token=segredo-texto access_token=ACCESS_TEXT refresh_token=REFRESH_TEXT</div>
+      <table><tr><td>Senha certificado</td><td>SEGREDO_TABELA</td></tr></table>`;
     const sanitized = sanitizeHtml(html);
 
-    expect(sanitized).not.toContain("nao-gravar");
-    expect(sanitized).not.toContain("abcdefabcdefabcdefabcdefabcdefab=1");
+    for (const secret of [
+      "nao-gravar",
+      "segredo-sem-aspas",
+      "segredo-textarea",
+      "segredo-option",
+      "segredo-select",
+      "segredo-action",
+      "segredo-url",
+      "segredo-query",
+      "segredo-evento",
+      "segredo-texto",
+      "SUPERSECRET",
+      "ACCESSLEAK",
+      "REFRESHLEAK",
+      "ACCESS_TEXT",
+      "REFRESH_TEXT",
+      "SEGREDO_TABELA",
+      "abcdefabcdefabcdefabcdefabcdefab=1",
+    ]) {
+      expect(sanitized).not.toContain(secret);
+    }
+    expect(sanitized).not.toContain("onclick");
+    expect(sanitized).not.toContain("data-options");
     expect(sanitized).toContain("[REDACTED]");
   });
 });

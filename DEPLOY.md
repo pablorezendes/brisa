@@ -251,10 +251,22 @@ Todo o estado é um arquivo: `/srv/stack/acamargo/dados/brisa.db`.
 
 ## 6) Importar cadastros do Widesys
 
-Faça a captura no próprio servidor para que os dados pessoais não precisem ser
-copiados entre máquinas. As duas etapas são somente de leitura no legado. Os
-arquivos resultantes ficam em `data/legacy-widesys/`, fora do Git, e o
-importador valida manifestos, contagens e hashes antes de abrir a transação.
+As capturas são somente de leitura no legado. Os arquivos resultantes ficam em
+`data/legacy-widesys/`, fora do Git, e os importadores validam manifestos,
+contagens e hashes antes de abrir a transação. O volume `./data:/app/data` do
+Compose torna esse mesmo diretório visível no container.
+
+Na captura de catálogos, a paginação varia conforme o componente do Joomla:
+`com_widesys` usa `limit=200`; `com_categories` usa `list[limit]=200`. Não altere
+esses parâmetros manualmente nem reutilize a URL de um componente no outro.
+
+Escolha **uma** das opções abaixo: capturar no próprio servidor ou transferir
+um lote completo já validado na estação local. Nunca use Git, ticket, chat ou
+armazenamento público para transportar esses artefatos.
+
+### Opção A — capturar no próprio servidor
+
+Esta opção evita copiar dados pessoais entre máquinas.
 
 Use variáveis temporárias e silencie a senha no terminal. Não acrescente essas
 credenciais ao `.env`, ao histórico do shell ou ao `docker-compose.yml`:
@@ -275,9 +287,80 @@ docker compose exec \
   -e WIDESYS_SENHA \
   brisa npm run legacy:scrape -- --refresh
 
+docker compose exec \
+  -e WIDESYS_USUARIO \
+  -e WIDESYS_SENHA \
+  brisa npm run legacy:capture-catalogos -- --refresh \
+    --irrf-from-year=2025 --irrf-to-year=2026
+
+# Captura operacional para reconciliação; ainda não altera o SQLite.
+docker compose exec \
+  -e WIDESYS_USUARIO \
+  -e WIDESYS_SENHA \
+  brisa npm run legacy:capture-operation -- --refresh \
+    --from=2025-01 --to=2026-09 --titles-to=2100-12-31
+
 unset WIDESYS_SENHA WIDESYS_USUARIO
+```
+
+### Opção B — transferir a captura local por SSH
+
+Antes do envio, execute localmente os três `dry-run` e só prossiga se os
+manifestos estiverem completos, sem erro de contagem/ID duplicado e com as
+quarentenas revisadas. No PowerShell, empacote apenas o diretório ignorado pelo
+Git, envie-o por SSH e apague a cópia temporária local:
+
+```powershell
+$arquivo = Join-Path $env:TEMP "legacy-widesys-transfer.tar.gz"
+tar -czf $arquivo -C "C:\Users\pablorezendes\Documents\ACAMARGO\sistema\data" legacy-widesys
+scp $arquivo root@76.13.161.105:/root/legacy-widesys-transfer.tar.gz
+Remove-Item -LiteralPath $arquivo
+```
+
+No servidor, extraia para um diretório temporário com permissão restrita,
+confira os três manifestos e só então troque o lote ativo. O lote anterior é
+preservado com data/hora para permitir retorno:
+
+```bash
+set -e
+cd /srv/stack/acamargo
+umask 077
+chmod 600 /root/legacy-widesys-transfer.tar.gz
+incoming="$(mktemp -d /srv/stack/acamargo/data/.legacy-widesys-incoming.XXXXXX)"
+tar -xzf /root/legacy-widesys-transfer.tar.gz -C "$incoming"
+test -f "$incoming/legacy-widesys/manifest.json"
+test -f "$incoming/legacy-widesys/catalogos/manifest.json"
+test -f "$incoming/legacy-widesys/operacao/manifest.json"
+
+stamp="$(date +%F-%H%M%S)"
+if [ -e data/legacy-widesys ]; then
+  mv data/legacy-widesys "data/legacy-widesys.pre-$stamp"
+fi
+mv "$incoming/legacy-widesys" data/legacy-widesys
+rmdir "$incoming"
+chmod -R go-rwx data/legacy-widesys
+rm -f /root/legacy-widesys-transfer.tar.gz
+```
+
+Não mantenha indefinidamente a cópia `data/legacy-widesys.pre-*`: depois que a
+reconciliação e a aplicação terminarem com sucesso, mova-a para um cofre de
+backup com retenção definida ou elimine-a de forma controlada.
+
+### Validação e importação comuns às duas opções
+
+Faça backup consistente de `dados/brisa.db` antes da primeira aplicação. Em
+seguida rode cada `dry-run`, revise contagens, somas e quarentenas, e só então
+execute o importador correspondente:
+
+```bash
 docker compose exec brisa npm run importar:cadastros-widesys:dry-run
 docker compose exec brisa npm run importar:cadastros-widesys
+docker compose exec brisa npm run importar:catalogos-widesys:dry-run
+# aplique somente depois de conferir o manifesto e as quarentenas
+docker compose exec brisa npm run importar:catalogos-widesys
+docker compose exec brisa npm run importar:operacao-widesys:dry-run
+# aplique somente depois de reconciliar contagens, somas e itens em quarentena
+docker compose exec brisa npm run importar:operacao-widesys
 ```
 
 O `dry-run` deve ser analisado antes da aplicação. A importação é idempotente e
@@ -287,6 +370,21 @@ aparecem como avisos `*_ausente_na_origem` para conferência humana. Não use
 O modo `--refresh` refaz todas as telas e evita misturar a API atual com detalhes
 de uma execução anterior. Reserve `--resume` exclusivamente para continuar a
 mesma captura interrompida.
+
+Antes de qualquer futura importação de contratos ou financeiro, confira
+`data/legacy-widesys/operacao/manifest.json`: `complete` precisa ser `true`, os
+arquivos de escopo precisam bater com seus hashes e não pode haver erro de
+contagem/ID duplicado. A janela futura de títulos usa `2100-12-31` apenas como
+sentinela de consulta; reduza com `--titles-to=AAAA-MM-DD` somente se houver um
+horizonte operacional formalmente definido. Não copie esses artefatos para o
+Git, tickets ou chats, pois contêm dados pessoais e financeiros.
+
+Os três importadores escrevem somente nas tabelas de staging, quarentena e
+auditoria de suas respectivas áreas. Em especial, o importador operacional não
+cria contratos, recebimentos ou lançamentos de caixa atuais. O lote é
+idempotente por origem + `captureId`; cada registro também é idempotente por
+origem + escopo + ID legado. Um lote com quarentenas é terminal e pode ser
+reprocessado somente por uma nova captura, preservando a trilha anterior.
 
 ### Atualização completa com backup e migração dos cadastros
 
@@ -310,10 +408,18 @@ read -r -s -p "Senha Widesys: " WIDESYS_SENHA; printf '\n'
 export WIDESYS_USUARIO WIDESYS_SENHA
 docker compose exec -e WIDESYS_USUARIO -e WIDESYS_SENHA brisa npm run legacy:capture-api
 docker compose exec -e WIDESYS_USUARIO -e WIDESYS_SENHA brisa npm run legacy:scrape -- --refresh
+docker compose exec -e WIDESYS_USUARIO -e WIDESYS_SENHA brisa npm run legacy:capture-catalogos -- --refresh --irrf-from-year=2025 --irrf-to-year=2026
+docker compose exec -e WIDESYS_USUARIO -e WIDESYS_SENHA brisa npm run legacy:capture-operation -- --refresh --from=2025-01 --to=2026-09 --titles-to=2100-12-31
 unset WIDESYS_SENHA WIDESYS_USUARIO
 
 docker compose exec brisa npm run importar:cadastros-widesys:dry-run
 docker compose exec brisa npm run importar:cadastros-widesys
+docker compose exec brisa npm run importar:catalogos-widesys:dry-run
+# depois da conferência do relatório de catálogos:
+docker compose exec brisa npm run importar:catalogos-widesys
+docker compose exec brisa npm run importar:operacao-widesys:dry-run
+# depois da conferência do relatório:
+docker compose exec brisa npm run importar:operacao-widesys
 docker compose ps
 docker compose logs --tail 100 brisa
 curl -fsSI https://brisa.tescod.com/login | head -n 1

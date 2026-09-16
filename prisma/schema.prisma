@@ -253,6 +253,242 @@ model ImovelProprietarioLegado {
   @@index([pessoaId])
 }
 
+// ---------- Staging auditável da operação importada do Widesys ----------
+
+// Esta camada é intencionalmente separada de Contrato, Recebimento e
+// LancamentoCaixa. A promoção para a operação atual só pode acontecer depois
+// de reconciliação explícita; nomes nunca são usados como chave de vínculo.
+model ImportacaoLegadoLote {
+  id              String                 @id @default(uuid())
+  origem          String
+  capturaId       String
+  esquemaVersao   Int                    @default(1)
+  manifestoHash   String
+  capturadoEm     DateTime
+  status          String                 @default("PROCESSANDO") // PROCESSANDO|CONCLUIDO|FALHOU|QUARENTENA
+  totalEsperado   Int                    @default(0)
+  totalProcessado Int                    @default(0)
+  totalQuarentena Int                    @default(0)
+  resumo          String                 @default("{}") // JSON sem PII: contagens, somas e checkpoints
+  erroCodigo      String?
+  iniciadoEm      DateTime               @default(now())
+  concluidoEm     DateTime?
+  atualizadoEm    DateTime               @updatedAt
+  itens           ImportacaoLegadoItem[]
+
+  @@unique([origem, capturaId])
+  @@index([status, capturadoEm])
+}
+
+model ImportacaoLegadoItem {
+  id                 String                     @id @default(uuid())
+  loteId             String
+  origem             String
+  escopo             String // CONTRATO|CONTRATO_PARTE|TITULO_RECEBER|TITULO_PAGAR|BAIXA_RECEBER|BAIXA_PAGAR|MOVIMENTO
+  legadoId           String
+  snapshotHash       String
+  acao               String // CRIAR|ATUALIZAR|INALTERADO|QUARENTENA|MARCAR_AUSENTE
+  status             String                     @default("CONCLUIDO") // CONCLUIDO|QUARENTENA
+  quarentenaMotivo   String?
+  processadoEm       DateTime                   @default(now())
+  lote               ImportacaoLegadoLote       @relation(fields: [loteId], references: [id], onDelete: Cascade)
+  contratoAtual      ContratoLegado?            @relation("ContratoLegadoUltimoItem")
+  contratoParteAtual ContratoParteLegado?       @relation("ContratoParteLegadoUltimoItem")
+  tituloAtual        TituloFinanceiroLegado?    @relation("TituloLegadoUltimoItem")
+  baixaAtual         BaixaFinanceiraLegado?     @relation("BaixaLegadoUltimoItem")
+  movimentoAtual     MovimentoFinanceiroLegado? @relation("MovimentoLegadoUltimoItem")
+
+  @@unique([loteId, escopo, legadoId])
+  @@index([origem, escopo, legadoId])
+  @@index([status, escopo])
+}
+
+model ContratoLegado {
+  id                 String                @id @default(uuid())
+  origem             String                @default("WIDESYS")
+  legadoId           String
+  ultimoItemId       String                @unique
+  numeroContrato     String?
+  imovelLegadoId     String?
+  situacaoOrigem     String?
+  inicio             String?
+  fim                String?
+  primeiroVencimento String?
+  proximoReajuste    String?
+  valorLocacao       Int?
+  valorAdministracao Int?
+  valorCaucao        Int?
+  statusImportacao   String                @default("STAGING") // STAGING|QUARENTENA|RECONCILIADO|PROMOVIDO|AUSENTE_NA_FONTE
+  quarentenaMotivo   String?
+  sourceUrl          String?
+  capturadoEm        DateTime
+  snapshot           String // JSON canônico sanitizado, sem credenciais/tokens
+  snapshotHash       String
+  importadoEm        DateTime              @default(now())
+  atualizadoEm       DateTime              @updatedAt
+  ultimoItem         ImportacaoLegadoItem  @relation("ContratoLegadoUltimoItem", fields: [ultimoItemId], references: [id], onDelete: Restrict)
+  partes             ContratoParteLegado[]
+
+  @@unique([origem, legadoId])
+  @@index([numeroContrato])
+  @@index([imovelLegadoId])
+  @@index([statusImportacao])
+}
+
+model ContratoParteLegado {
+  id               String               @id @default(uuid())
+  origem           String               @default("WIDESYS")
+  legadoId         String
+  ultimoItemId     String               @unique
+  contratoId       String?
+  contratoLegadoId String
+  papel            String // INQUILINO|PROPRIETARIO|BENEFICIARIO|FIADOR|CORRETOR
+  pessoaLegadoId   String?
+  ordem            Int                  @default(0)
+  percentual       String?
+  valor            Int?
+  statusImportacao String               @default("STAGING") // STAGING|QUARENTENA|RECONCILIADO|PROMOVIDO|AUSENTE_NA_FONTE
+  quarentenaMotivo String?
+  capturadoEm      DateTime
+  snapshot         String
+  snapshotHash     String
+  importadoEm      DateTime             @default(now())
+  atualizadoEm     DateTime             @updatedAt
+  ultimoItem       ImportacaoLegadoItem @relation("ContratoParteLegadoUltimoItem", fields: [ultimoItemId], references: [id], onDelete: Restrict)
+  contrato         ContratoLegado?      @relation(fields: [contratoId], references: [id], onDelete: SetNull)
+
+  @@unique([origem, legadoId])
+  @@index([origem, contratoLegadoId, papel, pessoaLegadoId, ordem])
+  @@index([contratoLegadoId, papel])
+  @@index([pessoaLegadoId])
+  @@index([statusImportacao])
+}
+
+model TituloFinanceiroLegado {
+  id                     String               @id @default(uuid())
+  origem                 String               @default("WIDESYS")
+  escopo                 String // TITULO_RECEBER|TITULO_PAGAR
+  legadoId               String
+  ultimoItemId           String               @unique
+  natureza               String // RECEBER|PAGAR
+  numeroDocumento        String?
+  parcela                String?
+  contratoLegadoId       String?
+  pessoaLegadoId         String?
+  contrapartePapelOrigem String?
+  contaBancariaLegadoId  String?
+  contaBancariaRotulo    String?
+  planoContaLegadoId     String?
+  planoContaRotulo       String?
+  tipoCobrancaLegadoId   String?
+  tipoCobrancaRotulo     String?
+  emissao                String?
+  competencia            String?
+  vencimento             String?
+  pagamento              String?
+  valorOriginal          Int?
+  valorDevido            Int? // valor bruto devido na origem; não é o saldo
+  valorAberto            Int?
+  valorPago              Int?
+  juros                  Int?
+  multa                  Int?
+  desconto               Int?
+  situacaoOrigem         String?
+  situacaoNormalizada    String // PENDENTE|VENCIDO|PARCIAL|PAGO|CANCELADO|DESCONHECIDO
+  pagamentoParcial       Boolean              @default(false)
+  inadimplente           Boolean              @default(false)
+  statusImportacao       String               @default("STAGING") // STAGING|QUARENTENA|RECONCILIADO|PROMOVIDO|AUSENTE_NA_FONTE
+  quarentenaMotivo       String?
+  sourceUrl              String?
+  capturadoEm            DateTime
+  snapshot               String
+  snapshotHash           String
+  importadoEm            DateTime             @default(now())
+  atualizadoEm           DateTime             @updatedAt
+  ultimoItem             ImportacaoLegadoItem @relation("TituloLegadoUltimoItem", fields: [ultimoItemId], references: [id], onDelete: Restrict)
+
+  @@unique([origem, escopo, legadoId])
+  @@index([natureza, situacaoNormalizada, vencimento])
+  @@index([contratoLegadoId])
+  @@index([pessoaLegadoId])
+  @@index([inadimplente, vencimento])
+  @@index([statusImportacao])
+}
+
+model MovimentoFinanceiroLegado {
+  id                    String               @id @default(uuid())
+  origem                String               @default("WIDESYS")
+  escopo                String               @default("MOVIMENTO")
+  legadoId              String
+  ultimoItemId          String               @unique
+  natureza              String // ENTRADA|SAIDA|TRANSFERENCIA|DESCONHECIDA
+  tituloEscopo          String?
+  tituloLegadoId        String?
+  contaBancariaLegadoId String?
+  contaBancariaRotulo   String?
+  planoContaLegadoId    String?
+  planoContaRotulo      String?
+  documento             String?
+  descricao             String?
+  dataMovimento         String?
+  competencia           String?
+  valor                 Int?
+  conciliado            Boolean?
+  situacaoOrigem        String?
+  statusImportacao      String               @default("STAGING") // STAGING|QUARENTENA|RECONCILIADO|PROMOVIDO|AUSENTE_NA_FONTE
+  quarentenaMotivo      String?
+  sourceUrl             String?
+  capturadoEm           DateTime
+  snapshot              String
+  snapshotHash          String
+  importadoEm           DateTime             @default(now())
+  atualizadoEm          DateTime             @updatedAt
+  ultimoItem            ImportacaoLegadoItem @relation("MovimentoLegadoUltimoItem", fields: [ultimoItemId], references: [id], onDelete: Restrict)
+
+  @@unique([origem, escopo, legadoId])
+  @@index([dataMovimento, natureza])
+  @@index([tituloEscopo, tituloLegadoId])
+  @@index([contaBancariaLegadoId])
+  @@index([statusImportacao])
+}
+
+model BaixaFinanceiraLegado {
+  id                    String               @id @default(uuid())
+  origem                String               @default("WIDESYS")
+  escopo                String // BAIXA_RECEBER|BAIXA_PAGAR
+  legadoId              String
+  ultimoItemId          String               @unique
+  natureza              String // RECEBIMENTO|PAGAMENTO
+  tituloEscopo          String
+  tituloLegadoId        String
+  movimentoLegadoId     String? // Nº Lanç.; referência flexível até a reconciliação completa do caixa
+  contaBancariaLegadoId String?
+  contaBancariaRotulo   String?
+  numeroDocumento       String?
+  forma                 String?
+  dataPagamento         String?
+  valor                 Int?
+  responsavelOrigem     String?
+  origemRegistradoEm    String?
+  situacaoOrigem        String?
+  estornada             Boolean              @default(false)
+  statusImportacao      String               @default("STAGING") // STAGING|QUARENTENA|RECONCILIADO|PROMOVIDO|AUSENTE_NA_FONTE
+  quarentenaMotivo      String?
+  sourceUrl             String?
+  capturadoEm           DateTime
+  snapshot              String
+  snapshotHash          String
+  importadoEm           DateTime             @default(now())
+  atualizadoEm          DateTime             @updatedAt
+  ultimoItem            ImportacaoLegadoItem @relation("BaixaLegadoUltimoItem", fields: [ultimoItemId], references: [id], onDelete: Restrict)
+
+  @@unique([origem, escopo, legadoId])
+  @@index([tituloEscopo, tituloLegadoId])
+  @@index([movimentoLegadoId])
+  @@index([dataPagamento, natureza])
+  @@index([statusImportacao])
+}
+
 model Unidade {
   id               String             @id @default(uuid())
   empreendimentoId String
@@ -662,4 +898,71 @@ model CategoriaCentroCusto {
   nome        String
 
   @@unique([centroCusto, nome])
+}
+
+// ---------- Staging auditavel dos catalogos importados do Widesys ----------
+
+// Catalogos permanecem isolados da operacao. Nenhum registro deste bloco e
+// promovido automaticamente para contas, categorias ou configuracoes atuais.
+model CatalogoLegadoCaptura {
+  id              String               @id @default(uuid())
+  origem          String
+  capturaId       String
+  manifestoHash   String
+  capturadoEm     DateTime
+  status          String               @default("PROCESSANDO") // PROCESSANDO|CONCLUIDO|FALHOU
+  totalEsperado   Int                  @default(0)
+  totalProcessado Int                  @default(0)
+  totalQuarentena Int                  @default(0)
+  resumo          String               @default("{}") // JSON sem valores cadastrais
+  erroCodigo      String?
+  iniciadoEm      DateTime             @default(now())
+  concluidoEm     DateTime?
+  atualizadoEm    DateTime             @updatedAt
+  itens           CatalogoLegadoItem[]
+
+  @@unique([origem, capturaId])
+  @@index([status, capturadoEm])
+}
+
+model CatalogoLegadoItem {
+  id               String                  @id @default(uuid())
+  capturaId        String
+  origem           String
+  modulo           String
+  legadoId         String
+  snapshotHash     String
+  acao             String // CRIAR|ATUALIZAR|INALTERADO|QUARENTENA|ANTERIOR_IGNORADO
+  status           String                  @default("CONCLUIDO") // CONCLUIDO|QUARENTENA
+  quarentenaMotivo String?
+  processadoEm     DateTime                @default(now())
+  captura          CatalogoLegadoCaptura   @relation(fields: [capturaId], references: [id], onDelete: Cascade)
+  registroAtual    CatalogoLegadoRegistro? @relation("CatalogoLegadoUltimoItem")
+
+  @@unique([capturaId, modulo, legadoId])
+  @@index([origem, modulo, legadoId])
+  @@index([status, modulo])
+}
+
+model CatalogoLegadoRegistro {
+  id               String             @id @default(uuid())
+  origem           String
+  modulo           String
+  legadoId         String
+  titulo           String?
+  label            String?
+  sourceUrl        String?
+  capturadoEm      DateTime
+  status           String             @default("STAGING") // STAGING|QUARENTENA
+  quarentenaMotivo String?
+  snapshot         String // JSON canonico sanitizado; nunca contem credenciais
+  snapshotHash     String
+  importadoEm      DateTime           @default(now())
+  atualizadoEm     DateTime           @updatedAt
+  ultimoItemId     String             @unique
+  ultimoItem       CatalogoLegadoItem @relation("CatalogoLegadoUltimoItem", fields: [ultimoItemId], references: [id], onDelete: Restrict)
+
+  @@unique([origem, modulo, legadoId])
+  @@index([modulo, status])
+  @@index([capturadoEm])
 }

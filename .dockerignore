@@ -5,8 +5,16 @@ node_modules
 prisma/dev.db
 *.db
 *.db-journal
+*.pfx
+*.p12
+*.pem
+*.key
+*.crt
+*.cer
 dados
 auth
 data/*.json
-.env
+/data/legacy-widesys/
+.env*
+!.env.sicoob.example
 DEPLOY.md
