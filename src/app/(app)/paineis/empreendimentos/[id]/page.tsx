@@ -214,7 +214,7 @@ export default async function PaginaDetalheEmpreendimento({
         <Kpi
           rotulo="Pendente em aberto"
           valor={<Dinheiro centavos={d.pendenteAberto} destaque />}
-          detalhe={`${d.pendentesQtde} cobrança(s) sem pagamento ${vm.naJanela}`}
+          detalhe={`${d.pendentesQtde} cobrança(s) com saldo ${vm.naJanela}`}
           nivel={nivelInadimplencia(d.pendenteAberto, d.devidoTotal)}
           nota={
             d.pendenteAberto > 0
@@ -480,7 +480,7 @@ export default async function PaginaDetalheEmpreendimento({
                   <th className="text-right">
                     Pendente{" "}
                     <Ajuda
-                      dica={`Cobranças lançadas ${periodo ? "no período" : "no ano"} ainda sem valor em Recebido. Ao receber, preencha Recebido e a Data de pagamento; se for acordo ou pagamento parcial, anote o motivo na Observação.`}
+                      dica={`Saldo das cobranças lançadas ${periodo ? "no período" : "no ano"}, depois de descontar o recebido. Pagamentos parciais reduzem este valor e continuam pendentes até a quitação.`}
                     />
                   </th>
                   <th className="text-right">

@@ -9,6 +9,7 @@ import { conteudoHashManifestoOperacao } from "./manifesto-operacao-widesys";
 
 import {
   carregarPlanoOperacaoWidesys,
+  criarRelatorioDryRunComBancoOperacaoWidesys,
   ErroImportacaoOperacaoWidesys,
   importarPlanoOperacaoWidesys,
   type BaixaLegadoPlanejada,
@@ -349,6 +350,131 @@ const semAusentes = {
 };
 
 describe("staging da operação Widesys", () => {
+  it("considera baixas positivas completas quando capturou o transporte de detalhes", () => {
+    const diretorio = fixtureOperacao();
+    alterarShard(diretorio, "receber.json", (raiz) => {
+      const titulo = (raiz.records as Array<Record<string, unknown>>)[0];
+      titulo.details = [
+        {
+          contentHash: "detalhe-baixas",
+          raw: { fields: [], tables: [], text: "", title: "" },
+          sourceUrl:
+            "https://brisaazul.app2.widesys.com.br/administrator/index.php?option=com_widesys&view=ajax&format=raw&task=ajax.getDetalhesRecebimento&conta_receber_id=1&numero_parcela=1",
+          transport: "ajax.getDetalhesRecebimento",
+        },
+      ];
+      titulo.baixaEvidence = {
+        expectedTransport: "ajax.getDetalhesRecebimento",
+        transportObserved: true,
+      };
+    });
+
+    const plano = carregarPlanoOperacaoWidesys(diretorio);
+    const titulo = plano.registros.find(
+      (item): item is TituloLegadoPlanejado => item.escopo === "TITULO_RECEBER",
+    );
+
+    expect(titulo?.capturaBaixasCompleta).toBe(true);
+    expect(plano.escoposBaixasCompletos).toContain("BAIXA_RECEBER");
+    expect(titulo?.snapshot).toContain('"transporteObservado":true');
+  });
+
+  it("não aceita declaração de transporte sem o detalhe correspondente", () => {
+    const diretorio = fixtureOperacao();
+    alterarShard(diretorio, "receber.json", (raiz) => {
+      const titulo = (raiz.records as Array<Record<string, unknown>>)[0];
+      titulo.baixas = [];
+      titulo.baixaEvidence = {
+        expectedTransport: "ajax.getDetalhesRecebimento",
+        transportObserved: true,
+      };
+    });
+    const titulo = carregarPlanoOperacaoWidesys(diretorio).registros.find(
+      (item): item is TituloLegadoPlanejado => item.escopo === "TITULO_RECEBER",
+    );
+
+    expect(titulo).toMatchObject({
+      capturaBaixasCompleta: false,
+      statusImportacao: "QUARENTENA",
+    });
+    expect(titulo?.quarentenaMotivo).toContain("TITULO_EVIDENCIA_BAIXAS_DIVERGENTE");
+    expect(titulo?.quarentenaMotivo).toContain("TITULO_BAIXAS_NAO_ESTRUTURADAS");
+  });
+
+  it("usa valor pago zero como prova negativa sem confiar em baixas vazias", () => {
+    const plano = carregarPlanoOperacaoWidesys(fixtureOperacao());
+    const estruturado = plano.registros.find(
+      (item): item is TituloLegadoPlanejado =>
+        item.escopo === "TITULO_RECEBER" && item.legadoId === "titulo-4950",
+    );
+    const zerado = plano.registros.find(
+      (item): item is TituloLegadoPlanejado =>
+        item.escopo === "TITULO_PAGAR" && item.legadoId === "pagar-1",
+    );
+    const positivoSemDetalhe = plano.registros.find(
+      (item): item is TituloLegadoPlanejado =>
+        item.escopo === "TITULO_PAGAR" && item.legadoId === "pagar-aberto-sem-saldo",
+    );
+
+    expect(estruturado).toMatchObject({
+      capturaBaixasCompleta: true,
+      capturaBaixasProva: "ESTRUTURADA_COHERENTE",
+    });
+    expect(zerado?.capturaBaixasCompleta).toBe(true);
+    expect(positivoSemDetalhe?.capturaBaixasCompleta).toBe(false);
+    expect(plano.escoposBaixasCompletos).not.toContain("BAIXA_PAGAR");
+  });
+
+  it("não trata campo de valor pago ausente como prova de baixa zero", () => {
+    const diretorio = fixtureOperacao();
+    alterarShard(diretorio, "pagar.json", (raiz) => {
+      const titulo = (raiz.records as Array<Record<string, unknown>>).find(
+        (item) => item.legacyId === "pagar-2",
+      )!;
+      delete (titulo.fields as Record<string, unknown>).valor_pago;
+      titulo.baixas = [];
+    });
+
+    const plano = carregarPlanoOperacaoWidesys(diretorio);
+    const titulo = plano.registros.find(
+      (item): item is TituloLegadoPlanejado =>
+        item.escopo === "TITULO_PAGAR" && item.legadoId === "pagar-2",
+    );
+
+    expect(titulo).toMatchObject({
+      capturaBaixasCompleta: false,
+      capturaBaixasProva: "INCOMPLETA",
+    });
+    expect(plano.escoposBaixasCompletos).not.toContain("BAIXA_PAGAR");
+  });
+
+  it("registra partes estruturadas sem assinar enumeração completa", () => {
+    const semEvidencia = carregarPlanoOperacaoWidesys(fixtureOperacao());
+    expect(semEvidencia.escoposPartesCompletos).not.toContain("CONTRATO_PARTE");
+
+    const diretorio = fixtureOperacao();
+    alterarShard(diretorio, "contratos.json", (raiz) => {
+      const contrato = (raiz.records as Array<Record<string, unknown>>)[0];
+      contrato.details = [
+        {
+          contentHash: "detalhe-contrato",
+          raw: { fields: [], tables: [], text: "", title: "" },
+          sourceUrl:
+            "https://brisaazul.app2.widesys.com.br/administrator/index.php?option=com_widesys&view=locacao&layout=edit&id=1",
+          transport: "locacao.edit",
+        },
+      ];
+    });
+    const comEvidencia = carregarPlanoOperacaoWidesys(diretorio);
+    const contrato = comEvidencia.registros.find((item) => item.escopo === "CONTRATO");
+
+    expect(contrato).toMatchObject({
+      capturaPartesEstruturada: true,
+      capturaPartesProva: "DETALHE_ESTRUTURADO_SEM_CONTAGEM",
+    });
+    expect(comEvidencia.escoposPartesCompletos).not.toContain("CONTRATO_PARTE");
+  });
+
   it("classifica vencimento pela data civil de São Paulo, não pelo dia UTC", () => {
     const plano = carregarPlanoOperacaoWidesys(
       fixtureOperacao("Efetivada", {
@@ -515,7 +641,55 @@ describe("staging da operação Widesys", () => {
     );
 
     expect(partes).toHaveLength(2);
-    expect(partes.map((item) => item.legadoId).sort()).toEqual(["vinculo-1", "vinculo-2"]);
+    expect(new Set(partes.map((item) => item.legadoId)).size).toBe(2);
+    expect(partes.every((item) => item.legadoId.startsWith("parte:"))).toBe(true);
+    expect(partes.map((item) => item.vinculoId).sort()).toEqual(["vinculo-1", "vinculo-2"]);
+  });
+
+  it("namespaces vínculo local repetido por contrato e papel", () => {
+    const diretorio = fixtureOperacao();
+    alterarShard(diretorio, "contratos.json", (raiz) => {
+      const [primeiro] = raiz.records as Array<Record<string, unknown>>;
+      primeiro.partes = [
+        { ordem: 0, papel: "PROPRIETARIO", pessoaLegadoId: "169", vinculoId: "50" },
+      ];
+      (raiz.records as Array<Record<string, unknown>>).push({
+        capturedAt: primeiro.capturedAt,
+        fields: {
+          numero_contrato: "51.303.2",
+          produto_id: "imovel-52",
+          valor_locacao: "2.000,00",
+        },
+        legacyId: "contrato-2",
+        partes: [
+          { ordem: 0, papel: "PROPRIETARIO", pessoaLegadoId: "170", vinculoId: "50" },
+        ],
+        sourceUrl:
+          "https://brisaazul.app2.widesys.com.br/administrator/index.php?option=com_widesys&view=locacao&layout=edit&id=2",
+      });
+    });
+    regravarManifesto(diretorio, (manifesto) => {
+      const modulo = (manifesto.modules as Record<string, Record<string, unknown>>).contratos;
+      modulo.recordsDiscovered = 2;
+      modulo.recordsSaved = 2;
+      modulo.globalReportedTotal = 2;
+      const janela = (modulo.windows as Record<string, Record<string, unknown>>).todos;
+      janela.recordsDiscovered = 2;
+      janela.reportedTotal = 2;
+    });
+
+    const primeira = carregarPlanoOperacaoWidesys(diretorio).registros.filter(
+      (item) => item.escopo === "CONTRATO_PARTE" && item.vinculoId === "50",
+    );
+    const segunda = carregarPlanoOperacaoWidesys(diretorio).registros.filter(
+      (item) => item.escopo === "CONTRATO_PARTE" && item.vinculoId === "50",
+    );
+
+    expect(primeira).toHaveLength(2);
+    expect(new Set(primeira.map((item) => item.legadoId)).size).toBe(2);
+    expect(segunda.map((item) => item.legadoId)).toEqual(
+      primeira.map((item) => item.legadoId),
+    );
   });
 
   it("mantém pendentes rótulos que mencionam liquidação sem confirmar pagamento", () => {
@@ -678,16 +852,16 @@ describe("staging da operação Widesys", () => {
     expect(partes).toHaveLength(1);
     expect(partes[0]).toMatchObject({
       flags: { responsavel_repasse: "1" },
-      legadoId: "50",
       papel: "PROPRIETARIO",
       percentual: "75,5",
       pessoaLegadoId: "169",
       vinculoId: "50",
     });
+    expect(partes[0].legadoId).toMatch(/^parte:[a-f\d]{32}$/);
     expect(partes[0].snapshot).toContain('"flag_responsavel_repasse":"1"');
   });
 
-  it("preserva id genérico da linha no fallback antigo de partes", () => {
+  it("preserva o vínculo genérico dentro da identidade namespaced da parte", () => {
     const diretorio = fixtureOperacao();
     alterarShard(diretorio, "contratos.json", (raiz) => {
       const contrato = (raiz.records as Array<Record<string, unknown>>)[0];
@@ -700,7 +874,8 @@ describe("staging da operação Widesys", () => {
     );
 
     expect(partes).toHaveLength(1);
-    expect(partes[0]).toMatchObject({ legadoId: "vinculo-88", vinculoId: "vinculo-88" });
+    expect(partes[0]).toMatchObject({ vinculoId: "vinculo-88" });
+    expect(partes[0].legadoId).toMatch(/^parte:[a-f\d]{32}$/);
   });
 
   it("mapeia os aliases reais do formulário de locação", () => {
@@ -874,6 +1049,10 @@ describe("staging da operação Widesys", () => {
     expect(negativa).toMatchObject({ statusImportacao: "QUARENTENA", valor: -5_000 });
     expect(negativa?.quarentenaMotivo).toContain("BAIXA_VALOR_NAO_POSITIVO");
     expect(titulo).toMatchObject({ statusImportacao: "QUARENTENA", valorPago: 35_000, valorAberto: 36_568 });
+    const movimento = plano.registros.find(
+      (item) => item.escopo === "MOVIMENTO" && item.legadoId === "447",
+    );
+    expect(movimento?.quarentenaMotivo).toContain("MOVIMENTO_BAIXA_QUARENTENA");
   });
 
   it("quarentena overpayment e propaga a inconsistência a baixas e movimento vinculados", () => {
@@ -989,6 +1168,25 @@ describe("staging da operação Widesys", () => {
     expect(baixa?.quarentenaMotivo).toEqual(expect.stringContaining("BAIXA_MOVIMENTO_NATUREZA_DIVERGENTE"));
     expect(baixa?.quarentenaMotivo).toEqual(expect.stringContaining("BAIXA_MOVIMENTO_CONTA_DIVERGENTE"));
     expect(movimento?.statusImportacao).toBe("QUARENTENA");
+  });
+
+  it("explicita data ausente quando o movimento vinculado possui data", () => {
+    const diretorio = fixtureOperacao();
+    alterarShard(diretorio, "receber.json", (raiz) => {
+      const titulo = (raiz.records as Array<Record<string, unknown>>)[0];
+      delete (titulo.baixas as Array<Record<string, unknown>>)[0].data_pagamento;
+    });
+    const plano = carregarPlanoOperacaoWidesys(diretorio);
+    const baixa = plano.registros.find(
+      (item): item is BaixaLegadoPlanejada =>
+        item.escopo === "BAIXA_RECEBER" && item.movimentoLegadoId === "447",
+    );
+    const movimento = plano.registros.find(
+      (item) => item.escopo === "MOVIMENTO" && item.legadoId === "447",
+    );
+
+    expect(baixa?.quarentenaMotivo).toContain("BAIXA_MOVIMENTO_DATA_AUSENTE");
+    expect(movimento?.quarentenaMotivo).toContain("MOVIMENTO_BAIXA_DATA_AUSENTE");
   });
 
   it("aceita arredondamento máximo de um centavo entre baixa e movimento", () => {
@@ -1404,6 +1602,64 @@ describe("staging da operação Widesys", () => {
     expect(relatorio.porEscopo.CONTRATO_PARTE.anterioresIgnorados).toBe(1);
   });
 
+  it("persiste filho no retry quando o pai foi gravado pelo mesmo lote", async () => {
+    const carregado = carregarPlanoOperacaoWidesys(fixtureOperacao());
+    const parte = carregado.registros.find((item) => item.escopo === "CONTRATO_PARTE")!;
+    const plano: PlanoOperacaoWidesys = {
+      ...carregado,
+      capturaId: "captura-retry-filho",
+      manifestoHash: "7".repeat(64),
+      registros: [parte],
+    };
+    let gravacoesFilho = 0;
+    const lote = {
+      id: "lote-retry",
+      status: "FALHOU",
+      manifestoHash: plano.manifestoHash,
+    };
+    const contratoMesmoLote = {
+      id: "contrato-canonico",
+      capturadoEm: new Date("2026-09-16T11:30:00.000Z"),
+      statusImportacao: "STAGING",
+      ultimoItem: {
+        lote: { id: lote.id, capturadoEm: plano.capturadoEm },
+      },
+    };
+    const tx = {
+      baixaFinanceiraLegado: semAusentes,
+      contratoLegado: {
+        ...semAusentes,
+        findUnique: async () => contratoMesmoLote,
+      },
+      contratoParteLegado: {
+        ...semAusentes,
+        findUnique: async () => null,
+        upsert: async () => {
+          gravacoesFilho += 1;
+          return { id: "parte-retry" };
+        },
+      },
+      importacaoLegadoItem: {
+        upsert: async () => ({ id: "item-retry" }),
+      },
+      movimentoFinanceiroLegado: semAusentes,
+      tituloFinanceiroLegado: semAusentes,
+    };
+    const prisma = {
+      importacaoLegadoLote: {
+        findUnique: async () => lote,
+        update: async ({ data }: { data: Record<string, unknown> }) => ({ ...lote, ...data }),
+      },
+      $transaction: async (executar: (cliente: typeof tx) => Promise<unknown>) => executar(tx),
+    } as unknown as PrismaClient;
+
+    const relatorio = await importarPlanoOperacaoWidesys(prisma, plano, { tamanhoLote: 1 });
+
+    expect(gravacoesFilho).toBe(1);
+    expect(relatorio.porEscopo.CONTRATO_PARTE.criados).toBe(1);
+    expect(relatorio.porEscopo.CONTRATO_PARTE.anterioresIgnorados).toBe(0);
+  });
+
   it("marca como ausente o canônico que sumiu sem apagar seu histórico", async () => {
     const carregado = carregarPlanoOperacaoWidesys(fixtureOperacao());
     const titulo = carregado.registros.find(
@@ -1432,6 +1688,7 @@ describe("staging da operação Widesys", () => {
                   capturadoEm: new Date("2026-09-15T12:00:00.000Z"),
                   legadoId: "titulo-que-sumiu",
                   snapshotHash: "e".repeat(64),
+                  vencimento: "2026-09-10",
                   ultimoItem: { lote: { capturadoEm: new Date("2026-09-15T12:00:00.000Z") } },
                 },
               ]
@@ -1467,6 +1724,195 @@ describe("staging da operação Widesys", () => {
       statusImportacao: "AUSENTE_NA_FONTE",
     });
     expect(relatorio.porEscopo.TITULO_RECEBER.ausentesMarcados).toBe(1);
+  });
+
+  it("não repete tombstone para canônico que já está ausente", async () => {
+    const carregado = carregarPlanoOperacaoWidesys(fixtureOperacao());
+    const titulo = carregado.registros.find(
+      (item): item is TituloLegadoPlanejado => item.escopo === "TITULO_RECEBER",
+    )!;
+    const plano: PlanoOperacaoWidesys = { ...carregado, registros: [titulo] };
+    let gravacoes = 0;
+    const prisma = {
+      baixaFinanceiraLegado: semAusentes,
+      contratoLegado: semAusentes,
+      contratoParteLegado: semAusentes,
+      movimentoFinanceiroLegado: semAusentes,
+      tituloFinanceiroLegado: {
+        findMany: async ({ where }: { where: { escopo: string } }) =>
+          where.escopo === "TITULO_RECEBER"
+            ? [
+                {
+                  capturadoEm: new Date("2026-09-15T12:00:00.000Z"),
+                  legadoId: "titulo-ja-ausente",
+                  snapshotHash: "d".repeat(64),
+                  statusImportacao: "AUSENTE_NA_FONTE",
+                  vencimento: "2026-09-10",
+                  ultimoItem: { lote: { capturadoEm: new Date("2026-09-16T12:00:00.000Z") } },
+                },
+              ]
+            : [],
+      },
+      importacaoLegadoItem: {
+        upsert: async () => {
+          gravacoes += 1;
+          return { id: "não-deveria-gravar" };
+        },
+      },
+    } as unknown as PrismaClient;
+
+    const relatorio = await criarRelatorioDryRunComBancoOperacaoWidesys(prisma, plano);
+
+    expect(gravacoes).toBe(0);
+    expect(relatorio.porEscopo.TITULO_RECEBER.ausentesMarcados).toBe(0);
+  });
+
+  it("dry-run consulta o staging e prevê tombstones sem escrever", async () => {
+    const plano = carregarPlanoOperacaoWidesys(fixtureOperacao());
+    let consultasBaixa = 0;
+    const prisma = {
+      baixaFinanceiraLegado: {
+        findMany: async ({ where }: { where: { escopo: string } }) => {
+          consultasBaixa += 1;
+          return where.escopo === "BAIXA_RECEBER"
+            ? [
+                {
+                  capturadoEm: new Date("2026-09-15T12:00:00.000Z"),
+                  legadoId: "baixa-que-sumiu",
+                  snapshotHash: "f".repeat(64),
+                  tituloEscopo: "TITULO_RECEBER",
+                  tituloLegadoId: "titulo-da-baixa",
+                  ultimoItem: {
+                    lote: { capturadoEm: new Date("2026-09-15T12:00:00.000Z") },
+                  },
+                },
+              ]
+            : [];
+        },
+      },
+      contratoLegado: semAusentes,
+      contratoParteLegado: semAusentes,
+      movimentoFinanceiroLegado: semAusentes,
+      tituloFinanceiroLegado: {
+        findMany: async ({ where }: { where: { escopo?: string } }) =>
+          where.escopo === "TITULO_RECEBER"
+            ? [
+                {
+                  capturadoEm: new Date("2026-09-15T12:00:00.000Z"),
+                  legadoId: "titulo-da-baixa",
+                  quarentenaMotivo: null,
+                  snapshotHash: "a".repeat(64),
+                  statusImportacao: "STAGING",
+                  vencimento: "2026-09-10",
+                },
+              ]
+            : [],
+      },
+    } as unknown as PrismaClient;
+
+    const relatorio = await criarRelatorioDryRunComBancoOperacaoWidesys(
+      prisma,
+      plano,
+    );
+
+    expect(relatorio.modo).toBe("DRY_RUN");
+    expect(relatorio.escoposBaixasCompletos).toContain("BAIXA_RECEBER");
+    expect(relatorio.porEscopo.BAIXA_RECEBER.ausentesMarcados).toBe(1);
+    // Uma consulta classifica os existentes; a segunda prevê tombstones.
+    expect(consultasBaixa).toBe(2);
+  });
+
+  it("não cria tombstones de baixas quando algum título não prova completude", async () => {
+    const carregado = carregarPlanoOperacaoWidesys(fixtureOperacao());
+    const plano: PlanoOperacaoWidesys = {
+      ...carregado,
+      capturaId: "captura-baixas-incompletas",
+      escoposBaixasCompletos: [],
+      manifestoHash: "9".repeat(64),
+      registros: [],
+    };
+    let lote: Record<string, unknown> | null = null;
+    const naoPodeConsultar = async () => {
+      throw new Error("baixas incompletas não podem ser consultadas para tombstone");
+    };
+    const tx = {
+      baixaFinanceiraLegado: { findMany: naoPodeConsultar },
+      contratoLegado: semAusentes,
+      contratoParteLegado: semAusentes,
+      importacaoLegadoItem: { upsert: async () => ({ id: "não-usado" }) },
+      movimentoFinanceiroLegado: semAusentes,
+      tituloFinanceiroLegado: semAusentes,
+    };
+    const prisma = {
+      importacaoLegadoLote: {
+        findUnique: async () => lote,
+        create: async ({ data }: { data: Record<string, unknown> }) => {
+          lote = { id: "lote-baixas-incompletas", status: "PROCESSANDO", ...data };
+          return lote;
+        },
+        update: async ({ data }: { data: Record<string, unknown> }) => {
+          lote = { ...(lote ?? { id: "lote-baixas-incompletas" }), ...data };
+          return lote;
+        },
+      },
+      $transaction: async (executar: (cliente: typeof tx) => Promise<unknown>) =>
+        executar(tx),
+    } as unknown as PrismaClient;
+
+    const relatorio = await importarPlanoOperacaoWidesys(prisma, plano);
+
+    expect(relatorio.porEscopo.BAIXA_RECEBER.ausentesMarcados).toBe(0);
+    expect(relatorio.porEscopo.BAIXA_PAGAR.ausentesMarcados).toBe(0);
+  });
+
+  it("não marca como ausente registro fora da janela assinada da recaptura", async () => {
+    const carregado = carregarPlanoOperacaoWidesys(fixtureOperacao());
+    const plano: PlanoOperacaoWidesys = {
+      ...carregado,
+      registros: [],
+      escoposBaixasCompletos: [],
+      coberturaTemporal: {
+        TITULO_RECEBER: { inicio: "2026-09-01", fim: "2026-09-30" },
+        TITULO_PAGAR: { inicio: "2026-09-01", fim: "2026-09-30" },
+        MOVIMENTO: { inicio: "2026-09-01", fim: "2026-09-30" },
+      },
+    };
+    const prisma = {
+      baixaFinanceiraLegado: semAusentes,
+      contratoLegado: semAusentes,
+      contratoParteLegado: semAusentes,
+      tituloFinanceiroLegado: {
+        findMany: async ({ where }: { where: { escopo?: string } }) =>
+          where.escopo === "TITULO_RECEBER"
+            ? [
+                {
+                  capturadoEm: new Date("2026-08-10T12:00:00.000Z"),
+                  legadoId: "titulo-agosto",
+                  snapshotHash: "1".repeat(64),
+                  vencimento: "2026-08-10",
+                },
+              ]
+            : [],
+      },
+      movimentoFinanceiroLegado: {
+        findMany: async ({ where }: { where: { escopo?: string } }) =>
+          where.escopo === "MOVIMENTO"
+            ? [
+                {
+                  capturadoEm: new Date("2026-08-10T12:00:00.000Z"),
+                  dataMovimento: "2026-08-10",
+                  legadoId: "movimento-agosto",
+                  snapshotHash: "2".repeat(64),
+                },
+              ]
+            : [],
+      },
+    } as unknown as PrismaClient;
+
+    const relatorio = await criarRelatorioDryRunComBancoOperacaoWidesys(prisma, plano);
+
+    expect(relatorio.porEscopo.TITULO_RECEBER.ausentesMarcados).toBe(0);
+    expect(relatorio.porEscopo.MOVIMENTO.ausentesMarcados).toBe(0);
   });
 
   it("captura parcial só cria tombstones nos escopos assinados", async () => {

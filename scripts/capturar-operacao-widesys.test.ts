@@ -814,7 +814,7 @@ describe("captura operacional Widesys", () => {
     expect(fields["jform[ativo]"]).toBe("0");
   });
 
-  it("emite baixas vazias como fonte autoritativa quando o título não possui baixa", () => {
+  it("não trata baixas vazias como prova sem o transporte de detalhes", () => {
     const row = {
       cells: ["Pendente", "R$ 100,00"],
       contentHash: "hash",
@@ -832,7 +832,40 @@ describe("captura operacional Widesys", () => {
       },
     ] as Parameters<typeof buildCapturedRecord>[4];
 
-    expect(buildCapturedRecord("contas-receber", "77", row, "2026-09", details).baixas).toEqual([]);
+    expect(buildCapturedRecord("contas-receber", "77", row, "2026-09", details)).toMatchObject({
+      baixas: [],
+      baixaEvidence: {
+        expectedTransport: "ajax.getDetalhesRecebimento",
+        transportObserved: false,
+      },
+    });
+  });
+
+  it("registra a presença do transporte que enumera as baixas", () => {
+    const row = {
+      cells: ["Pago", "R$ 100,00"],
+      contentHash: "hash",
+      headers: ["Situação", "Valor pago"],
+      legacyId: "77",
+      navigationCandidates: [],
+      parcelaInfoCandidates: [],
+    };
+    const details = [
+      {
+        contentHash: "hash-detail",
+        raw: { fields: [], tables: [], text: "", title: "" },
+        sourceUrl: "https://legado.example/administrator/index.php?option=com_widesys&view=ajax",
+        transport: "ajax.getDetalhesRecebimento",
+      },
+    ] as Parameters<typeof buildCapturedRecord>[4];
+
+    expect(
+      buildCapturedRecord("contas-receber", "77", row, "2026-09", details)
+        .baixaEvidence,
+    ).toEqual({
+      expectedTransport: "ajax.getDetalhesRecebimento",
+      transportObserved: true,
+    });
   });
 
   it("só reutiliza detalhe de resume quando linha, janela e endpoints continuam iguais", () => {

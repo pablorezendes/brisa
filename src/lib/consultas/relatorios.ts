@@ -191,17 +191,27 @@ export interface PendenciaDoMes {
   empreendimento: string;
   locatario: string | null;
   identificacao: string;
+  /** Valor integral cobrado no lançamento. */
   totalDevido: number;
+  /** Valor já pago; lançamento sem pagamento é normalizado para zero. */
+  recebido: number;
+  /** Parcela ainda em aberto, nunca negativa. */
+  saldoAberto: number;
   diaVencimento: number | null;
   /** dias corridos desde o vencimento (negativo = ainda a vencer); null sem dia */
   diasDesdeVencimento: number | null;
 }
 
-/** Lançamentos com totalDevido e sem recebido no mesLancamento, por valor desc. */
+function saldoAberto(totalDevido: number | null, recebido: number | null): number {
+  if (totalDevido === null) return 0;
+  return Math.max(totalDevido - (recebido ?? 0), 0);
+}
+
+/** Lançamentos com saldo aberto no mesLancamento, por saldo desc. */
 export async function pendentesDoMes(mes: string): Promise<PendenciaDoMes[]> {
   const { ano, mes: mesNum } = parseCompetencia(mes);
   const recebimentos = await prisma.recebimento.findMany({
-    where: { mesLancamento: mes, recebido: null },
+    where: { mesLancamento: mes },
     include: {
       empreendimento: true,
       contrato: { include: { unidade: true, locatario: true } },
@@ -214,7 +224,9 @@ export async function pendentesDoMes(mes: string): Promise<PendenciaDoMes[]> {
   const pendencias: PendenciaDoMes[] = [];
   for (const r of recebimentos) {
     const { totalDevido } = calcularRecebimento(r);
-    if (totalDevido === null) continue; // nada a cobrar no mês
+    const recebido = r.recebido ?? 0;
+    const saldo = saldoAberto(totalDevido, r.recebido);
+    if (totalDevido === null || saldo === 0) continue;
     const dia = r.contrato.diaVencimento;
     pendencias.push({
       recebimentoId: r.id,
@@ -222,6 +234,8 @@ export async function pendentesDoMes(mes: string): Promise<PendenciaDoMes[]> {
       locatario: r.contrato.locatario?.nome ?? null,
       identificacao: r.contrato.unidade.identificacao,
       totalDevido,
+      recebido,
+      saldoAberto: saldo,
       diaVencimento: dia,
       diasDesdeVencimento:
         dia === null
@@ -229,7 +243,7 @@ export async function pendentesDoMes(mes: string): Promise<PendenciaDoMes[]> {
           : Math.floor((hojeUTC - Date.UTC(ano, mesNum - 1, dia)) / 86400000),
     });
   }
-  return pendencias.sort((a, b) => b.totalDevido - a.totalDevido);
+  return pendencias.sort((a, b) => b.saldoAberto - a.saldoAberto);
 }
 
 // ---------------------------------------------------------------------------
@@ -324,6 +338,7 @@ export interface KpisDoMes {
   comissaoMes: number;
   /** comissão acumulada de JAN até o mês, no mesmo ano */
   comissaoAcumuladaAno: number;
+  /** `valorDevido` preserva o contrato do view-model, mas representa o saldo aberto. */
   inadimplencia: { quantidade: number; valorDevido: number };
   /** Σ totalDevido do mês — denominador do semáforo de inadimplência */
   devidoMes: number;
@@ -396,9 +411,10 @@ export async function kpisDoMes(mes: string): Promise<KpisDoMes> {
     comissaoMes += comissao ?? 0;
     somaDevido += totalDevido ?? 0;
     somaRecebido += r.recebido ?? 0;
-    if (totalDevido !== null && r.recebido === null) {
+    const saldo = saldoAberto(totalDevido, r.recebido);
+    if (saldo > 0) {
       pendentes += 1;
-      valorPendente += totalDevido;
+      valorPendente += saldo;
     }
   }
 
@@ -447,6 +463,7 @@ export interface KpisDoPeriodo {
   comissaoPorMes: number[];
   devidoPorMes: number[];
   recebidoPorMes: number[];
+  /** `valorDevido` preserva o contrato do view-model, mas representa o saldo aberto. */
   inadimplencia: { quantidade: number; valorDevido: number };
   devidoTotal: number;
   recebidoTotal: number;
@@ -512,9 +529,10 @@ export async function kpisDoPeriodo(meses: string[]): Promise<KpisDoPeriodo> {
     comissaoPorMes[i] += comissao ?? 0;
     devidoPorMes[i] += totalDevido ?? 0;
     recebidoPorMes[i] += r.recebido ?? 0;
-    if (totalDevido !== null && r.recebido === null) {
+    const saldo = saldoAberto(totalDevido, r.recebido);
+    if (saldo > 0) {
       pendentes += 1;
-      valorPendente += totalDevido;
+      valorPendente += saldo;
     }
   }
 
@@ -593,7 +611,6 @@ export async function pendentesDoPeriodo(
   const recebimentos = await prisma.recebimento.findMany({
     where: {
       mesLancamento: { gte: meses[0], lte: meses[meses.length - 1] },
-      recebido: null,
     },
     include: {
       empreendimento: true,
@@ -607,7 +624,9 @@ export async function pendentesDoPeriodo(
   const pendencias: (PendenciaDoMes & { mes: string })[] = [];
   for (const r of recebimentos) {
     const { totalDevido } = calcularRecebimento(r);
-    if (totalDevido === null) continue;
+    const recebido = r.recebido ?? 0;
+    const saldo = saldoAberto(totalDevido, r.recebido);
+    if (totalDevido === null || saldo === 0) continue;
     const { ano, mes: mesNum } = parseCompetencia(r.mesLancamento);
     const dia = r.contrato.diaVencimento;
     pendencias.push({
@@ -617,6 +636,8 @@ export async function pendentesDoPeriodo(
       locatario: r.contrato.locatario?.nome ?? null,
       identificacao: r.contrato.unidade.identificacao,
       totalDevido,
+      recebido,
+      saldoAberto: saldo,
       diaVencimento: dia,
       diasDesdeVencimento:
         dia === null
@@ -624,7 +645,7 @@ export async function pendentesDoPeriodo(
           : Math.floor((hojeUTC - Date.UTC(ano, mesNum - 1, dia)) / 86400000),
     });
   }
-  return pendencias.sort((a, b) => b.totalDevido - a.totalDevido);
+  return pendencias.sort((a, b) => b.saldoAberto - a.saldoAberto);
 }
 
 /** Contratos com aniversário de reajuste em qualquer mês da janela. */

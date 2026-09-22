@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
@@ -231,6 +231,16 @@ type PendingRecord = {
 };
 type CapturedRecord = {
   baixas: Array<Record<string, string>>;
+  /**
+   * Evidência explícita do transporte que enumera as baixas. `baixas: []`
+   * sozinho não prova que o título não possui liquidações: capturas antigas
+   * podiam produzir esse array mesmo quando o endpoint de detalhes não estava
+   * disponível na linha da listagem.
+   */
+  baixaEvidence?: {
+    expectedTransport: "ajax.getDetalhesPagamento" | "ajax.getDetalhesRecebimento";
+    transportObserved: boolean;
+  };
   capturedAt: string;
   details: Array<{
     contentHash: string;
@@ -1323,6 +1333,33 @@ async function saveManifest(manifest: Manifest): Promise<void> {
   await atomicWrite(path.join(OUTPUT_DIRECTORY, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
+async function pruneUnreferencedCaptureFiles(manifest: Manifest): Promise<void> {
+  if (!manifest.complete) return;
+  const referenced = new Set([
+    "manifest.json",
+    ...manifest.files.map((file) => file.path.replace(/\\/g, "/")),
+    ...manifest.artifacts.map((artifact) => artifact.path.replace(/\\/g, "/")),
+  ]);
+  const root = path.resolve(OUTPUT_DIRECTORY);
+  const walk = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const absolute = path.resolve(directory, entry.name);
+      if (!absolute.startsWith(`${root}${path.sep}`)) {
+        throw new Error("Caminho inesperado durante a limpeza da captura.");
+      }
+      const relative = path.relative(root, absolute).replace(/\\/g, "/");
+      if (entry.isDirectory()) {
+        await walk(absolute);
+      } else if (!referenced.has(relative)) {
+        // Somente arquivos dentro da raiz fixa e ausentes do manifesto assinado
+        // são removidos. Diretórios não são seguidos nem apagados.
+        await unlink(absolute);
+      }
+    }
+  };
+  await walk(root);
+}
+
 export function operationalManifestIsResumable(
   manifest: Pick<Manifest, "businessDate" | "capturedAt" | "complete" | "completedAt" | "startedAt">,
   now = new Date(),
@@ -1833,6 +1870,18 @@ export function buildCapturedRecord(
     },
     sourceUrl: details[0]?.sourceUrl || "",
   };
+  if (module === "contas-receber" || module === "contas-pagar") {
+    const expectedTransport =
+      module === "contas-receber"
+        ? "ajax.getDetalhesRecebimento"
+        : "ajax.getDetalhesPagamento";
+    normalized.baixaEvidence = {
+      expectedTransport,
+      transportObserved: details.some(
+        (detail) => detail.transport === expectedTransport,
+      ),
+    };
+  }
   if (module === "contratos") {
     const partes = contractParties(details);
     if (partes.length > 0) normalized.partes = partes;
@@ -2241,6 +2290,7 @@ async function main(): Promise<void> {
   manifest.complete = completed === options.modules.length && manifest.errors.length === 0;
   manifest.completedAt = new Date().toISOString();
   manifest.capturedAt = manifest.completedAt;
+  await pruneUnreferencedCaptureFiles(manifest);
   await saveManifest(manifest);
   const records = options.modules.reduce(
     (sum, moduleName) =>

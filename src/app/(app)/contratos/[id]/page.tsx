@@ -11,6 +11,7 @@ import {
   inputBase,
 } from "@/components/ui";
 import { calcularRecebimento, comissaoTotal } from "@/lib/dominio/comissao";
+import { formatarBRL } from "@/lib/dominio/dinheiro";
 import {
   formatarCompetencia,
   NOME_MES_COMPLETO,
@@ -58,10 +59,18 @@ export default async function PaginaDetalheContrato({
   if (!contrato) notFound();
 
   const recebimentos = await recebimentosDoContrato(id);
-  const linhas = recebimentos.map((r) => ({ r, calc: calcularRecebimento(r) }));
+  const linhas = recebimentos.map((r) => {
+    const calc = calcularRecebimento(r);
+    return {
+      r,
+      calc,
+      saldoAberto: Math.max((calc.totalDevido ?? 0) - (r.recebido ?? 0), 0),
+    };
+  });
   const totalComissao = comissaoTotal(recebimentos);
   const totalRecebido = recebimentos.reduce((s, r) => s + (r.recebido ?? 0), 0);
-  const pendentes = recebimentos.filter((r) => r.recebido === null).length;
+  const totalSaldoAberto = linhas.reduce((s, linha) => s + linha.saldoAberto, 0);
+  const pendentes = linhas.filter((linha) => linha.saldoAberto > 0).length;
   const totalContratado =
     contrato.valorBase + contrato.iptu + contrato.condominio;
   const confirmarEncerrar =
@@ -147,12 +156,12 @@ export default async function PaginaDetalheContrato({
         <Kpi
           rotulo="Total recebido"
           valor={<Dinheiro centavos={totalRecebido} />}
-          detalhe={pendentes > 0 ? `${pendentes} pendente(s)` : "sem pendências"}
+          detalhe={pendentes > 0 ? `${pendentes} com saldo em aberto` : "sem pendências"}
           nivel={pendentes > 0 ? "atencao" : "otimo"}
           selo={pendentes > 0 ? `${pendentes} em aberto` : "em dia"}
           nota={
             pendentes > 0
-              ? "Há lançamentos deste contrato sem pagamento registrado — veja o histórico abaixo."
+              ? `Ainda restam ${formatarBRL(totalSaldoAberto)} neste contrato — pagamentos parciais continuam no histórico abaixo.`
               : undefined
           }
           ajuda="Soma de tudo que o locatário pagou neste contrato, incluindo IPTU e condomínio (que são repassados ao proprietário). Não é o ganho da administradora — o ganho é a comissão."
@@ -219,6 +228,7 @@ export default async function PaginaDetalheContrato({
                 <th style={{ textAlign: "right" }}>Cond.</th>
                 <th style={{ textAlign: "right" }}>Total</th>
                 <th style={{ textAlign: "right" }}>Recebido</th>
+                <th style={{ textAlign: "right" }}>Saldo</th>
                 <th style={{ textAlign: "right" }}>Base de cálculo</th>
                 <th style={{ textAlign: "right" }}>Comissão</th>
                 <th>Data</th>
@@ -229,15 +239,15 @@ export default async function PaginaDetalheContrato({
             <tbody>
               {linhas.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-6 text-center text-tinta-suave/60">
+                  <td colSpan={13} className="py-6 text-center text-tinta-suave/60">
                     Nenhum recebimento lançado para este contrato.
                   </td>
                 </tr>
               ) : (
-                linhas.map(({ r, calc }) => (
+                linhas.map(({ r, calc, saldoAberto }) => (
                   <tr
                     key={r.id}
-                    className={r.recebido === null ? "bg-ambar/5" : ""}
+                    className={saldoAberto > 0 ? "bg-ambar/5" : ""}
                   >
                     <td>{formatarCompetencia(r.mesLancamento)}</td>
                     <td>
@@ -257,9 +267,13 @@ export default async function PaginaDetalheContrato({
                       {r.recebido === null ? (
                         <Badge cor="ambar">Pendente</Badge>
                       ) : (
-                        <Dinheiro centavos={r.recebido} destaque />
+                        <span className="inline-flex items-center justify-end gap-1.5">
+                          <Dinheiro centavos={r.recebido} destaque />
+                          {saldoAberto > 0 ? <Badge cor="ambar">Parcial</Badge> : null}
+                        </span>
                       )}
                     </td>
+                    <td className="text-right"><Dinheiro centavos={saldoAberto} destaque={saldoAberto > 0} /></td>
                     <td className="text-right"><Dinheiro centavos={calc.baseCalculo} /></td>
                     <td className="text-right"><Dinheiro centavos={calc.comissao} destaque /></td>
                     <td>{formatarDataBR(r.dataPagamento)}</td>
@@ -276,6 +290,7 @@ export default async function PaginaDetalheContrato({
                 <tr>
                   <td colSpan={6}>Total do contrato</td>
                   <td className="text-right"><Dinheiro centavos={totalRecebido} /></td>
+                  <td className="text-right"><Dinheiro centavos={totalSaldoAberto} destaque /></td>
                   <td></td>
                   <td className="text-right"><Dinheiro centavos={totalComissao} destaque /></td>
                   <td colSpan={3}></td>

@@ -126,9 +126,18 @@ identidade externa para permitir a prova caixa × baixas. Registros ambíguos v�
 para quarentena. Nada é promovido automaticamente para `Contrato`,
 `Recebimento` ou `LancamentoCaixa`, e nomes nunca são usados para criar vínculos.
 
-Os snapshots brutos não são copiados ao SQLite. O banco guarda somente os
-campos normalizados usados pelo Brisa e hashes de proveniência. Consulte o
-procedimento de captura, backup e atualização em [DEPLOY.md](./DEPLOY.md).
+A conferência fica disponível em `/financeiro/migracao-widesys`. Essa visão
+mostra, lado a lado, o núcleo operacional do Brisa, os registros preservados no
+staging do Widesys, quarentenas e itens ausentes na fotografia mais recente. Uma
+contagem ou valor semelhante nunca é apresentada como correspondência
+confirmada; a origem externa e a promoção continuam explícitas.
+
+Os snapshots brutos não são copiados ao SQLite. O staging guarda os campos
+normalizados necessários para provar origem e reconciliar os registros —
+inclusive identificadores e dados pessoais quando a fonte os exige —, além dos
+hashes de proveniência. Esses campos não são exibidos na auditoria financeira e
+devem permanecer restritos ao servidor. Consulte o procedimento de captura,
+backup e atualização em [DEPLOY.md](./DEPLOY.md).
 
 ## Produção
 

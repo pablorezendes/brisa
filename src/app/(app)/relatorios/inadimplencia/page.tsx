@@ -61,13 +61,20 @@ export default async function InadimplenciaPage({
         janela: `de ${formatarCompetencia(mes)}`,
         janelaCurta: `em ${formatarCompetencia(mes)}`,
       };
-  const totalDevido = vm.pendencias.reduce((a, p) => a + p.totalDevido, 0);
+  const totais = vm.pendencias.reduce(
+    (acc, p) => ({
+      devido: acc.devido + p.totalDevido,
+      recebido: acc.recebido + p.recebido,
+      saldo: acc.saldo + p.saldoAberto,
+    }),
+    { devido: 0, recebido: 0, saldo: 0 }
+  );
 
   return (
     <div>
       <PageHeader
         titulo="Inadimplência"
-        descricao={`Lançamentos ${vm.janela} com total devido e sem recebimento registrado.`}
+        descricao={`Lançamentos ${vm.janela} cujo total devido ainda supera o valor recebido.`}
         acoes={
           <div className="flex flex-wrap items-center gap-2">
             {!periodo ? (
@@ -87,7 +94,9 @@ export default async function InadimplenciaPage({
                 <th>Empreendimento</th>
                 <th>Locatário</th>
                 <th>Localização</th>
-                <th className="text-right">Total devido</th>
+                <th className="text-right">Devido</th>
+                <th className="text-right">Pago</th>
+                <th className="text-right">Saldo aberto</th>
                 <th>Atraso</th>
               </tr>
             </thead>
@@ -107,6 +116,12 @@ export default async function InadimplenciaPage({
                   <td className="text-right">
                     <Dinheiro centavos={p.totalDevido} />
                   </td>
+                  <td className="text-right">
+                    <Dinheiro centavos={p.recebido} />
+                  </td>
+                  <td className="text-right">
+                    <Dinheiro centavos={p.saldoAberto} destaque />
+                  </td>
                   <td>
                     <Atraso
                       dias={p.diasDesdeVencimento}
@@ -118,7 +133,7 @@ export default async function InadimplenciaPage({
               {vm.pendencias.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={vm.comMes ? 6 : 5}
+                    colSpan={vm.comMes ? 8 : 7}
                     className="py-6 text-center text-tinta-suave"
                   >
                     Nenhuma pendência {vm.janelaCurta}.
@@ -133,8 +148,10 @@ export default async function InadimplenciaPage({
                   {vm.pendencias.length === 1 ? "pendência" : "pendências"}
                 </td>
                 <td className="text-right">
-                  <Dinheiro centavos={totalDevido} destaque />
+                  <Dinheiro centavos={totais.devido} />
                 </td>
+                <td className="text-right"><Dinheiro centavos={totais.recebido} /></td>
+                <td className="text-right"><Dinheiro centavos={totais.saldo} destaque /></td>
                 <td />
               </tr>
             </tfoot>

@@ -333,8 +333,9 @@ test -f "$incoming/legacy-widesys/catalogos/manifest.json"
 test -f "$incoming/legacy-widesys/operacao/manifest.json"
 
 stamp="$(date +%F-%H%M%S)"
+mkdir -p /root/backups
 if [ -e data/legacy-widesys ]; then
-  mv data/legacy-widesys "data/legacy-widesys.pre-$stamp"
+  mv data/legacy-widesys "/root/backups/legacy-widesys-pre-$stamp"
 fi
 mv "$incoming/legacy-widesys" data/legacy-widesys
 rmdir "$incoming"
@@ -342,9 +343,10 @@ chmod -R go-rwx data/legacy-widesys
 rm -f /root/legacy-widesys-transfer.tar.gz
 ```
 
-Não mantenha indefinidamente a cópia `data/legacy-widesys.pre-*`: depois que a
-reconciliação e a aplicação terminarem com sucesso, mova-a para um cofre de
-backup com retenção definida ou elimine-a de forma controlada.
+Não mantenha indefinidamente a cópia `/root/backups/legacy-widesys-pre-*`:
+depois que a reconciliação e a aplicação terminarem com sucesso, aplique a
+política de retenção do cofre. A captura anterior nunca deve ser movida para
+outro nome dentro do repositório, pois contém dados pessoais e financeiros.
 
 ### Validação e importação comuns às duas opções
 
@@ -363,9 +365,12 @@ docker compose exec brisa npm run importar:operacao-widesys:dry-run
 docker compose exec brisa npm run importar:operacao-widesys
 ```
 
-O `dry-run` deve ser analisado antes da aplicação. A importação é idempotente e
-não remove registros que estejam ausentes em uma captura posterior; esses casos
-aparecem como avisos `*_ausente_na_origem` para conferência humana. Não use
+O `dry-run` deve ser analisado antes da aplicação. Além das criações,
+atualizações e quarentenas, ele consulta o staging em modo somente leitura e
+antecipa quantos itens receberiam o estado `AUSENTE_NA_FONTE`. A aplicação é
+idempotente e nunca apaga esses registros; uma captura completa apenas os marca
+para conferência humana. Baixas só podem receber essa marca quando todo o escopo
+de títulos comprova que a enumeração das liquidações foi completa. Não use
 `npm run db:seed` neste fluxo, pois o seed é uma recarga total da operação.
 O modo `--refresh` refaz todas as telas e evita misturar a API atual com detalhes
 de uma execução anterior. Reserve `--resume` exclusivamente para continuar a
@@ -385,6 +390,9 @@ cria contratos, recebimentos ou lançamentos de caixa atuais. O lote é
 idempotente por origem + `captureId`; cada registro também é idempotente por
 origem + escopo + ID legado. Um lote com quarentenas é terminal e pode ser
 reprocessado somente por uma nova captura, preservando a trilha anterior.
+Depois da aplicação, confira `/financeiro/migracao-widesys`: a página distingue
+os totais operacionais do Brisa dos totais do Widesys e não expõe snapshots,
+URLs de origem, documentos pessoais ou dados bancários.
 
 ### Atualização completa com backup e migração dos cadastros
 

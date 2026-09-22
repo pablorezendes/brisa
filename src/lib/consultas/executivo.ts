@@ -42,6 +42,8 @@ export interface Pendente {
   locatario: string;
   localizacao: string;
   totalDevido: number;
+  recebido: number;
+  saldoAberto: number;
   diasAtraso: number | null;
 }
 
@@ -64,6 +66,7 @@ export interface DadosExecutivo {
   recebidoMes: number;
   taxaRecebimento: number | null; // 0..1
   inadimplentesQtde: number;
+  /** Soma do saldo aberto (devido − recebido), nunca do valor integral. */
   inadimplentesValor: number;
   saldoCaixaMes: number;
   caixaMes: CaixaMensal | null;
@@ -179,10 +182,12 @@ export async function dadosExecutivos(mes: string): Promise<DadosExecutivo> {
     }
     agg.comissaoPorMes[m - 1] += calc.comissao ?? 0;
 
-    const pendente = calc.totalDevido !== null && r.recebido === null;
+    const recebido = r.recebido ?? 0;
+    const saldoAberto = Math.max((calc.totalDevido ?? 0) - recebido, 0);
+    const pendente = calc.totalDevido !== null && saldoAberto > 0;
     if (pendente) {
       linha.pendentes += 1;
-      linha.pendenteValor += calc.totalDevido ?? 0;
+      linha.pendenteValor += saldoAberto;
     }
 
     if (r.mesLancamento === mes) {
@@ -206,12 +211,14 @@ export async function dadosExecutivos(mes: string): Promise<DadosExecutivo> {
             r.contrato.locatario?.nome ?? "—",
           localizacao: r.contrato.unidade.identificacao,
           totalDevido: calc.totalDevido ?? 0,
+          recebido,
+          saldoAberto,
           diasAtraso,
         });
       }
     }
   }
-  pendentesDoMes.sort((a, b) => b.totalDevido - a.totalDevido);
+  pendentesDoMes.sort((a, b) => b.saldoAberto - a.saldoAberto);
 
   const ultimoMesComDados = Math.max(
     1,

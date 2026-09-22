@@ -201,7 +201,7 @@ export default async function Home({
   const vencidasGraves = vm.pendentes.filter(
     (p) => p.diasDesdeVencimento !== null && p.diasDesdeVencimento > 30
   );
-  const valorGrave = vencidasGraves.reduce((s, p) => s + p.totalDevido, 0);
+  const valorGrave = vencidasGraves.reduce((s, p) => s + p.saldoAberto, 0);
 
   // ---- fila de atenção -----------------------------------------------------
   const alertas: ItemAlerta[] = [];
@@ -216,8 +216,8 @@ export default async function Home({
   if (vm.inadimplencia.quantidade > 0) {
     alertas.push({
       nivel: nivelInad,
-      titulo: "Cobranças sem pagamento",
-      texto: `${vm.inadimplencia.quantidade} ${vm.inadimplencia.quantidade === 1 ? "lançamento" : "lançamentos"} ${nomeJanela} ainda sem recebimento — ${formatarBRL(vm.inadimplencia.valorDevido)} a entrar. Quando o dinheiro cair, registre em Recebimentos e a linha some sozinha.`,
+      titulo: "Cobranças com saldo em aberto",
+      texto: `${vm.inadimplencia.quantidade} ${vm.inadimplencia.quantidade === 1 ? "lançamento mantém" : "lançamentos mantêm"} ${formatarBRL(vm.inadimplencia.valorDevido)} de saldo ${nomeJanela}. Pagamentos parciais reduzem esse valor; a linha sai da fila ao ser quitada.`,
       acao: { rotulo: "Registrar", href: `/recebimentos?${qs}` },
     });
   }
@@ -452,7 +452,7 @@ export default async function Home({
         <TituloCard
           titulo={periodo ? "Pendentes do período" : "Pendentes do mês"}
           nivel={vm.pendentes.length > 0 ? nivelInad : "otimo"}
-          ajuda="As cobranças de maior valor ainda sem pagamento registrado. O ponto colorido na frente é o tempo de atraso: verde/azul ainda não venceu, âmbar venceu há pouco, vermelho passou de 30 dias."
+          ajuda="As cobranças com maior saldo após descontar pagamentos já registrados. O ponto colorido na frente é o tempo de atraso: verde/azul ainda não venceu, âmbar venceu há pouco, vermelho passou de 30 dias."
           direita={
             <LinkCard href={`/relatorios/inadimplencia?${qs}`}>
               Inadimplência completa
@@ -479,8 +479,8 @@ export default async function Home({
                   <th>Empreendimento</th>
                   <th>Locatário</th>
                   <th className="text-right">
-                    Total devido{" "}
-                    <Ajuda dica="Aluguel + IPTU + condomínio da cobrança ainda sem pagamento. Quando entrar o dinheiro, registre em Recebimentos — se vier parcial ou em acordo, anote o motivo na Observação." />
+                    Saldo aberto{" "}
+                    <Ajuda dica="Total devido menos o que já foi recebido. Um pagamento parcial reduz este valor sem retirar a cobrança da fila." />
                   </th>
                 </tr>
               </thead>
@@ -515,7 +515,7 @@ export default async function Home({
                         )}
                       </td>
                       <td className="text-right">
-                        <Dinheiro centavos={p.totalDevido} />
+                        <Dinheiro centavos={p.saldoAberto} />
                       </td>
                     </tr>
                   );

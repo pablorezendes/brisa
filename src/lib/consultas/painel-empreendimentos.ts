@@ -83,7 +83,7 @@ export interface UnidadeDoPainel {
 export interface LocatarioDoPainel {
   nome: string;
   recebidoJanela: number;
-  /** Σ totalDevido dos lançamentos da janela ainda sem recebido */
+  /** Σ max(totalDevido − recebido, 0) dos lançamentos da janela */
   pendenteJanela: number;
   lancamentosPendentes: number;
   /** maior dataPagamento registrada na janela ("YYYY-MM-DD"); null sem registro */
@@ -99,7 +99,7 @@ export interface DetalheEmpreendimentoJanela {
   recebidoTotal: number;
   /** Σ recebido ÷ Σ devido na janela (0..1); null sem cobrança */
   taxaRecebimento: number | null;
-  /** Σ totalDevido dos lançamentos da janela sem recebido */
+  /** Σ max(totalDevido − recebido, 0) dos lançamentos da janela */
   pendenteAberto: number;
   pendentesQtde: number;
   ocupacao: OcupacaoEmpreendimento;
@@ -380,9 +380,10 @@ async function detalheDaJanela(
     devidoPorMes[i] += calc.totalDevido ?? 0;
     recebidoPorMes[i] += r.recebido ?? 0;
 
-    const pendente = calc.totalDevido !== null && r.recebido === null;
+    const saldoAberto = Math.max((calc.totalDevido ?? 0) - (r.recebido ?? 0), 0);
+    const pendente = calc.totalDevido !== null && saldoAberto > 0;
     if (pendente) {
-      pendenteAberto += calc.totalDevido ?? 0;
+      pendenteAberto += saldoAberto;
       pendentesQtde += 1;
     }
 
@@ -406,7 +407,7 @@ async function detalheDaJanela(
     }
     loc.recebidoJanela += r.recebido ?? 0;
     if (pendente) {
-      loc.pendenteJanela += calc.totalDevido ?? 0;
+      loc.pendenteJanela += saldoAberto;
       loc.lancamentosPendentes += 1;
     }
     if (

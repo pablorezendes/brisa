@@ -11,6 +11,7 @@ type ItemMenu = {
   rotulo: string;
   icone?: IconeMenuNome;
   correspondencia?: "exata" | "prefixo";
+  perfis?: readonly string[];
 };
 
 type ModuloMenu = {
@@ -61,6 +62,13 @@ const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
           { tipo: "link", href: "/paineis/cobranca", rotulo: "Cobrança e atrasos", icone: "cobranca" },
           { tipo: "link", href: "/financeiro/contas-bancarias", rotulo: "Contas bancárias", icone: "contas-bancarias" },
           { tipo: "link", href: "/financeiro/conciliacao", rotulo: "Conciliação bancária", icone: "conciliacao" },
+          {
+            tipo: "link",
+            href: "/financeiro/migracao-widesys",
+            rotulo: "Migração Widesys",
+            icone: "integracao",
+            perfis: ["ADMINISTRADOR", "FINANCEIRO"],
+          },
           { tipo: "link", href: "/caixa", rotulo: "Movimentações de caixa", icone: "caixa" },
           { tipo: "link", href: "/relatorios/comissao", rotulo: "Comissões", icone: "comissoes" },
         ],
@@ -252,10 +260,12 @@ function ModuloNav({
 
 export default function AppShell({
   nome,
+  perfil,
   sair,
   children,
 }: {
   nome: string;
+  perfil: string;
   sair: () => Promise<void>;
   children: React.ReactNode;
 }) {
@@ -272,6 +282,19 @@ export default function AppShell({
   const modulosAbertos = estadoModulos.pathname === pathname
     ? estadoModulos.valores
     : {};
+  const menuVisivel = MENU.map((grupo) => ({
+    ...grupo,
+    itens: grupo.itens.map((entrada) =>
+      entrada.tipo === "modulo"
+        ? {
+            ...entrada,
+            itens: entrada.itens.filter(
+              (item) => !item.perfis || item.perfis.includes(perfil),
+            ),
+          }
+        : entrada,
+    ),
+  }));
 
   useEffect(() => {
     if (!aberto) return;
@@ -401,7 +424,7 @@ export default function AppShell({
         </div>
 
         <nav aria-label="Navegação principal" className={`flex-1 overflow-y-auto px-4 py-4 ${recolhida ? "lg:px-2.5" : ""}`}>
-          {MENU.map((grupo) => (
+          {menuVisivel.map((grupo) => (
             <div key={grupo.titulo} className="mb-4 last:mb-0">
               <div className={`mb-1.5 px-3 text-[10px] font-bold uppercase tracking-[0.17em] text-[#829698] ${recolhida ? "lg:sr-only" : ""}`}>
                 {grupo.titulo}
@@ -460,7 +483,9 @@ export default function AppShell({
             </span>
             <div className={`min-w-0 flex-1 ${recolhida ? "lg:hidden" : ""}`}>
               <div className="truncate text-[12px] font-semibold text-white">{nome}</div>
-              <div className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[#7f9698]">Administrador</div>
+              <div className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[#7f9698]">
+                {perfil.toLocaleLowerCase("pt-BR").replaceAll("_", " ")}
+              </div>
             </div>
             <form action={sair}>
               <button type="submit" title="Sair do sistema" aria-label="Sair do sistema" className="flex h-8 w-8 items-center justify-center rounded-lg text-[#829799] transition-colors hover:bg-white/10 hover:text-white">

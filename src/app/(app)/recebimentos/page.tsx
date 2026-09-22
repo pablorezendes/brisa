@@ -105,7 +105,16 @@ export default async function PaginaRecebimentos({
     ? recebimentos.filter((r) => r.empreendimentoId === empFiltro)
     : recebimentos;
 
-  const linhas = exibidos.map((r) => ({ r, calc: calcularRecebimento(r) }));
+  const montarLinha = (r: RecebimentoComRelacoes) => {
+    const calc = calcularRecebimento(r);
+    return {
+      r,
+      calc,
+      saldoAberto: Math.max((calc.totalDevido ?? 0) - (r.recebido ?? 0), 0),
+    };
+  };
+  const todasLinhas = recebimentos.map(montarLinha);
+  const linhas = exibidos.map(montarLinha);
   const totais = linhas.reduce(
     (t, { r, calc }) => {
       t.valor += r.valor;
@@ -119,12 +128,12 @@ export default async function PaginaRecebimentos({
     { valor: 0, iptu: 0, cond: 0, total: 0, recebido: 0, base: 0 }
   );
   const totalComissao = comissaoTotal(exibidos);
-  const pendentes = recebimentos.filter((r) => r.recebido === null).length;
+  const pendentes = todasLinhas.filter(({ saldoAberto }) => saldoAberto > 0).length;
 
   // Totais da janela para a conferência (respeitam o filtro de empreendimento).
-  const pendentesExibidos = linhas.filter(({ r }) => r.recebido === null);
+  const pendentesExibidos = linhas.filter(({ saldoAberto }) => saldoAberto > 0);
   const valorPendente = pendentesExibidos.reduce(
-    (s, { calc }) => s + (calc.totalDevido ?? 0),
+    (s, { saldoAberto }) => s + saldoAberto,
     0
   );
   const taxaJanela = totais.total > 0 ? totais.recebido / totais.total : null;
@@ -326,14 +335,14 @@ export default async function PaginaRecebimentos({
           <Kpi
             rotulo="Pendente no período"
             valor={<Dinheiro centavos={valorPendente} />}
-            detalhe={`${pendentesExibidos.length} ${pendentesExibidos.length === 1 ? "lançamento sem pagamento" : "lançamentos sem pagamento"}`}
+            detalhe={`${pendentesExibidos.length} ${pendentesExibidos.length === 1 ? "lançamento com saldo" : "lançamentos com saldo"}`}
             nivel={nivelInadimplencia(valorPendente, totais.total)}
             nota={
               pendentesExibidos.length > 0
-                ? "Quando o dinheiro cair, registre na própria linha — o valor sai daqui na hora."
+                ? "Registre cada pagamento na própria linha; o saldo diminui e zera na quitação."
                 : undefined
             }
-            ajuda="Cobranças da janela ainda sem recebimento registrado — são as linhas em âmbar da tabela. Use o link Registrar da linha para dar baixa."
+            ajuda="Cobranças da janela cujo total devido ainda supera o recebido. Pagamentos parciais permanecem em âmbar até a quitação."
           />
           <Kpi
             rotulo="Comissão no período"
@@ -441,7 +450,11 @@ export default async function PaginaRecebimentos({
                 </th>
                 <th style={{ textAlign: "right" }}>
                   Recebido{" "}
-                  <Ajuda dica="O que de fato entrou. Pode ser maior que o total (locatário quitando mês atrasado junto) ou menor (parcial/acordo) — nesses casos, explique na Observação. Vazio = pendente." />
+                  <Ajuda dica="Total acumulado já pago nesta cobrança. Pode ser menor que o devido quando houver parcial/acordo; nesses casos, explique na Observação." />
+                </th>
+                <th style={{ textAlign: "right" }}>
+                  Saldo{" "}
+                  <Ajuda dica="Total devido menos o recebido, nunca abaixo de zero. A cobrança permanece pendente enquanto houver saldo." />
                 </th>
                 <th>
                   Boleto{" "}
@@ -472,7 +485,7 @@ export default async function PaginaRecebimentos({
               {linhas.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={comMes ? 17 : 16}
+                    colSpan={comMes ? 18 : 17}
                     className="py-6 text-center text-tinta-suave/60"
                   >
                     {periodo
@@ -483,11 +496,11 @@ export default async function PaginaRecebimentos({
                   </td>
                 </tr>
               ) : (
-                linhas.map(({ r, calc }) => {
+                linhas.map(({ r, calc, saldoAberto }) => {
                   const boleto = r.boletos[0];
                   const estadoBoleto = boleto ? statusVisualBoleto(boleto.status) : null;
                   return (
-                  <tr key={r.id} className={r.recebido === null ? "bg-ambar/5" : ""}>
+                  <tr key={r.id} className={saldoAberto > 0 ? "bg-ambar/5" : ""}>
                     {comMes ? (
                       <td className="font-mono text-[12px]">
                         {formatarCompetencia(r.mesLancamento)}
@@ -509,8 +522,14 @@ export default async function PaginaRecebimentos({
                       {r.recebido === null ? (
                         <Badge cor="ambar">Pendente</Badge>
                       ) : (
-                        <Dinheiro centavos={r.recebido} destaque />
+                        <span className="inline-flex items-center justify-end gap-1.5">
+                          <Dinheiro centavos={r.recebido} destaque />
+                          {saldoAberto > 0 ? <Badge cor="ambar">Parcial</Badge> : null}
+                        </span>
                       )}
+                    </td>
+                    <td className="text-right">
+                      <Dinheiro centavos={saldoAberto} destaque={saldoAberto > 0} />
                     </td>
                     <td>
                       {boleto && estadoBoleto ? (
@@ -578,6 +597,7 @@ export default async function PaginaRecebimentos({
                   <td className="text-right"><Dinheiro centavos={totais.cond} /></td>
                   <td className="text-right"><Dinheiro centavos={totais.total} /></td>
                   <td className="text-right"><Dinheiro centavos={totais.recebido} /></td>
+                  <td className="text-right"><Dinheiro centavos={valorPendente} destaque /></td>
                   <td></td>
                   <td className="text-right"><Dinheiro centavos={totais.base} /></td>
                   <td className="text-right"><Dinheiro centavos={totalComissao} destaque /></td>

@@ -4,7 +4,7 @@ import { PrismaClient } from "@prisma/client";
 
 import {
   carregarPlanoOperacaoWidesys,
-  criarRelatorioDryRunOperacaoWidesys,
+  criarRelatorioDryRunComBancoOperacaoWidesys,
   ErroImportacaoOperacaoWidesys,
   importarPlanoOperacaoWidesys,
 } from "../src/lib/importacao/operacao-widesys";
@@ -40,12 +40,22 @@ function argumentos(argv: string[]): Opcoes {
 async function main(): Promise<void> {
   const opcoes = argumentos(process.argv.slice(2));
   const plano = carregarPlanoOperacaoWidesys(opcoes.diretorio);
+  const prisma = new PrismaClient();
   if (opcoes.dryRun) {
-    console.log(JSON.stringify(criarRelatorioDryRunOperacaoWidesys(plano), null, 2));
-    return;
+    try {
+      console.log(
+        JSON.stringify(
+          await criarRelatorioDryRunComBancoOperacaoWidesys(prisma, plano),
+          null,
+          2,
+        ),
+      );
+      return;
+    } finally {
+      await prisma.$disconnect();
+    }
   }
 
-  const prisma = new PrismaClient();
   try {
     const relatorio = await importarPlanoOperacaoWidesys(prisma, plano, {
       tamanhoLote: opcoes.tamanhoLote,

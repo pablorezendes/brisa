@@ -174,7 +174,7 @@ export default function PaginaAjuda() {
             href="/relatorios/inadimplencia"
             rotuloLink="Relatórios → Inadimplência"
           >
-            As linhas sem recebimento ficam destacadas e somam a inadimplência
+            As linhas com saldo em aberto ficam destacadas e somam a inadimplência
             do mês. Acompanhe pela Visão geral ou pelo relatório de
             inadimplência e cobre quem está atrasado — acima de 30 dias o
             painel marca em vermelho.

@@ -173,7 +173,7 @@ export default async function PainelCobranca({
   const graves = vm.listaCobranca.filter(
     (p) => p.diasDesdeVencimento !== null && p.diasDesdeVencimento > 30
   );
-  const valorGrave = graves.reduce((s, p) => s + p.totalDevido, 0);
+  const valorGrave = graves.reduce((s, p) => s + p.saldoAberto, 0);
   const nvAcum: Nivel = vm.acumValor > 0 ? "atencao" : "otimo";
 
   const alertas: ItemAlerta[] = [];
@@ -251,14 +251,14 @@ export default async function PainelCobranca({
           <Kpi
             rotulo="Pendentes do mês"
             valor={<Dinheiro centavos={vm.pendentesValor} destaque />}
-            detalhe={`${vm.pendentesQtde} cobrança(s) sem pagamento em ${nomeMes}`}
+            detalhe={`${vm.pendentesQtde} cobrança(s) com saldo em ${nomeMes}`}
             nivel={nvPendentes}
             nota={
               graves.length > 0
                 ? `${graves.length} ${graves.length === 1 ? "delas passou" : "delas passaram"} de 30 dias — comece por aí.`
                 : undefined
             }
-            ajuda="Cobranças lançadas neste mês que ainda estão sem valor em Recebido. Quando o locatário pagar, vá em Recebimentos e preencha Recebido, Data e Via — a linha sai desta lista sozinha."
+            ajuda="Cobranças lançadas neste mês cujo devido ainda supera o recebido. Cada pagamento parcial reduz o saldo; a linha sai desta lista ao ser quitada."
           />
         )}
         <Kpi
@@ -296,8 +296,8 @@ export default async function PainelCobranca({
           selo={vm.acumValor > 0 ? "a recuperar" : "nada em aberto"}
           ajuda={
             periodo
-              ? "Tudo o que segue sem pagamento dentro da janela escolhida no calendário — é a lista de cobrança abaixo, somada. Meses lançados de antemão contam quando você os inclui no período; encurte a janela se não quiser vê-los."
-              : `Soma tudo o que ficou sem pagamento de janeiro até ${nomeMes}. Meses lançados de antemão, ainda sem nenhum recebimento registrado, ficam de fora — senão o número inflaria com cobranças que nem venceram.`
+              ? "Soma do saldo ainda aberto dentro da janela escolhida no calendário, já descontando pagamentos parciais. Meses lançados de antemão contam quando você os inclui no período; encurte a janela se não quiser vê-los."
+              : `Soma do saldo aberto de janeiro até ${nomeMes}, já descontando pagamentos parciais. Meses lançados de antemão sem operação ficam de fora para não inflar o número com cobranças que nem venceram.`
           }
         />
         <Kpi
@@ -353,8 +353,8 @@ export default async function PainelCobranca({
           nivel={vm.listaCobranca.length > 0 ? nvPendentes : "otimo"}
           ajuda={
             periodo
-              ? "Todas as cobranças pendentes dos meses da janela, dos maiores valores para os menores — a coluna Mês diz a competência de cada uma. Quando alguém pagar, vá em Recebimentos, escolha o mês da cobrança e preencha Recebido, Data e Via de pagamento."
-              : "Ordene o dia por esta lista: os maiores valores primeiro. Quando alguém pagar, vá em Recebimentos, encontre a linha e preencha Recebido, Data e Via de pagamento — a cobrança some daqui na hora."
+              ? "Todas as cobranças com saldo nos meses da janela, do maior saldo para o menor — a coluna Mês diz a competência de cada uma. Registre também pagamentos parciais: eles reduzem o saldo sem esconder a cobrança."
+              : "Ordene o dia por esta lista: os maiores saldos primeiro. Em Recebimentos, cada pagamento parcial reduz o saldo e a cobrança só sai daqui quando for quitada."
           }
           direita={
             <>
@@ -388,7 +388,9 @@ export default async function PainelCobranca({
                   <th>Empreendimento</th>
                   <th>Locatário</th>
                   <th>Localização</th>
-                  <th className="text-right">Total devido</th>
+                  <th className="text-right">Devido</th>
+                  <th className="text-right">Pago</th>
+                  <th className="text-right">Saldo</th>
                   <th className="text-right">
                     Dia venc.{" "}
                     <Ajuda dica="Dia do mês em que o aluguel vence, cadastrado no contrato. Sem dia cadastrado não dá para calcular atraso — vale completar o contrato." />
@@ -437,7 +439,13 @@ export default async function PainelCobranca({
                     </td>
                     <td>{p.localizacao}</td>
                     <td className="text-right">
-                      <Dinheiro centavos={p.totalDevido} destaque />
+                      <Dinheiro centavos={p.totalDevido} />
+                    </td>
+                    <td className="text-right">
+                      <Dinheiro centavos={p.recebido} />
+                    </td>
+                    <td className="text-right">
+                      <Dinheiro centavos={p.saldoAberto} destaque />
                     </td>
                     <td className="text-right font-mono">
                       {p.diaVencimento ?? (
@@ -460,7 +468,7 @@ export default async function PainelCobranca({
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={vm.comMesNaTabela ? 5 : 4}>
+                  <td colSpan={vm.comMesNaTabela ? 7 : 6}>
                     {vm.pendentesQtde}{" "}
                     {vm.pendentesQtde === 1 ? "cobrança" : "cobranças"}
                   </td>

@@ -7,8 +7,8 @@
  * aging por faixa de atraso, pendências acumuladas e ranking de devedores.
  *
  * Regras fiéis ao domínio:
- * - Pendente = lançamento com totalDevido != null e recebido == null no
- *   mesLancamento (regra canônica de calcularRecebimento).
+ * - Pendente = lançamento com saldo (totalDevido − recebido) positivo no
+ *   mesLancamento (regra canônica de calcularRecebimento; null pago = zero).
  * - Taxa de recebimento = Σrecebido / Σdevido (pode passar de 100% quando
  *   atrasos de outros meses são quitados).
  * - "Mês com operação" = mês de lançamento com ao menos um recebido
@@ -40,7 +40,12 @@ export interface ItemCobranca {
   empreendimento: string;
   locatario: string | null;
   localizacao: string;
+  /** Valor integral cobrado no lançamento. */
   totalDevido: number;
+  /** Valor já pago; lançamento sem pagamento é normalizado para zero. */
+  recebido: number;
+  /** Parcela ainda em aberto, nunca negativa. */
+  saldoAberto: number;
   diaVencimento: number | null;
   /**
    * Dias corridos desde o vencimento (hoje − vencimento no mês selecionado).
@@ -123,6 +128,11 @@ export function indiceFaixaAging(dias: number | null): number {
   return 4;
 }
 
+function saldoAberto(totalDevido: number | null, recebido: number | null): number {
+  if (totalDevido === null) return 0;
+  return Math.max(totalDevido - (recebido ?? 0), 0);
+}
+
 // ---------------------------------------------------------------------------
 // Consulta principal
 // ---------------------------------------------------------------------------
@@ -172,7 +182,7 @@ export async function dadosPainelCobranca(
   interface PendenciaAno {
     mesNum: number;
     locatario: string;
-    totalDevido: number;
+    saldoAberto: number;
   }
   const pendenciasAno: PendenciaAno[] = [];
 
@@ -188,18 +198,19 @@ export async function dadosPainelCobranca(
       linha.operacional = true;
     }
 
-    const pendente = calc.totalDevido !== null && r.recebido === null;
-    if (!pendente) continue;
+    const recebido = r.recebido ?? 0;
     const devido = calc.totalDevido ?? 0;
+    const saldo = saldoAberto(calc.totalDevido, r.recebido);
+    if (saldo === 0) continue;
 
     linha.pendentes += 1;
-    linha.pendenteValor += devido;
+    linha.pendenteValor += saldo;
 
     if (m <= mesNum) {
       pendenciasAno.push({
         mesNum: m,
         locatario: r.contrato.locatario?.nome ?? "(sem locatário)",
-        totalDevido: devido,
+        saldoAberto: saldo,
       });
     }
 
@@ -217,13 +228,15 @@ export async function dadosPainelCobranca(
         locatario: r.contrato.locatario?.nome ?? null,
         localizacao: r.contrato.unidade.identificacao,
         totalDevido: devido,
+        recebido,
+        saldoAberto: saldo,
         diaVencimento: dia,
         diasDesdeVencimento,
         observacao: r.observacao,
       });
       const faixa = aging[indiceFaixaAging(diasDesdeVencimento)];
       faixa.quantidade += 1;
-      faixa.valor += devido;
+      faixa.valor += saldo;
     }
   }
 
@@ -232,14 +245,14 @@ export async function dadosPainelCobranca(
       linha.devido > 0 ? linha.recebido / linha.devido : null;
   }
 
-  listaCobranca.sort((a, b) => b.totalDevido - a.totalDevido);
+  listaCobranca.sort((a, b) => b.saldoAberto - a.saldoAberto);
 
   // ---- acumulado do ano: só meses com operação ≤ mês selecionado ----
   const consideradas = pendenciasAno.filter(
     (p) => porMes[p.mesNum - 1].operacional
   );
   const pendentesAnoValor = consideradas.reduce(
-    (acc, p) => acc + p.totalDevido,
+    (acc, p) => acc + p.saldoAberto,
     0
   );
   const mesesOperacionaisConsiderados = porMes.filter(
@@ -259,7 +272,7 @@ export async function dadosPainelCobranca(
         (d = { valor: 0, quantidade: 0, meses: new Set() })
       );
     }
-    d.valor += p.totalDevido;
+    d.valor += p.saldoAberto;
     d.quantidade += 1;
     d.meses.add(p.mesNum);
   }
@@ -386,12 +399,13 @@ export async function dadosPainelCobrancaPeriodo(
       linha.operacional = true;
     }
 
-    const pendente = calc.totalDevido !== null && r.recebido === null;
-    if (!pendente) continue;
+    const recebido = r.recebido ?? 0;
     const devido = calc.totalDevido ?? 0;
+    const saldo = saldoAberto(calc.totalDevido, r.recebido);
+    if (saldo === 0) continue;
 
     linha.pendentes += 1;
-    linha.pendenteValor += devido;
+    linha.pendenteValor += saldo;
 
     // Atraso contado do vencimento da COMPETÊNCIA do próprio item.
     const { ano, mes: mesNum } = parseCompetencia(r.mesLancamento);
@@ -408,13 +422,15 @@ export async function dadosPainelCobrancaPeriodo(
       locatario: r.contrato.locatario?.nome ?? null,
       localizacao: r.contrato.unidade.identificacao,
       totalDevido: devido,
+      recebido,
+      saldoAberto: saldo,
       diaVencimento: dia,
       diasDesdeVencimento,
       observacao: r.observacao,
     });
     const faixa = aging[indiceFaixaAging(diasDesdeVencimento)];
     faixa.quantidade += 1;
-    faixa.valor += devido;
+    faixa.valor += saldo;
 
     const nome = r.contrato.locatario?.nome ?? "(sem locatário)";
     let d = porLocatario.get(nome);
@@ -424,7 +440,7 @@ export async function dadosPainelCobrancaPeriodo(
         (d = { valor: 0, quantidade: 0, meses: new Set() })
       );
     }
-    d.valor += devido;
+    d.valor += saldo;
     d.quantidade += 1;
     d.meses.add(i);
   }
@@ -434,7 +450,7 @@ export async function dadosPainelCobrancaPeriodo(
       linha.devido > 0 ? linha.recebido / linha.devido : null;
   }
 
-  listaCobranca.sort((a, b) => b.totalDevido - a.totalDevido);
+  listaCobranca.sort((a, b) => b.saldoAberto - a.saldoAberto);
 
   const devedores: DevedorAno[] = [...porLocatario.entries()]
     .map(([locatario, d]) => ({

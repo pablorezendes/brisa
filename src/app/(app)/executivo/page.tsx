@@ -178,6 +178,8 @@ export default async function PaginaExecutivo({
             locatario: p.locatario ?? "—",
             localizacao: p.identificacao,
             totalDevido: p.totalDevido,
+            recebido: p.recebido,
+            saldoAberto: p.saldoAberto,
             diasAtraso:
               p.diasDesdeVencimento !== null && p.diasDesdeVencimento > 0
                 ? p.diasDesdeVencimento
@@ -575,7 +577,7 @@ export default async function PaginaExecutivo({
               />
             ) : undefined
           }
-          detalhe={`${vm.inadQtde} cobrança(s) aguardando pagamento`}
+          detalhe={`${vm.inadQtde} cobrança(s) com saldo aberto`}
           nivel={nvInad}
           nota={
             gravesQtde > 0
@@ -583,7 +585,7 @@ export default async function PaginaExecutivo({
               : undefined
           }
           href={`/relatorios/inadimplencia?${qs}`}
-          ajuda={`Cobranças ${periodo ? "da janela" : "do mês"} ainda sem pagamento registrado (aluguel + repasses). Quando o locatário pagar, registre em Recebimentos com a data e a via — a pendência some automaticamente.`}
+          ajuda={`Saldo das cobranças ${periodo ? "da janela" : "do mês"} após descontar o que já foi recebido. Registre pagamentos parciais com data e via; a pendência só some na quitação.`}
         />
       </div>
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -1032,11 +1034,11 @@ export default async function PaginaExecutivo({
           <TituloCard
             titulo={
               periodo
-                ? "Pendentes do período (sem recebimento)"
-                : "Pendentes do mês (sem recebimento)"
+                ? "Saldos pendentes do período"
+                : "Saldos pendentes do mês"
             }
             nivel={vm.pendentes.length > 0 ? nvInad : "otimo"}
-            ajuda={`As dez maiores cobranças ${periodo ? "do período" : "do mês"} ainda sem pagamento registrado. O ponto colorido é o semáforo do atraso: âmbar venceu há até 30 dias, vermelho passou disso, azul ainda não venceu.`}
+            ajuda={`As dez maiores cobranças ${periodo ? "do período" : "do mês"} com saldo após pagamentos parciais. O ponto colorido é o semáforo do atraso: âmbar venceu há até 30 dias, vermelho passou disso, azul ainda não venceu.`}
             direita={
               <span className="font-mono text-[12px] text-tinta-suave">
                 {vm.inadQtde} ·{" "}
@@ -1065,9 +1067,11 @@ export default async function PaginaExecutivo({
                     <th>Empreendimento</th>
                     <th>Locatário</th>
                     <th>Localização</th>
+                    <th className="text-right">Devido</th>
+                    <th className="text-right">Pago</th>
                     <th className="text-right">
-                      Devido{" "}
-                      <Ajuda dica="Aluguel + IPTU + condomínio da cobrança pendente. Registre o pagamento em Recebimentos assim que entrar." />
+                      Saldo{" "}
+                      <Ajuda dica="Valor devido menos tudo o que já foi recebido. Pagamentos parciais reduzem este saldo sem retirar a cobrança da lista." />
                     </th>
                     <th className="text-right">
                       Atraso{" "}
@@ -1101,6 +1105,8 @@ export default async function PaginaExecutivo({
                       <td>{p.locatario}</td>
                       <td>{p.localizacao}</td>
                       <td className="text-right"><Dinheiro centavos={p.totalDevido} /></td>
+                      <td className="text-right"><Dinheiro centavos={p.recebido} /></td>
+                      <td className="text-right"><Dinheiro centavos={p.saldoAberto} destaque /></td>
                       <td className="text-right">
                         {p.diasAtraso !== null ? (
                           <Selo nivel={nv}>{p.diasAtraso}d</Selo>

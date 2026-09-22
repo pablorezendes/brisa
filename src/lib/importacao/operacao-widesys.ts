@@ -57,6 +57,9 @@ export type ContratoLegadoPlanejado = BaseRegistro & {
   valorLocacao: number | null;
   valorAdministracao: number | null;
   valorCaucao: number | null;
+  /** Evidência diagnóstica; sem total da fonte ela não prova enumeração completa. */
+  capturaPartesEstruturada: boolean;
+  capturaPartesProva: "DETALHE_ESTRUTURADO_SEM_CONTAGEM" | "INCOMPLETA";
 };
 
 export type ContratoParteLegadoPlanejado = BaseRegistro & {
@@ -106,6 +109,13 @@ export type TituloLegadoPlanejado = BaseRegistro & {
     | "DESCONHECIDO";
   pagamentoParcial: boolean;
   inadimplente: boolean;
+  /** Prova de que a captura observou todas as baixas deste título. */
+  capturaBaixasCompleta: boolean;
+  capturaBaixasProva:
+    | "ESTRUTURADA_COHERENTE"
+    | "INCOMPLETA"
+    | "TRANSPORTE_DETALHES"
+    | "VALOR_PAGO_ZERO_EXPLICITO";
 };
 
 export type MovimentoLegadoPlanejado = BaseRegistro & {
@@ -176,10 +186,15 @@ export type PlanoOperacaoWidesys = {
   capturadoEm: Date;
   dataNegocio: string;
   escoposCobertos: EscopoOperacaoWidesys[];
+  coberturaTemporal: Partial<
+    Record<"TITULO_RECEBER" | "TITULO_PAGAR" | "MOVIMENTO", IntervaloTemporal>
+  >;
   registros: RegistroOperacaoPlanejado[];
   politicaReconciliacao: typeof POLITICA_RECONCILIACAO_BAIXA_MOVIMENTO;
   reconciliacao: Record<EscopoOperacaoWidesys, ReconciliacaoEscopo>;
   escoposAusentes: EscopoOperacaoWidesys[];
+  escoposPartesCompletos: Array<"CONTRATO_PARTE">;
+  escoposBaixasCompletos: Array<"BAIXA_RECEBER" | "BAIXA_PAGAR">;
 };
 
 type ManifestDescriptor = {
@@ -478,7 +493,8 @@ function janelasEsperadas(
   return janelas;
 }
 
-type IntervaloMovimentos = { inicio: string; fim: string };
+type IntervaloTemporal = { inicio: string; fim: string };
+type IntervaloMovimentos = IntervaloTemporal;
 
 function ultimoDiaDoMes(mesIso: string): string {
   const [ano, mes] = mesIso.split("-").map(Number);
@@ -500,6 +516,32 @@ function intervaloMovimentosDoManifesto(
     inicio: `${inicioMes}-01`,
     fim: dataNegocio.slice(0, 7) === fimMes ? dataNegocio : ultimoDiaDoMes(fimMes),
   };
+}
+
+function coberturaTemporalDoManifesto(
+  manifesto: Record<string, unknown>,
+  dataNegocio: string,
+): PlanoOperacaoWidesys["coberturaTemporal"] {
+  const options = objeto(manifesto.options);
+  const modulos = Array.isArray(options?.modules) ? options.modules.map(texto) : [];
+  const fromMonth = options?.fromMonth === null ? null : texto(options?.fromMonth);
+  const titlesTo = texto(options?.titlesTo);
+  const cobertura: PlanoOperacaoWidesys["coberturaTemporal"] = {};
+  if (titlesTo && modulos.includes("contas-receber")) {
+    cobertura.TITULO_RECEBER = {
+      inicio: `${fromMonth ?? "2025-07"}-01`,
+      fim: titlesTo,
+    };
+  }
+  if (titlesTo && modulos.includes("contas-pagar")) {
+    cobertura.TITULO_PAGAR = {
+      inicio: `${fromMonth ?? "2025-11"}-01`,
+      fim: titlesTo,
+    };
+  }
+  const movimentos = intervaloMovimentosDoManifesto(manifesto, dataNegocio);
+  if (movimentos) cobertura.MOVIMENTO = movimentos;
+  return cobertura;
 }
 
 function validarManifestoAtual(
@@ -1196,6 +1238,8 @@ function planejarRegistro(
         "CONTRATO_ADMINISTRACAO_INVALIDA",
       ),
       valorCaucao: lerCentavos(campos, ["valor_caucao", "caucao_valor"], motivos, "CONTRATO_CAUCAO_INVALIDA"),
+      capturaPartesEstruturada: false,
+      capturaPartesProva: "INCOMPLETA",
       statusImportacao: quarentenaMotivo || motivoFinal(motivos) ? "QUARENTENA" : "STAGING",
       quarentenaMotivo: motivoFinal(motivos),
     };
@@ -1393,6 +1437,8 @@ function planejarRegistro(
         vencido &&
         !["PAGO", "CANCELADO"].includes(situacaoNormalizada) &&
         (valorAberto ?? valorDevido ?? valorOriginal ?? 0) > 0,
+      capturaBaixasCompleta: false,
+      capturaBaixasProva: "INCOMPLETA",
       statusImportacao: quarentenaMotivo || motivoFinal(motivos) ? "QUARENTENA" : "STAGING",
       quarentenaMotivo: motivoFinal(motivos),
     };
@@ -1546,16 +1592,15 @@ function registroRelacionado(
   };
 }
 
-function idRelacionado(prefixo: string, paiId: string, ordem: number, campos: unknown): string {
-  return `${prefixo}:${paiId}:${ordem}:${sha256(jsonCanonico(campos)).slice(0, 16)}`;
-}
-
 function enriquecerSnapshot(
   registro: RegistroOperacaoPlanejado,
   derivados: Record<string, unknown>,
 ): void {
   const base = objeto(JSON.parse(registro.snapshot)) ?? {};
-  registro.snapshot = jsonCanonico({ ...base, derivados });
+  registro.snapshot = jsonCanonico({
+    ...base,
+    derivados: { ...(objeto(base.derivados) ?? {}), ...derivados },
+  });
   registro.snapshotHash = sha256(registro.snapshot);
 }
 
@@ -1572,7 +1617,30 @@ function reconciliarBaixasComMovimento(
   movimento: MovimentoLegadoPlanejado,
 ): void {
   const divergencias: Array<[string, string]> = [];
-  const validas = baixas.filter((baixa) => baixa.valor !== null && baixa.valor > 0);
+  const jaQuarentenadas = baixas.filter(
+    (baixa) => baixa.statusImportacao === "QUARENTENA",
+  );
+  if (jaQuarentenadas.length > 0) {
+    adicionarMotivo(movimento, "MOVIMENTO_BAIXA_QUARENTENA");
+  }
+  if (movimento.dataMovimento) {
+    const semData = baixas.filter((baixa) => !baixa.dataPagamento);
+    if (semData.length > 0) {
+      for (const baixa of semData) {
+        adicionarMotivo(baixa, "BAIXA_MOVIMENTO_DATA_AUSENTE");
+      }
+      adicionarMotivo(movimento, "MOVIMENTO_BAIXA_DATA_AUSENTE");
+    }
+  }
+  // A reconciliação financeira nunca usa uma baixa que já falhou em sua
+  // própria validação. Ela continua vinculada para auditoria, e contamina o
+  // movimento com um motivo explícito, mas não entra em somas ou comparações.
+  const validas = baixas.filter(
+    (baixa) =>
+      baixa.statusImportacao !== "QUARENTENA" &&
+      baixa.valor !== null &&
+      baixa.valor > 0,
+  );
   const somaBaixas = validas.reduce((total, baixa) => total + (baixa.valor ?? 0), 0);
   if (
     movimento.valor !== null &&
@@ -1624,7 +1692,7 @@ function reconciliarBaixasComMovimento(
     ]);
   }
   for (const [motivoBaixa, motivoMovimento] of divergencias) {
-    for (const baixa of baixas) adicionarMotivo(baixa, motivoBaixa);
+    for (const baixa of validas) adicionarMotivo(baixa, motivoBaixa);
     adicionarMotivo(movimento, motivoMovimento);
   }
   if (divergencias.length === 0 && movimento.contaBancariaLegadoId) {
@@ -1761,6 +1829,7 @@ function partesAninhadas(
   }
 
   const unicos = new Map<string, ContratoParteLegadoPlanejado>();
+  const identidadesPorId = new Map<string, string>();
   for (const candidato of candidatos) {
     const pessoaId = texto(
       candidato.item.pessoaLegadoId ??
@@ -1795,12 +1864,32 @@ function partesAninhadas(
       vinculo_id: vinculoId,
       ordem: candidato.ordem,
     };
+    const identidadeSemantica = jsonCanonico({
+      contratoLegadoId: contrato.legadoId,
+      ordem: candidato.ordem,
+      papel: candidato.papel,
+      pessoaId,
+      vinculoId,
+    });
+    // IDs de vínculo do Joomla são locais à tabela/papel e se repetem em
+    // contratos diferentes. Nunca os trate como chave global. Mantemos o
+    // núcleo estável em contrato+papel+vínculo; ordem/pessoa entram somente
+    // para desambiguar duas linhas conflitantes dentro do mesmo namespace.
+    const namespace = vinculoId
+      ? { contratoLegadoId: contrato.legadoId, papel: candidato.papel, vinculoId }
+      : {
+          contratoLegadoId: contrato.legadoId,
+          ordem: candidato.ordem,
+          papel: candidato.papel,
+          pessoaId,
+        };
+    const idBase = `parte:${sha256(jsonCanonico(namespace)).slice(0, 32)}`;
+    const identidadeAnterior = identidadesPorId.get(idBase);
     const id =
-      vinculoId ??
-      idRelacionado("parte", contrato.legadoId, candidato.ordem, {
-        papel: candidato.papel,
-        pessoaId,
-      });
+      identidadeAnterior && identidadeAnterior !== identidadeSemantica
+        ? `${idBase}:${sha256(identidadeSemantica).slice(0, 16)}`
+        : idBase;
+    identidadesPorId.set(idBase, identidadeSemantica);
     const planejado = planejarRegistro(
       registroRelacionado(bruto, campos, "CONTRATO_PARTE", id),
       "CONTRATO_PARTE",
@@ -1928,11 +2017,96 @@ function baixasAninhadas(
   return [...resultado.values()];
 }
 
+function avaliarCompletudeBaixas(
+  bruto: Record<string, unknown>,
+  titulo: TituloLegadoPlanejado,
+  baixas: BaixaLegadoPlanejada[],
+): void {
+  const transporteEsperado =
+    titulo.escopo === "TITULO_RECEBER"
+      ? "ajax.getDetalhesRecebimento"
+      : "ajax.getDetalhesPagamento";
+  const detalhes = Array.isArray(bruto.details) ? bruto.details : [];
+  const transporteObservado = detalhes.some(
+    (detalheBruto) => objeto(detalheBruto)?.transport === transporteEsperado,
+  );
+  const evidenciaDeclarada = objeto(bruto.baixaEvidence);
+  if (evidenciaDeclarada) {
+    const esperadoDeclarado = texto(evidenciaDeclarada.expectedTransport);
+    const observadoDeclarado = evidenciaDeclarada.transportObserved;
+    if (
+      esperadoDeclarado !== transporteEsperado ||
+      typeof observadoDeclarado !== "boolean" ||
+      observadoDeclarado !== transporteObservado
+    ) {
+      adicionarMotivo(titulo, "TITULO_EVIDENCIA_BAIXAS_DIVERGENTE");
+    }
+  }
+  const valorPagoBruto = buscar(camposDoRegistro(bruto), [
+    "valor_pago",
+    "valor_recebido",
+  ]);
+  const valorPagoExplicitamenteZero =
+    valorPagoBruto !== null && centavos(valorPagoBruto) === 0;
+
+  // Somente um zero explicitamente presente é prova negativa. Campo ausente
+  // pode significar mudança do HTML ou falha de extração e jamais autoriza
+  // tombstone de baixas anteriores. Para títulos pagos, o endpoint de detalhes
+  // é prova imediata; `baixas: []` nunca pode, isoladamente, apagar estado.
+  titulo.capturaBaixasCompleta =
+    transporteObservado || valorPagoExplicitamenteZero;
+  titulo.capturaBaixasProva = transporteObservado
+    ? "TRANSPORTE_DETALHES"
+    : valorPagoExplicitamenteZero
+      ? "VALOR_PAGO_ZERO_EXPLICITO"
+      : "INCOMPLETA";
+  if ((titulo.valorPago ?? 0) > 0 && !transporteObservado && baixas.length === 0) {
+    adicionarMotivo(titulo, "TITULO_BAIXAS_NAO_ESTRUTURADAS");
+  }
+  enriquecerSnapshot(titulo, {
+    capturaBaixas: {
+      completas: titulo.capturaBaixasCompleta,
+      prova: titulo.capturaBaixasProva,
+      quantidadeEstruturada: baixas.length,
+      transporteEsperado,
+      transporteObservado,
+    },
+  });
+}
+
+function avaliarCompletudePartes(
+  bruto: Record<string, unknown>,
+  contrato: ContratoLegadoPlanejado,
+  partes: ContratoParteLegadoPlanejado[],
+): void {
+  const transporteEsperado = "locacao.edit";
+  const detalhes = Array.isArray(bruto.details) ? bruto.details : [];
+  const transporteObservado = detalhes.some(
+    (detalheBruto) => objeto(detalheBruto)?.transport === transporteEsperado,
+  );
+  contrato.capturaPartesEstruturada = transporteObservado && partes.length > 0;
+  contrato.capturaPartesProva = contrato.capturaPartesEstruturada
+    ? "DETALHE_ESTRUTURADO_SEM_CONTAGEM"
+    : "INCOMPLETA";
+  enriquecerSnapshot(contrato, {
+    capturaPartes: {
+      estruturadas: contrato.capturaPartesEstruturada,
+      enumeracaoCompleta: false,
+      prova: contrato.capturaPartesProva,
+      quantidadeEstruturada: partes.length,
+      transporteEsperado,
+      transporteObservado,
+    },
+  });
+}
+
 function reconciliarRelacionados(
   registros: RegistroOperacaoPlanejado[],
   dataNegocio: string,
   intervaloMovimentos: IntervaloMovimentos | null,
+  escoposCobertos: readonly EscopoOperacaoWidesys[],
 ): void {
+  const cobertos = new Set(escoposCobertos);
   const partesPorContrato = new Map<string, ContratoParteLegadoPlanejado[]>();
   const baixasPorTitulo = new Map<string, BaixaLegadoPlanejada[]>();
   const baixasPorMovimento = new Map<string, BaixaLegadoPlanejada[]>();
@@ -1993,9 +2167,11 @@ function reconciliarRelacionados(
     } else if (registro.escopo === "MOVIMENTO" && registro.tituloLegadoId) {
       const chave = `${registro.tituloEscopo ?? ""}\u0000${registro.tituloLegadoId}`;
       const titulo = titulos.get(chave);
-      if (!registro.tituloEscopo || !titulo) {
+      if (!registro.tituloEscopo) {
         adicionarMotivo(registro, "MOVIMENTO_TITULO_NAO_CAPTURADO");
-      } else if (titulo.statusImportacao === "QUARENTENA") {
+      } else if (!titulo && cobertos.has(registro.tituloEscopo as EscopoOperacaoWidesys)) {
+        adicionarMotivo(registro, "MOVIMENTO_TITULO_NAO_CAPTURADO");
+      } else if (titulo?.statusImportacao === "QUARENTENA") {
         adicionarMotivo(registro, "MOVIMENTO_TITULO_QUARENTENA");
       }
     }
@@ -2003,9 +2179,8 @@ function reconciliarRelacionados(
   for (const [movimentoLegadoId, baixas] of baixasPorMovimento) {
     const movimento = movimentos.get(movimentoLegadoId);
     if (!movimento) continue;
-    const jaEstavaEmQuarentena = movimento.statusImportacao === "QUARENTENA";
     reconciliarBaixasComMovimento(baixas, movimento);
-    if (jaEstavaEmQuarentena) {
+    if (movimento.statusImportacao === "QUARENTENA") {
       for (const baixa of baixas) adicionarMotivo(baixa, "BAIXA_MOVIMENTO_QUARENTENA");
     }
   }
@@ -2021,6 +2196,7 @@ function reconciliarRelacionados(
     }
     if (registro.escopo !== "TITULO_RECEBER" && registro.escopo !== "TITULO_PAGAR") continue;
     const baixas = baixasPorTitulo.get(`${registro.escopo}\u0000${registro.legadoId}`) ?? [];
+    const valorPagoFonte = registro.valorPago;
     const efetivas = baixas.filter(
       (baixa) =>
         !baixa.estornada &&
@@ -2029,6 +2205,16 @@ function reconciliarRelacionados(
         baixa.valor > 0,
     );
     const somaEfetiva = efetivas.reduce((total, baixa) => total + (baixa.valor ?? 0), 0);
+    if (
+      !registro.capturaBaixasCompleta &&
+      (valorPagoFonte ?? 0) > 0 &&
+      baixas.length > 0 &&
+      baixas.every((baixa) => baixa.statusImportacao !== "QUARENTENA") &&
+      somaEfetiva === valorPagoFonte
+    ) {
+      registro.capturaBaixasCompleta = true;
+      registro.capturaBaixasProva = "ESTRUTURADA_COHERENTE";
+    }
     const valorBase = registro.valorDevido ?? registro.valorOriginal;
     if (valorBase !== null && somaEfetiva > valorBase) {
       adicionarMotivo(registro, "TITULO_BAIXAS_SUPERAM_DEVIDO");
@@ -2077,6 +2263,17 @@ function reconciliarRelacionados(
       !["PAGO", "CANCELADO"].includes(registro.situacaoNormalizada) &&
       (registro.valorAberto ?? registro.valorDevido ?? registro.valorOriginal ?? 0) > 0;
     enriquecerSnapshot(registro, {
+      capturaBaixas: {
+        completas: registro.capturaBaixasCompleta,
+        prova: registro.capturaBaixasProva,
+        quantidadeEstruturada: baixas.length,
+        transporteEsperado:
+          registro.escopo === "TITULO_RECEBER"
+            ? "ajax.getDetalhesRecebimento"
+            : "ajax.getDetalhesPagamento",
+        transporteObservado:
+          registro.capturaBaixasProva === "TRANSPORTE_DETALHES",
+      },
       baixasCapturadas: baixas.length,
       baixasEfetivas: efetivas.length,
       dataNegocio,
@@ -2261,12 +2458,16 @@ export function carregarPlanoOperacaoWidesys(
       const planejado = planejarRegistro(bruto, descritor.escopo, capturadoEm, dataNegocio);
       registros.push(planejado);
       if (planejado.escopo === "CONTRATO") {
-        registros.push(...partesAninhadas(bruto, planejado, dataNegocio));
+        const partes = partesAninhadas(bruto, planejado, dataNegocio);
+        avaliarCompletudePartes(bruto, planejado, partes);
+        registros.push(...partes);
       } else if (
         planejado.escopo === "TITULO_RECEBER" ||
         planejado.escopo === "TITULO_PAGAR"
       ) {
-        registros.push(...baixasAninhadas(bruto, planejado, dataNegocio));
+        const baixas = baixasAninhadas(bruto, planejado, dataNegocio);
+        avaliarCompletudeBaixas(bruto, planejado, baixas);
+        registros.push(...baixas);
       }
     }
   }
@@ -2280,7 +2481,16 @@ export function carregarPlanoOperacaoWidesys(
     }
   }
 
-  reconciliarRelacionados(registros, dataNegocio, intervaloMovimentosDoManifesto(manifesto, dataNegocio));
+  const escoposCobertos = modulosCobertos.flatMap((modulo) => [
+    ...ESCOPOS_COBERTOS_POR_MODULO[modulo],
+  ]);
+  const coberturaTemporal = coberturaTemporalDoManifesto(manifesto, dataNegocio);
+  reconciliarRelacionados(
+    registros,
+    dataNegocio,
+    intervaloMovimentosDoManifesto(manifesto, dataNegocio),
+    escoposCobertos,
+  );
 
   const identidades = new Set<string>();
   for (const registro of registros) {
@@ -2308,14 +2518,42 @@ export function carregarPlanoOperacaoWidesys(
   const esquemaVersao = 2;
   const todosEscopos: EscopoOperacaoWidesys[] = [
     "CONTRATO",
+    "CONTRATO_PARTE",
     "TITULO_RECEBER",
     "TITULO_PAGAR",
+    "BAIXA_RECEBER",
+    "BAIXA_PAGAR",
     "MOVIMENTO",
   ];
   const presentes = new Set(registros.map((registro) => registro.escopo));
-  const escoposCobertos = modulosCobertos.flatMap((modulo) => [
-    ...ESCOPOS_COBERTOS_POR_MODULO[modulo],
-  ]);
+  const escoposBaixasCompletos = [
+    ["TITULO_RECEBER", "BAIXA_RECEBER"],
+    ["TITULO_PAGAR", "BAIXA_PAGAR"],
+  ].flatMap(([escopoTitulo, escopoBaixa]) => {
+    if (!escoposCobertos.includes(escopoTitulo as EscopoOperacaoWidesys)) return [];
+    const titulosDoEscopo = registros.filter(
+      (registro): registro is TituloLegadoPlanejado =>
+        registro.escopo === escopoTitulo,
+    );
+    const motivosQueInvalidamCompletude = new Set([
+      "TITULO_BAIXAS_DIVERGENTES",
+      "TITULO_BAIXAS_NAO_ESTRUTURADAS",
+      "TITULO_EVIDENCIA_BAIXAS_DIVERGENTE",
+    ]);
+    return titulosDoEscopo.every(
+      (titulo) =>
+        titulo.capturaBaixasCompleta &&
+        !(titulo.quarentenaMotivo ?? "")
+          .split(";")
+          .some((motivo) => motivosQueInvalidamCompletude.has(motivo)),
+    )
+      ? [escopoBaixa as "BAIXA_RECEBER" | "BAIXA_PAGAR"]
+      : [];
+  });
+  // A página de contrato não fornece uma contagem autoritativa de vínculos.
+  // Mesmo quando extraímos participantes estruturados, não há como provar que
+  // todos foram enumerados; por isso partes nunca recebem tombstone automático.
+  const escoposPartesCompletos: Array<"CONTRATO_PARTE"> = [];
   return {
     origem: ORIGEM_OPERACAO_WIDESYS,
     capturaId,
@@ -2324,12 +2562,15 @@ export function carregarPlanoOperacaoWidesys(
     capturadoEm,
     dataNegocio,
     escoposCobertos,
+    coberturaTemporal,
     registros,
     politicaReconciliacao: POLITICA_RECONCILIACAO_BAIXA_MOVIMENTO,
     reconciliacao: reconciliar(registros),
     escoposAusentes: todosEscopos.filter(
       (escopo) => escoposCobertos.includes(escopo) && !presentes.has(escopo),
     ),
+    escoposPartesCompletos,
+    escoposBaixasCompletos,
   };
 }
 
@@ -2346,12 +2587,15 @@ export type RelatorioImportacaoOperacaoWidesys = {
   modo: "DRY_RUN" | "APLICADO" | "JA_APLICADO";
   capturaId: string;
   escoposCobertos: EscopoOperacaoWidesys[];
+  coberturaTemporal: PlanoOperacaoWidesys["coberturaTemporal"];
   total: number;
   processados: number;
   porEscopo: Record<EscopoOperacaoWidesys, Contadores>;
   politicaReconciliacao: typeof POLITICA_RECONCILIACAO_BAIXA_MOVIMENTO;
   reconciliacao: Record<EscopoOperacaoWidesys, ReconciliacaoEscopo>;
   escoposAusentes: EscopoOperacaoWidesys[];
+  escoposPartesCompletos: Array<"CONTRATO_PARTE">;
+  escoposBaixasCompletos: Array<"BAIXA_RECEBER" | "BAIXA_PAGAR">;
 };
 
 function contadoresVazios(): Record<EscopoOperacaoWidesys, Contadores> {
@@ -2379,20 +2623,108 @@ export function criarRelatorioDryRunOperacaoWidesys(
 ): RelatorioImportacaoOperacaoWidesys {
   const porEscopo = contadoresVazios();
   for (const registro of plano.registros) {
-    porEscopo[registro.escopo].criados += 1;
-    if (registro.statusImportacao === "QUARENTENA") porEscopo[registro.escopo].quarentena += 1;
+    if (registro.statusImportacao === "QUARENTENA") {
+      porEscopo[registro.escopo].quarentena += 1;
+    } else porEscopo[registro.escopo].criados += 1;
   }
   return {
     modo: "DRY_RUN",
     capturaId: plano.capturaId,
     escoposCobertos: plano.escoposCobertos,
+    coberturaTemporal: plano.coberturaTemporal,
     total: plano.registros.length,
     processados: 0,
     porEscopo,
     politicaReconciliacao: plano.politicaReconciliacao,
     reconciliacao: plano.reconciliacao,
     escoposAusentes: plano.escoposAusentes,
+    escoposPartesCompletos: plano.escoposPartesCompletos,
+    escoposBaixasCompletos: plano.escoposBaixasCompletos,
   };
+}
+
+/**
+ * Complementa o relatório puro com a fotografia atual do staging. Esta
+ * variante é deliberadamente somente leitura e permite que o CLI mostre os
+ * tombstones antes da aplicação real.
+ */
+export async function criarRelatorioDryRunComBancoOperacaoWidesys(
+  prisma: PrismaClient,
+  plano: PlanoOperacaoWidesys,
+): Promise<RelatorioImportacaoOperacaoWidesys> {
+  const relatorio = criarRelatorioDryRunOperacaoWidesys(plano);
+  type ExistenteDryRun = {
+    capturadoEm: Date;
+    legadoId: string;
+    quarentenaMotivo: string | null;
+    snapshotHash: string;
+    statusImportacao: string;
+    ultimoItem?: ReferenciaUltimoItem;
+  };
+  const selecionar = {
+    capturadoEm: true,
+    legadoId: true,
+    quarentenaMotivo: true,
+    snapshotHash: true,
+    statusImportacao: true,
+    ultimoItem: { select: { lote: { select: { capturadoEm: true } } } },
+  } as const;
+  const [contratos, partes, titulos, baixas, movimentos] = await Promise.all([
+    prisma.contratoLegado.findMany({
+      where: { origem: ORIGEM_OPERACAO_WIDESYS },
+      select: selecionar,
+    }),
+    prisma.contratoParteLegado.findMany({
+      where: { origem: ORIGEM_OPERACAO_WIDESYS },
+      select: selecionar,
+    }),
+    prisma.tituloFinanceiroLegado.findMany({
+      where: { origem: ORIGEM_OPERACAO_WIDESYS },
+      select: { ...selecionar, escopo: true },
+    }),
+    prisma.baixaFinanceiraLegado.findMany({
+      where: { origem: ORIGEM_OPERACAO_WIDESYS },
+      select: { ...selecionar, escopo: true },
+    }),
+    prisma.movimentoFinanceiroLegado.findMany({
+      where: { origem: ORIGEM_OPERACAO_WIDESYS },
+      select: selecionar,
+    }),
+  ]);
+  const existentes = new Map<string, ExistenteDryRun>();
+  for (const item of contratos) existentes.set(`CONTRATO\u0000${item.legadoId}`, item);
+  for (const item of partes) existentes.set(`CONTRATO_PARTE\u0000${item.legadoId}`, item);
+  for (const item of titulos) existentes.set(`${item.escopo}\u0000${item.legadoId}`, item);
+  for (const item of baixas) existentes.set(`${item.escopo}\u0000${item.legadoId}`, item);
+  for (const item of movimentos) existentes.set(`MOVIMENTO\u0000${item.legadoId}`, item);
+
+  relatorio.porEscopo = contadoresVazios();
+  for (const registro of plano.registros) {
+    const linha = relatorio.porEscopo[registro.escopo];
+    const existente = existentes.get(`${registro.escopo}\u0000${registro.legadoId}`);
+    if (existente && decisaoCanonicaEm(existente) > plano.capturadoEm) {
+      linha.anterioresIgnorados += 1;
+    } else if (registro.statusImportacao === "QUARENTENA") {
+      linha.quarentena += 1;
+    } else if (!existente) {
+      linha.criados += 1;
+    } else if (
+      existente.snapshotHash === registro.snapshotHash &&
+      existente.statusImportacao === registro.statusImportacao &&
+      existente.quarentenaMotivo === registro.quarentenaMotivo
+    ) {
+      linha.inalterados += 1;
+    } else linha.atualizados += 1;
+  }
+  const ausentes = await marcarAusentesDaFonte(
+    prisma as unknown as Prisma.TransactionClient,
+    plano,
+    null,
+  );
+  for (const escopo of Object.keys(ausentes) as EscopoOperacaoWidesys[]) {
+    relatorio.porEscopo[escopo].ausentesMarcados = ausentes[escopo];
+  }
+  return relatorio;
 }
 
 function resumoLote(
@@ -2403,20 +2735,29 @@ function resumoLote(
   return jsonCanonico({
     processados,
     escoposCobertos: plano.escoposCobertos,
+    coberturaTemporal: plano.coberturaTemporal,
     porEscopo,
     politicaReconciliacao: plano.politicaReconciliacao,
     reconciliacao: plano.reconciliacao,
+    escoposPartesCompletos: plano.escoposPartesCompletos,
+    escoposBaixasCompletos: plano.escoposBaixasCompletos,
   });
 }
 
 type ReferenciaUltimoItem = {
-  lote?: { capturadoEm: Date } | null;
+  lote?: { capturadoEm: Date; id?: string } | null;
 } | null;
 
-function decisaoCanonicaEm(registro: {
-  capturadoEm: Date;
-  ultimoItem?: ReferenciaUltimoItem;
-}): Date {
+function decisaoCanonicaEm(
+  registro: {
+    capturadoEm: Date;
+    ultimoItem?: ReferenciaUltimoItem;
+  },
+  ignorarLoteId?: string,
+): Date {
+  if (ignorarLoteId && registro.ultimoItem?.lote?.id === ignorarLoteId) {
+    return registro.capturadoEm;
+  }
   const decisao = registro.ultimoItem?.lote?.capturadoEm;
   return decisao && decisao > registro.capturadoEm ? decisao : registro.capturadoEm;
 }
@@ -2424,6 +2765,8 @@ function decisaoCanonicaEm(registro: {
 async function herdarQuarentenaDoPaiCanonico(
   tx: Prisma.TransactionClient,
   registro: RegistroOperacaoPlanejado,
+  loteId: string,
+  decisaoCapturaEm: Date,
 ): Promise<boolean> {
   if (registro.escopo === "CONTRATO_PARTE") {
     const contrato = await tx.contratoLegado.findUnique({
@@ -2436,10 +2779,10 @@ async function herdarQuarentenaDoPaiCanonico(
       select: {
         capturadoEm: true,
         statusImportacao: true,
-        ultimoItem: { select: { lote: { select: { capturadoEm: true } } } },
+        ultimoItem: { select: { lote: { select: { id: true, capturadoEm: true } } } },
       },
     });
-    if (contrato && decisaoCanonicaEm(contrato) > registro.capturadoEm) return true;
+    if (contrato && decisaoCanonicaEm(contrato, loteId) > decisaoCapturaEm) return true;
     if (!contrato) adicionarMotivo(registro, "PARTE_CONTRATO_NAO_CAPTURADO");
     else if (["AUSENTE_NA_FONTE", "QUARENTENA"].includes(contrato.statusImportacao)) {
       adicionarMotivo(registro, "PARTE_CONTRATO_QUARENTENA");
@@ -2458,10 +2801,10 @@ async function herdarQuarentenaDoPaiCanonico(
       select: {
         capturadoEm: true,
         statusImportacao: true,
-        ultimoItem: { select: { lote: { select: { capturadoEm: true } } } },
+        ultimoItem: { select: { lote: { select: { id: true, capturadoEm: true } } } },
       },
     });
-    if (titulo && decisaoCanonicaEm(titulo) > registro.capturadoEm) return true;
+    if (titulo && decisaoCanonicaEm(titulo, loteId) > decisaoCapturaEm) return true;
     if (!titulo) adicionarMotivo(registro, "BAIXA_TITULO_NAO_CAPTURADO");
     else if (["AUSENTE_NA_FONTE", "QUARENTENA"].includes(titulo.statusImportacao)) {
       adicionarMotivo(registro, "BAIXA_TITULO_QUARENTENA");
@@ -2491,8 +2834,14 @@ async function persistirRegistro(
   tx: Prisma.TransactionClient,
   registro: RegistroOperacaoPlanejado,
   loteId: string,
+  decisaoCapturaEm: Date,
 ): Promise<"CRIAR" | "ATUALIZAR" | "INALTERADO" | "ANTERIOR_IGNORADO" | "QUARENTENA"> {
-  const paiCanonicoMaisNovo = await herdarQuarentenaDoPaiCanonico(tx, registro);
+  const paiCanonicoMaisNovo = await herdarQuarentenaDoPaiCanonico(
+    tx,
+    registro,
+    loteId,
+    decisaoCapturaEm,
+  );
   let existente: {
     capturadoEm: Date;
     quarentenaMotivo: string | null;
@@ -2508,7 +2857,7 @@ async function persistirRegistro(
         quarentenaMotivo: true,
         snapshotHash: true,
         statusImportacao: true,
-        ultimoItem: { select: { lote: { select: { capturadoEm: true } } } },
+        ultimoItem: { select: { lote: { select: { id: true, capturadoEm: true } } } },
       },
     });
   } else if (registro.escopo === "CONTRATO_PARTE") {
@@ -2519,7 +2868,7 @@ async function persistirRegistro(
         quarentenaMotivo: true,
         snapshotHash: true,
         statusImportacao: true,
-        ultimoItem: { select: { lote: { select: { capturadoEm: true } } } },
+        ultimoItem: { select: { lote: { select: { id: true, capturadoEm: true } } } },
       },
     });
   } else if (registro.escopo === "TITULO_RECEBER" || registro.escopo === "TITULO_PAGAR") {
@@ -2536,7 +2885,7 @@ async function persistirRegistro(
         quarentenaMotivo: true,
         snapshotHash: true,
         statusImportacao: true,
-        ultimoItem: { select: { lote: { select: { capturadoEm: true } } } },
+        ultimoItem: { select: { lote: { select: { id: true, capturadoEm: true } } } },
       },
     });
   } else if (registro.escopo === "BAIXA_RECEBER" || registro.escopo === "BAIXA_PAGAR") {
@@ -2553,7 +2902,7 @@ async function persistirRegistro(
         quarentenaMotivo: true,
         snapshotHash: true,
         statusImportacao: true,
-        ultimoItem: { select: { lote: { select: { capturadoEm: true } } } },
+        ultimoItem: { select: { lote: { select: { id: true, capturadoEm: true } } } },
       },
     });
   } else if (registro.escopo === "MOVIMENTO") {
@@ -2570,13 +2919,13 @@ async function persistirRegistro(
         quarentenaMotivo: true,
         snapshotHash: true,
         statusImportacao: true,
-        ultimoItem: { select: { lote: { select: { capturadoEm: true } } } },
+        ultimoItem: { select: { lote: { select: { id: true, capturadoEm: true } } } },
       },
     });
   } else return falhar("WIDESYS_OPERACAO_ESCOPO_INVALIDO", "Escopo não persistível.");
   const anterior =
     paiCanonicoMaisNovo ||
-    Boolean(existente && decisaoCanonicaEm(existente) > registro.capturadoEm);
+    Boolean(existente && decisaoCanonicaEm(existente, loteId) > decisaoCapturaEm);
   const semanticamenteIgual = Boolean(
     existente &&
       existente.snapshotHash === registro.snapshotHash &&
@@ -2805,8 +3154,13 @@ type CanonicoParaTombstone = {
   capturadoEm: Date;
   legadoId: string;
   snapshotHash: string;
+  statusImportacao: string;
   ultimoItem?: ReferenciaUltimoItem;
 };
+
+function dentroDaCobertura(data: string | null, intervalo?: IntervaloTemporal): boolean {
+  return Boolean(data && intervalo && data >= intervalo.inicio && data <= intervalo.fim);
+}
 
 /**
  * Uma captura completa é também uma fotografia de presença. Registros que
@@ -2818,7 +3172,7 @@ type CanonicoParaTombstone = {
 async function marcarAusentesDaFonte(
   tx: Prisma.TransactionClient,
   plano: PlanoOperacaoWidesys,
-  loteId: string,
+  loteId: string | null,
 ): Promise<Record<EscopoOperacaoWidesys, number>> {
   const contagens = Object.fromEntries(
     ([
@@ -2833,6 +3187,7 @@ async function marcarAusentesDaFonte(
   ) as Record<EscopoOperacaoWidesys, number>;
   const presentes = new Map<EscopoOperacaoWidesys, Set<string>>();
   const cobertos = new Set(plano.escoposCobertos);
+  const vencimentoPorTitulo = new Map<string, string | null>();
   for (const registro of plano.registros) {
     const ids = presentes.get(registro.escopo) ?? new Set<string>();
     ids.add(registro.legadoId);
@@ -2844,6 +3199,7 @@ async function marcarAusentesDaFonte(
     capturadoEm: true,
     legadoId: true,
     snapshotHash: true,
+    statusImportacao: true,
     ultimoItem: { select: { lote: { select: { capturadoEm: true } } } },
   } as const;
 
@@ -2862,7 +3218,10 @@ async function marcarAusentesDaFonte(
         .map((registro) => ({ escopo: "CONTRATO" as const, registro })),
     );
   }
-  if (cobertos.has("CONTRATO_PARTE")) {
+  if (
+    cobertos.has("CONTRATO_PARTE") &&
+    plano.escoposPartesCompletos.includes("CONTRATO_PARTE")
+  ) {
     const partes = await tx.contratoParteLegado.findMany({
       where: { origem: ORIGEM_OPERACAO_WIDESYS, capturadoEm: { lte: plano.capturadoEm } },
       select: selecionar,
@@ -2881,24 +3240,49 @@ async function marcarAusentesDaFonte(
         escopo,
         capturadoEm: { lte: plano.capturadoEm },
       },
-      select: selecionar,
+      select: { ...selecionar, vencimento: true },
     });
+    const cobertura = plano.coberturaTemporal[escopo];
+    for (const registro of registros) {
+      vencimentoPorTitulo.set(`${escopo}\u0000${registro.legadoId}`, registro.vencimento);
+    }
     candidatos.push(
-      ...registros.filter((registro) => ausente(escopo, registro.legadoId)).map((registro) => ({ escopo, registro })),
+      ...registros
+        .filter(
+          (registro) =>
+            ausente(escopo, registro.legadoId) &&
+            dentroDaCobertura(registro.vencimento, cobertura),
+        )
+        .map((registro) => ({ escopo, registro })),
     );
   }
   for (const escopo of ["BAIXA_RECEBER", "BAIXA_PAGAR"] as const) {
-    if (!cobertos.has(escopo)) continue;
+    if (!cobertos.has(escopo) || !plano.escoposBaixasCompletos.includes(escopo)) {
+      continue;
+    }
     const registros = await tx.baixaFinanceiraLegado.findMany({
       where: {
         origem: ORIGEM_OPERACAO_WIDESYS,
         escopo,
         capturadoEm: { lte: plano.capturadoEm },
       },
-      select: selecionar,
+      select: { ...selecionar, tituloEscopo: true, tituloLegadoId: true },
     });
+    const escopoTitulo = escopo === "BAIXA_RECEBER" ? "TITULO_RECEBER" : "TITULO_PAGAR";
+    const cobertura = plano.coberturaTemporal[escopoTitulo];
     candidatos.push(
-      ...registros.filter((registro) => ausente(escopo, registro.legadoId)).map((registro) => ({ escopo, registro })),
+      ...registros
+        .filter((registro) => {
+          if (registro.tituloEscopo !== escopoTitulo) return false;
+          const vencimento = vencimentoPorTitulo.get(
+            `${registro.tituloEscopo}\u0000${registro.tituloLegadoId}`,
+          );
+          return (
+            ausente(escopo, registro.legadoId) &&
+            dentroDaCobertura(vencimento ?? null, cobertura)
+          );
+        })
+        .map((registro) => ({ escopo, registro })),
     );
   }
   if (cobertos.has("MOVIMENTO")) {
@@ -2908,17 +3292,30 @@ async function marcarAusentesDaFonte(
         escopo: "MOVIMENTO",
         capturadoEm: { lte: plano.capturadoEm },
       },
-      select: selecionar,
+      select: { ...selecionar, dataMovimento: true },
     });
+    const cobertura = plano.coberturaTemporal.MOVIMENTO;
     candidatos.push(
       ...movimentos
-        .filter((registro) => ausente("MOVIMENTO", registro.legadoId))
+        .filter(
+          (registro) =>
+            ausente("MOVIMENTO", registro.legadoId) &&
+            dentroDaCobertura(registro.dataMovimento, cobertura),
+        )
         .map((registro) => ({ escopo: "MOVIMENTO" as const, registro })),
     );
   }
 
   for (const { escopo, registro } of candidatos) {
+    // Uma ausência já registrada permanece auditável no canônico. Criar outro
+    // item MARCAR_AUSENTE em toda captura não acrescentaria informação e faria
+    // o relatório parecer que a mesma ausência foi descoberta novamente.
+    if (registro.statusImportacao === "AUSENTE_NA_FONTE") continue;
     if (decisaoCanonicaEm(registro) > plano.capturadoEm) continue;
+    if (loteId === null) {
+      contagens[escopo] += 1;
+      continue;
+    }
     const item = await tx.importacaoLegadoItem.upsert({
       where: { loteId_escopo_legadoId: { loteId, escopo, legadoId: registro.legadoId } },
       create: {
@@ -3013,12 +3410,15 @@ export async function importarPlanoOperacaoWidesys(
       modo: "JA_APLICADO",
       capturaId: plano.capturaId,
       escoposCobertos: plano.escoposCobertos,
+      coberturaTemporal: plano.coberturaTemporal,
       total: plano.registros.length,
       processados: plano.registros.length,
       porEscopo: contadoresVazios(),
       politicaReconciliacao: plano.politicaReconciliacao,
       reconciliacao: plano.reconciliacao,
       escoposAusentes: plano.escoposAusentes,
+      escoposPartesCompletos: plano.escoposPartesCompletos,
+      escoposBaixasCompletos: plano.escoposBaixasCompletos,
     };
   }
   const lote = existente
@@ -3055,7 +3455,15 @@ export async function importarPlanoOperacaoWidesys(
         async (tx) => {
           const resultado: Array<{ escopo: EscopoOperacaoWidesys; acao: Awaited<ReturnType<typeof persistirRegistro>> }> = [];
           for (const registro of parte) {
-            resultado.push({ escopo: registro.escopo, acao: await persistirRegistro(tx, registro, lote.id) });
+            resultado.push({
+              escopo: registro.escopo,
+              acao: await persistirRegistro(
+                tx,
+                registro,
+                lote.id,
+                plano.capturadoEm,
+              ),
+            });
           }
           return resultado;
         },
@@ -3115,11 +3523,14 @@ export async function importarPlanoOperacaoWidesys(
     modo: "APLICADO",
     capturaId: plano.capturaId,
     escoposCobertos: plano.escoposCobertos,
+    coberturaTemporal: plano.coberturaTemporal,
     total: plano.registros.length,
     processados,
     porEscopo,
     politicaReconciliacao: plano.politicaReconciliacao,
     reconciliacao: plano.reconciliacao,
     escoposAusentes: plano.escoposAusentes,
+    escoposPartesCompletos: plano.escoposPartesCompletos,
+    escoposBaixasCompletos: plano.escoposBaixasCompletos,
   };
 }

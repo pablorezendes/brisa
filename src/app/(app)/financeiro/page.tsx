@@ -14,6 +14,8 @@ import {
   type ItemAlerta,
 } from "@/components/ui";
 import { dadosExecutivos, mesPadrao } from "@/lib/consultas/executivo";
+import { resumoAtalhoMigracaoWidesys } from "@/lib/consultas/operacao-widesys";
+import { perfilAtual } from "@/lib/autorizacao";
 import { formatarBRL } from "@/lib/dominio/dinheiro";
 import { prisma } from "@/lib/db";
 import {
@@ -36,7 +38,7 @@ const RE_MES = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 type IconeFinanceiro = Extract<
   IconeMenuNome,
-  "recebimentos" | "boletos" | "contas-bancarias" | "cobranca" | "caixa" | "comissoes" | "reajustes"
+  "recebimentos" | "boletos" | "contas-bancarias" | "integracao" | "cobranca" | "caixa" | "comissoes" | "reajustes"
 >;
 
 function percentual(valor: number | null): string {
@@ -161,9 +163,17 @@ export default async function PaginaFinanceiro({
 }: {
   searchParams: Promise<{ mes?: string }>;
 }) {
-  const sp = await searchParams;
+  const [sp, perfil] = await Promise.all([searchParams, perfilAtual()]);
+  const podeAuditarMigracao = perfil === "ADMINISTRADOR" || perfil === "FINANCEIRO";
   const mes = sp.mes && RE_MES.test(sp.mes) ? sp.mes : await mesPadrao();
-  const [dados, totalBoletos, boletosAtencao, contasBancarias, conciliacoesPendentes] = await Promise.all([
+  const [
+    dados,
+    totalBoletos,
+    boletosAtencao,
+    contasBancarias,
+    conciliacoesPendentes,
+    migracaoWidesys,
+  ] = await Promise.all([
     dadosExecutivos(mes),
     prisma.boleto.count({ where: { recebimento: { mesLancamento: mes } } }),
     prisma.boleto.count({
@@ -177,6 +187,7 @@ export default async function PaginaFinanceiro({
     }),
     prisma.contaBancaria.count({ where: { ativa: true } }),
     prisma.pagamentoRecebimento.count({ where: { conciliadoEm: null } }),
+    podeAuditarMigracao ? resumoAtalhoMigracaoWidesys() : Promise.resolve(null),
   ]);
   const { ano, mes: mesNumero } = parseCompetencia(mes);
   const linhaAnterior = mesNumero > 1 ? dados.porMes[mesNumero - 2] : null;
@@ -190,6 +201,15 @@ export default async function PaginaFinanceiro({
     ? nivelSaldo(dados.saldoCaixaMes)
     : "neutro";
   const nivelReajustes = nivelTarefas(dados.reajustesDoMes.length, 5);
+  const nivelMigracao: Nivel = !migracaoWidesys
+    ? "neutro"
+    : migracaoWidesys.status === "FALHOU"
+      ? "critico"
+      : migracaoWidesys.status === "QUARENTENA"
+        ? "atencao"
+        : migracaoWidesys.status === "CONCLUIDO"
+          ? "info"
+          : "atencao";
   const totalSaidas = dados.caixaMes
     ? dados.caixaMes.despesaAL + dados.caixaMes.despesaCH
     : 0;
@@ -215,7 +235,7 @@ export default async function PaginaFinanceiro({
       texto: (
         <>
           <Sigilo>{dados.inadimplentesQtde}</Sigilo> título(s) somam{" "}
-          <Sigilo>{formatarBRL(dados.inadimplentesValor)}</Sigilo> sem recebimento registrado.
+          <Sigilo>{formatarBRL(dados.inadimplentesValor)}</Sigilo> de saldo ainda em aberto.
         </>
       ),
       acao: {
@@ -314,7 +334,7 @@ export default async function PaginaFinanceiro({
               <Sigilo>{formatarBRL(dados.devidoMes)}</Sigilo> devido.
               {dados.inadimplentesQtde > 0
                 ? <>{" "}Ainda há <Sigilo>{dados.inadimplentesQtde}</Sigilo> cobrança(s) esperando baixa.</>
-                : " Não há cobrança integralmente pendente na competência."}
+                : " Não há saldo de cobrança pendente na competência."}
             </p>
             <div className="mt-5 max-w-2xl">
               <div className="mb-2 flex items-center justify-between text-[10px] font-semibold text-white/60">
@@ -364,7 +384,7 @@ export default async function PaginaFinanceiro({
       <PainelAlertas
         itens={alertas}
         ajuda="Reúne apenas situações que já podem ser tratadas nos módulos existentes: cobrança, caixa e contratos."
-        vazio="Nenhuma cobrança integralmente pendente, caixa negativo ou reajuste na mesa para este mês."
+        vazio="Nenhum saldo de cobrança pendente, caixa negativo ou reajuste na mesa para este mês."
       />
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
@@ -391,11 +411,11 @@ export default async function PaginaFinanceiro({
         <Kpi
           rotulo="Cobranças em aberto"
           valor={<Dinheiro centavos={dados.inadimplentesValor} destaque />}
-          detalhe={<Sigilo>{`${dados.inadimplentesQtde} lançamento(s) sem baixa`}</Sigilo>}
+          detalhe={<Sigilo>{`${dados.inadimplentesQtde} lançamento(s) com saldo`}</Sigilo>}
           nivel={nivelInadimplenciaMes}
           selo={dados.inadimplentesQtde === 0 ? "em dia" : "cobrar"}
           href={`/paineis/cobranca?mes=${mes}`}
-          ajuda="Valor integral dos lançamentos desta competência que ainda não possuem recebimento registrado."
+          ajuda="Saldo dos lançamentos desta competência após descontar pagamentos parciais já registrados."
         />
         <Kpi
           rotulo="Saldo de caixa"
@@ -489,7 +509,7 @@ export default async function PaginaFinanceiro({
         <ModuloFinanceiro
           icone="cobranca"
           titulo="Cobrança"
-          descricao="Priorize quem ainda não teve pagamento registrado."
+          descricao="Priorize quem ainda mantém saldo, inclusive após pagamento parcial."
           nivel={nivelInadimplenciaMes}
           status={
             dados.inadimplentesQtde === 0
@@ -504,7 +524,7 @@ export default async function PaginaFinanceiro({
         >
           {dados.pendentesDoMes.length === 0 ? (
             <div className="rounded-lg border border-contorno bg-[#f8faf9] px-4 py-4 text-[13px] leading-relaxed text-tinta-suave">
-              Nenhuma cobrança integralmente pendente nesta competência.
+              Nenhuma cobrança com saldo pendente nesta competência.
             </div>
           ) : (
             <div className="space-y-3">
@@ -523,7 +543,7 @@ export default async function PaginaFinanceiro({
                     </div>
                   </div>
                   <div className="shrink-0 text-[12px] font-semibold text-tinta">
-                    <Sigilo><Dinheiro centavos={item.totalDevido} /></Sigilo>
+                    <Sigilo><Dinheiro centavos={item.saldoAberto} /></Sigilo>
                   </div>
                 </div>
               ))}
@@ -589,6 +609,52 @@ export default async function PaginaFinanceiro({
             </div>
           )}
         </ModuloFinanceiro>
+
+        {podeAuditarMigracao ? (
+          <ModuloFinanceiro
+            icone="integracao"
+            titulo="Migração Widesys"
+            descricao="Compare a operação antiga com o núcleo Brisa antes de promover qualquer registro."
+            nivel={nivelMigracao}
+            status={
+              !migracaoWidesys
+                ? "aguardando lote"
+                : migracaoWidesys.status === "CONCLUIDO"
+                  ? "captura validada"
+                  : migracaoWidesys.status.toLocaleLowerCase("pt-BR")
+            }
+            href="/financeiro/migracao-widesys"
+            acao="Abrir auditoria"
+            className="xl:col-span-12"
+          >
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <MiniValor
+                rotulo="Processados"
+                valor={migracaoWidesys?.totalProcessado ?? 0}
+                destaque
+              />
+              <MiniValor
+                rotulo="Em quarentena"
+                valor={migracaoWidesys?.totalQuarentena ?? 0}
+              />
+              <MiniValor
+                rotulo="Última captura"
+                valor={
+                  migracaoWidesys?.capturadoEm
+                    ? new Intl.DateTimeFormat("pt-BR", {
+                        dateStyle: "short",
+                        timeStyle: "short",
+                        timeZone: "America/Sao_Paulo",
+                      }).format(migracaoWidesys.capturadoEm)
+                    : "—"
+                }
+              />
+            </div>
+            <p className="mt-4 border-t border-contorno pt-3 text-[11px] leading-relaxed text-tinta-suave">
+              Itens do legado ficam em staging com origem explícita; nome, valor ou descrição isolados nunca geram vínculo automático.
+            </p>
+          </ModuloFinanceiro>
+        ) : null}
 
         <ModuloFinanceiro
           icone="comissoes"

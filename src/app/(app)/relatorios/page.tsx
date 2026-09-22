@@ -30,7 +30,7 @@ const SECOES = (ano: number, mes: string, qsPeriodo: string | null) => [
       : `/relatorios/inadimplencia?mes=${mes}`,
     titulo: "Inadimplência",
     descricao:
-      "Lançamentos com total devido e sem recebimento, com dias desde o vencimento.",
+      "Lançamentos com saldo após pagamentos, com dias desde o vencimento.",
   },
 ];
 
