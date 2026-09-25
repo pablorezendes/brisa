@@ -725,13 +725,13 @@ export default async function PainelCobranca({
       <Card className="mt-6 px-6 py-4" nivel="info">
         <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.1em] text-tinta-suave">
           Como ler este painel
-          <Ajuda dica="A diferença entre 'pendente' e 'perda' muda a forma de trabalhar a lista: pendente continua sendo dinheiro que pode entrar, e o registro do pagamento reconstrói a comissão sozinho." />
+          <Ajuda dica="Pendente continua sendo dinheiro que pode entrar. Registre o pagamento recebido na cobrança para atualizar o saldo." />
         </div>
         <p className="text-sm leading-relaxed text-tinta">
           <strong>Pendente não é perda.</strong> Pendente é dinheiro que ainda
           pode entrar: a cobrança continua valendo e, quando o locatário pagar
-          — mesmo meses depois —, é só preencher o Recebido daquele lançamento
-          e a comissão é calculada na hora. Perda só acontece se a família
+          — mesmo meses depois —, é só preencher o Recebido daquele lançamento.
+          Perda só acontece se a família
           decidir desistir de cobrar; nesse caso, anote a decisão na
           Observação do lançamento para o histórico contar a história certa.
           Se o pagamento vier junto com um mês atrasado, lance tudo em

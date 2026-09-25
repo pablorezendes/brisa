@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { IconeMenu, type IconeMenuNome } from "@/components/icones-menu";
+import { PERFIS_COMISSOES } from "@/lib/permissoes-comissoes";
 
 type ItemMenu = {
   tipo: "link";
@@ -73,7 +74,7 @@ const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
           },
           { tipo: "link", href: "/caixa", rotulo: "Movimentações de caixa", icone: "caixa" },
           { tipo: "link", href: "/unificacao", rotulo: "Resolver duplicidades", icone: "conciliacao", perfis: ["ADMINISTRADOR", "FINANCEIRO"] },
-          { tipo: "link", href: "/relatorios/comissao", rotulo: "Comissões", icone: "comissoes" },
+          { tipo: "link", href: "/financeiro/comissoes", rotulo: "Comissões", icone: "comissoes", perfis: PERFIS_COMISSOES },
         ],
       },
       {

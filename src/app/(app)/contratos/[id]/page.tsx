@@ -10,7 +10,7 @@ import {
   btnSecundario,
   inputBase,
 } from "@/components/ui";
-import { calcularRecebimento, comissaoTotal } from "@/lib/dominio/comissao";
+import { calcularRecebimento } from "@/lib/dominio/comissao";
 import { formatarBRL } from "@/lib/dominio/dinheiro";
 import {
   formatarCompetencia,
@@ -67,7 +67,6 @@ export default async function PaginaDetalheContrato({
       saldoAberto: Math.max((calc.totalDevido ?? 0) - (r.recebido ?? 0), 0),
     };
   });
-  const totalComissao = comissaoTotal(recebimentos);
   const totalRecebido = recebimentos.reduce((s, r) => s + (r.recebido ?? 0), 0);
   const totalSaldoAberto = linhas.reduce((s, linha) => s + linha.saldoAberto, 0);
   const pendentes = linhas.filter((linha) => linha.saldoAberto > 0).length;
@@ -146,13 +145,7 @@ export default async function PaginaDetalheContrato({
         </Card>
       ) : null}
 
-      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Kpi
-          rotulo="Comissão gerada"
-          valor={<Dinheiro centavos={totalComissao} destaque />}
-          detalhe={`${recebimentos.length} lançamento(s) no histórico`}
-          ajuda="Tudo o que este contrato já rendeu de comissão à administradora, somando todos os lançamentos do histórico: (recebido − IPTU − condomínio) × taxa de cada mês."
-        />
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Kpi
           rotulo="Total recebido"
           valor={<Dinheiro centavos={totalRecebido} />}
@@ -164,7 +157,7 @@ export default async function PaginaDetalheContrato({
               ? `Ainda restam ${formatarBRL(totalSaldoAberto)} neste contrato — pagamentos parciais continuam no histórico abaixo.`
               : undefined
           }
-          ajuda="Soma de tudo que o locatário pagou neste contrato, incluindo IPTU e condomínio (que são repassados ao proprietário). Não é o ganho da administradora — o ganho é a comissão."
+          ajuda="Soma de tudo que o locatário pagou neste contrato, incluindo IPTU e condomínio."
         />
         <Kpi
           rotulo="Total contratado / mês"
@@ -229,8 +222,6 @@ export default async function PaginaDetalheContrato({
                 <th style={{ textAlign: "right" }}>Total</th>
                 <th style={{ textAlign: "right" }}>Recebido</th>
                 <th style={{ textAlign: "right" }}>Saldo</th>
-                <th style={{ textAlign: "right" }}>Base de cálculo</th>
-                <th style={{ textAlign: "right" }}>Comissão</th>
                 <th>Data</th>
                 <th>Via</th>
                 <th>Observação</th>
@@ -239,7 +230,7 @@ export default async function PaginaDetalheContrato({
             <tbody>
               {linhas.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="py-6 text-center text-tinta-suave/60">
+                  <td colSpan={11} className="py-6 text-center text-tinta-suave/60">
                     Nenhum recebimento lançado para este contrato.
                   </td>
                 </tr>
@@ -274,8 +265,6 @@ export default async function PaginaDetalheContrato({
                       )}
                     </td>
                     <td className="text-right"><Dinheiro centavos={saldoAberto} destaque={saldoAberto > 0} /></td>
-                    <td className="text-right"><Dinheiro centavos={calc.baseCalculo} /></td>
-                    <td className="text-right"><Dinheiro centavos={calc.comissao} destaque /></td>
                     <td>{formatarDataBR(r.dataPagamento)}</td>
                     <td>{r.via ?? "—"}</td>
                     <td className="max-w-48 truncate" title={r.observacao ?? undefined}>
@@ -291,8 +280,6 @@ export default async function PaginaDetalheContrato({
                   <td colSpan={6}>Total do contrato</td>
                   <td className="text-right"><Dinheiro centavos={totalRecebido} /></td>
                   <td className="text-right"><Dinheiro centavos={totalSaldoAberto} destaque /></td>
-                  <td></td>
-                  <td className="text-right"><Dinheiro centavos={totalComissao} destaque /></td>
                   <td colSpan={3}></td>
                 </tr>
               </tfoot>

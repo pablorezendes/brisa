@@ -3,6 +3,10 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { exigirSessao, type SessaoPayload } from "@/lib/auth";
 import { perfilPodeVerPiiCadastros } from "@/lib/privacidade-cadastros";
+import { perfilPodeVerComissoes } from "@/lib/permissoes-comissoes";
+import { notFound } from "next/navigation";
+
+export { perfilPodeVerComissoes } from "@/lib/permissoes-comissoes";
 
 export type PermissaoFinanceira =
   | "GERENCIAR_CONTAS"
@@ -58,6 +62,11 @@ export async function perfilAtual(): Promise<string> {
     select: { perfil: true },
   });
   return usuario?.perfil ?? "CONSULTA";
+}
+
+/** Checagem no servidor, antes de consultar ou renderizar qualquer valor. */
+export async function exigirAcessoComissoes(): Promise<void> {
+  if (!perfilPodeVerComissoes(await perfilAtual())) notFound();
 }
 
 /**

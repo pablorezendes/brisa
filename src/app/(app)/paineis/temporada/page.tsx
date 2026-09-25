@@ -146,18 +146,12 @@ async function TemporadaDoPeriodo({ periodo }: { periodo: Periodo }) {
       />
 
       {/* ---------- KPIs do período ---------- */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <Kpi
           rotulo="Receita no período"
           valor={<Dinheiro centavos={d.totalReceita} destaque />}
           detalhe={fontes}
           ajuda={dicaJanela}
-        />
-        <Kpi
-          rotulo="Comissão AIRBNB no período"
-          valor={<Dinheiro centavos={d.comissaoAirbnb} destaque />}
-          detalhe="só meses lançados no núcleo"
-          ajuda="O que a administradora ganhou com o Airbnb na janela: a taxa do lançamento (padrão 10%) sobre o recebido, descontando IPTU e condomínio — a mesma regra canônica dos aluguéis. Vale só para os meses lançados em Recebimentos (o núcleo): a planilha histórica não tem recebimentos individuais para aplicar a regra, então meses antigos entram como zero aqui."
         />
         <Kpi
           rotulo="Melhor mês do período"
@@ -368,7 +362,7 @@ export default async function PaginaPainelTemporada({
       />
 
       {/* ---------- KPIs ---------- */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <Kpi
           rotulo={
             d.anoNucleo !== null
@@ -378,12 +372,6 @@ export default async function PaginaPainelTemporada({
           valor={<Dinheiro centavos={d.receitaAnoNucleo} destaque />}
           detalhe="linhas agregadas do núcleo"
           ajuda="Soma do que o Airbnb já repassou no ano, pelas linhas agregadas lançadas em Recebimentos. Só conta o que está marcado como recebido — mês ainda pendente não entra. Ao receber o repasse do mês, lance na linha agregada AIRBNB do núcleo."
-        />
-        <Kpi
-          rotulo="Comissão AIRBNB no ano"
-          valor={<Dinheiro centavos={d.comissaoAirbnbAnoNucleo} destaque />}
-          detalhe={d.anoNucleo !== null ? `ano ${d.anoNucleo}` : undefined}
-          ajuda="O que a administradora ganhou com o Airbnb no ano: a taxa do lançamento (padrão 10%) sobre o recebido, descontando IPTU e condomínio — a mesma regra canônica dos aluguéis. Repasses nunca entram na comissão."
         />
         <Kpi
           rotulo="Melhor mês histórico"
@@ -493,7 +481,7 @@ export default async function PaginaPainelTemporada({
                   </span>
                 </div>
               </div>
-              <BarrasMensais valores={a.receitaPorMes} mesSelecionado={0} />
+              <BarrasMensais valores={a.receitaPorMes} mesSelecionado={0} rotuloAcessivel={`Receita da temporada mês a mês em ${a.ano}`} />
               <details className="mt-2 text-xs text-tinta-suave">
                 <summary className="cursor-pointer select-none">Ver dados</summary>
                 <div className="mt-2 overflow-x-auto">

@@ -118,7 +118,7 @@ export default async function PaginaContratos({
           selo={desocupados.length === 0 ? "tudo alugado" : "sem render"}
           nota={
             desocupados.length > 0
-              ? "Unidade vazia não gera aluguel nem comissão. Ao alugar, edite o contrato e vincule o locatário."
+              ? "Unidade vazia não gera cobrança de aluguel. Ao alugar, edite o contrato e vincule o locatário."
               : undefined
           }
           ajuda="Unidades com contrato ativo mas sem locatário — não estão rendendo. Quando alugar, edite o contrato e vincule o novo locatário."
@@ -159,15 +159,15 @@ export default async function PaginaContratos({
                     <th>Locatário</th>
                     <th style={{ textAlign: "right" }}>
                       Valor{" "}
-                      <Ajuda dica="Aluguel-base combinado no contrato. É a parte que gera comissão — IPTU e condomínio ficam de fora." />
+                      <Ajuda dica="Aluguel-base combinado no contrato, sem IPTU nem condomínio." />
                     </th>
                     <th style={{ textAlign: "right" }}>
                       IPTU{" "}
-                      <Ajuda dica="Parcela mensal de IPTU cobrada junto com o aluguel. É repasse ao proprietário, não receita da administradora." />
+                      <Ajuda dica="Parcela mensal de IPTU cobrada junto com o aluguel e incluída no total contratado." />
                     </th>
                     <th style={{ textAlign: "right" }}>
                       Cond.{" "}
-                      <Ajuda dica="Condomínio cobrado junto com o aluguel. Também é repasse — nunca entra na comissão." />
+                      <Ajuda dica="Condomínio cobrado junto com o aluguel e incluído no total contratado." />
                     </th>
                     <th style={{ textAlign: "right" }}>
                       Total contratado{" "}

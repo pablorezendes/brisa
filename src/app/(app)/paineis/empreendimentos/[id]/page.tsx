@@ -110,19 +110,14 @@ export default async function PaginaDetalheEmpreendimento({
 
   const ocupacaoPct =
     d.ocupacao.ativas > 0 ? d.ocupacao.ocupadas / d.ocupacao.ativas : null;
-  const totalComissaoUnidades = d.unidades.reduce(
-    (a, u) => a + u.comissaoJanela,
-    0
-  );
-
   return (
     <div className="max-w-6xl">
       <PageHeader
         titulo={d.nome}
         descricao={
           periodo
-            ? `Comissão, recebimentos, unidades e locatários deste empreendimento no período ${periodo.rotulo}.`
-            : `Comissão, recebimentos, unidades e locatários deste empreendimento em ${ano}.`
+            ? `Recebimentos, ocupação, unidades e locatários deste empreendimento no período ${periodo.rotulo}.`
+            : `Recebimentos, ocupação, unidades e locatários deste empreendimento em ${ano}.`
         }
         acoes={
           <>
@@ -144,13 +139,7 @@ export default async function PaginaDetalheEmpreendimento({
       />
 
       {/* ---------- KPIs ---------- */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-        <Kpi
-          rotulo={periodo ? "Comissão no período" : "Comissão no ano"}
-          valor={<Dinheiro centavos={d.comissaoTotal} destaque />}
-          detalhe="o ganho da administradora aqui"
-          ajuda="Soma da comissão de cada lançamento pago do empreendimento: (recebido − IPTU − condomínio) × taxa do lançamento (padrão 10%). IPTU e condomínio são repasses ao proprietário e nunca entram na conta."
-        />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi
           rotulo={periodo ? "Recebido no período" : "Recebido no ano"}
           valor={<Dinheiro centavos={d.recebidoTotal} destaque />}
@@ -209,7 +198,7 @@ export default async function PaginaDetalheEmpreendimento({
               ? "Cada mês vazio é receita perdida — priorize divulgar e negociar essas unidades."
               : undefined
           }
-          ajuda="Unidades ativas com locatário no contrato vigente. Unidade desocupada não gera aluguel nem comissão — cada mês vazio é receita perdida; priorize divulgar e negociar essas unidades."
+          ajuda="Unidades ativas com locatário no contrato vigente. Cada mês vazio é receita perdida; priorize divulgar e negociar essas unidades."
         />
         <Kpi
           rotulo="Pendente em aberto"
@@ -230,21 +219,20 @@ export default async function PaginaDetalheEmpreendimento({
         <Card className="p-5">
           <div className="mb-2 flex items-baseline justify-between">
             <h2 className="text-sm font-semibold">
-              Comissão mês a mês — {vm.janela}
+              Recebido mês a mês — {vm.janela}
             </h2>
             <span className="text-xs text-tinta-suave">
-              total: {formatarBRL(d.comissaoTotal)}
+              total: {formatarBRL(d.recebidoTotal)}
             </span>
           </div>
           <BarrasMensais
-            valores={d.comissaoPorMes}
+            valores={d.recebidoPorMes}
             mesSelecionado={vm.destaqueSerie}
             rotulos={vm.rotulosSerie}
+            rotuloAcessivel="Recebimentos do empreendimento mês a mês"
           />
           <p className="mt-2 text-xs text-tinta-suave">
-            Cada barra é a comissão que este empreendimento gerou no mês de
-            lançamento. Mês sem barra = nada recebido (ou só devidos ainda em
-            aberto).
+            Cada barra soma os pagamentos registrados neste empreendimento no mês de lançamento.
           </p>
           <details className="mt-2 text-xs text-tinta-suave">
             <summary className="cursor-pointer select-none">Ver dados</summary>
@@ -253,11 +241,11 @@ export default async function PaginaDetalheEmpreendimento({
                 <thead>
                   <tr>
                     <th>Mês</th>
-                    <th className="text-right">Comissão</th>
+                    <th className="text-right">Recebido</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {d.comissaoPorMes.slice(0, vm.corte).map((v, i) => (
+                  {d.recebidoPorMes.slice(0, vm.corte).map((v, i) => (
                     <tr key={i}>
                       <td>{vm.rotulosLinhas[i]}</td>
                       <td className="text-right">
@@ -352,7 +340,7 @@ export default async function PaginaDetalheEmpreendimento({
                   <th>Localização</th>
                   <th>
                     Locatário atual{" "}
-                    <Ajuda dica="Quem está no contrato vigente da unidade. 'Desocupada' = sem locatário: não gera aluguel nem comissão e merece atenção comercial." />
+                    <Ajuda dica="Quem está no contrato vigente da unidade. 'Desocupada' = sem locatário e merece atenção comercial." />
                   </th>
                   <th className="text-right">
                     Aluguel contratado{" "}
@@ -369,12 +357,6 @@ export default async function PaginaDetalheEmpreendimento({
                     />
                   </th>
                   <th>Status</th>
-                  <th className="text-right">
-                    {periodo ? "Comissão no período" : "Comissão no ano"}{" "}
-                    <Ajuda
-                      dica={`Comissão que os lançamentos pagos desta unidade geraram ${periodo ? "no período" : "no ano"}, pela regra (recebido − repasses) × taxa.`}
-                    />
-                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -421,20 +403,9 @@ export default async function PaginaDetalheEmpreendimento({
                         <Badge cor="slate">sem contrato</Badge>
                       )}
                     </td>
-                    <td className="text-right">
-                      <Dinheiro centavos={u.comissaoJanela} />
-                    </td>
                   </tr>
                 ))}
               </tbody>
-              <tfoot>
-                <tr>
-                  <td colSpan={5}>Total</td>
-                  <td className="text-right">
-                    <Dinheiro centavos={totalComissaoUnidades} destaque />
-                  </td>
-                </tr>
-              </tfoot>
             </table>
           </div>
         )}
@@ -442,7 +413,7 @@ export default async function PaginaDetalheEmpreendimento({
           <p className="mt-2 flex items-baseline gap-1.5 text-xs text-tinta-suave">
             <Ponto nivel="atencao" titulo="atenção" />
             <span>
-              Unidade desocupada não gera aluguel nem comissão — cada mês vazio
+              Unidade desocupada não gera aluguel — cada mês vazio
               é receita que não volta. Vale priorizar a divulgação e a
               negociação dessas unidades.
             </span>
@@ -545,16 +516,14 @@ export default async function PaginaDetalheEmpreendimento({
             {vm.rotulosLinhas.length === 1
               ? `competência ${vm.rotulosLinhas[0]}`
               : `competências ${vm.rotulosLinhas[0]}–${vm.rotulosLinhas[vm.rotulosLinhas.length - 1]}`}
-            ), pela regra canônica: comissão = (recebido − IPTU − condomínio) ×
-            taxa do lançamento. Reajustes ganham a marca &quot;cai no
+            ). Reajustes ganham a marca &quot;cai no
             período&quot; quando o mês de aniversário está dentro da janela.
           </>
         ) : (
           <>
             Todos os números nascem dos lançamentos de recebimento do ano {ano}{" "}
             deste empreendimento (mês de lançamento {NOME_MES_ABREV[1]}–
-            {NOME_MES_ABREV[12]}), pela regra canônica: comissão = (recebido −
-            IPTU − condomínio) × taxa do lançamento.{" "}
+            {NOME_MES_ABREV[12]}).{" "}
             {NOME_MES_COMPLETO[mesAtual]} é o mês corrente usado para destacar
             reajustes.
           </>

@@ -3,11 +3,12 @@
  * GET ?tipo=comissao|resultado & (ano=YYYY | de=YYYY-MM-DD&ate=YYYY-MM-DD).
  * Quando ?de/?ate estão presentes e válidos, exporta a janela do período
  * (mesma regra das telas); senão, o ano — comportamento original intacto.
- * Abas e colunas com os mesmos nomes da planilha original (COMISSÃO, RESULTADO);
- * valores em reais com formato "#,##0.00".
+ * COMISSÃO exige perfil administrador. RESULTADO exporta apenas valores
+ * operacionais, sem base de cálculo ou comissão. Valores em reais.
  */
 
 import ExcelJS from "exceljs";
+import { perfilAtual, perfilPodeVerComissoes } from "@/lib/autorizacao";
 import {
   matrizComissao,
   matrizComissaoPeriodo,
@@ -75,7 +76,7 @@ interface DadosResultado {
   linhas: LinhaResultado[];
   totalGeral: Pick<
     LinhaResultado,
-    "recebidos" | "iptu" | "cond" | "base" | "comissao"
+    "recebidos" | "iptu" | "cond"
   >;
 }
 
@@ -89,8 +90,6 @@ function planilhaResultado(wb: ExcelJS.Workbook, r: DadosResultado) {
     { header: "RECEBIDOS", key: "recebidos", width: 14, style: moeda },
     { header: "IPTU", key: "iptu", width: 12, style: moeda },
     { header: "COND.", key: "cond", width: 12, style: moeda },
-    { header: "BASE CALCULO", key: "base", width: 14, style: moeda },
-    { header: "COMISSÃO", key: "comissao", width: 14, style: moeda },
   ];
   ws.getRow(1).font = { bold: true };
 
@@ -102,8 +101,6 @@ function planilhaResultado(wb: ExcelJS.Workbook, r: DadosResultado) {
       reais(l.recebidos),
       reais(l.iptu),
       reais(l.cond),
-      reais(l.base),
-      reais(l.comissao),
     ]);
   }
   const t = r.totalGeral;
@@ -114,8 +111,6 @@ function planilhaResultado(wb: ExcelJS.Workbook, r: DadosResultado) {
     reais(t.recebidos),
     reais(t.iptu),
     reais(t.cond),
-    reais(t.base),
-    reais(t.comissao),
   ]);
   rodape.font = { bold: true };
 }
@@ -128,6 +123,12 @@ export async function GET(request: Request) {
       { erro: "Parâmetro tipo deve ser 'comissao' ou 'resultado'." },
       { status: 400 }
     );
+  }
+
+  // Route Handlers não são protegidos pelo layout; validar a sessão aqui.
+  const perfil = await perfilAtual();
+  if (tipo === "comissao" && !perfilPodeVerComissoes(perfil)) {
+    return new Response(null, { status: 404, headers: { "Cache-Control": "no-store" } });
   }
 
   // ?de/?ate válidos vencem o ?ano — mesma regra das telas de relatório

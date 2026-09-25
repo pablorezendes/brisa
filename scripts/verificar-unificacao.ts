@@ -1,6 +1,7 @@
 /** Smoke test somente leitura: nunca imprime cookies, nomes ou valores. */
 import { createHmac } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
+import ExcelJS from "exceljs";
 
 const db = new PrismaClient();
 async function main() {
@@ -30,15 +31,53 @@ async function main() {
     ["/caixa?visao=livro&mes=2026-06", "Caixa"],
     ["/financeiro/contas-a-receber?mes=2026-06&vencidos=1", "Contas a receber"],
     ["/financeiro/migracao-widesys", "Auditoria financeira Widesys"],
-    ["/executivo?mes=2026-06", "Brisa"], ["/relatorios/comissao?ano=2026", "Brisa"],
+    ["/executivo?mes=2026-06", "Brisa"], ["/financeiro/comissoes?ano=2026", "Comissões"],
     ["/relatorios/resultado?mes=2026-06", "Brisa"], ["/paineis/cobranca?mes=2026-06", "Brisa"],
     ["/paineis/caixa?ano=2026", "Brisa"], ["/temporada", "Brisa"],
   ]) await verificar(rota, 200, sessao, marcador);
   const pendente = await db.unificacaoRegistro.findFirst({ where: { status: "PENDENTE", dominio: "RECEBER" }, select: { chave: true } });
   if (pendente) await verificar(`/unificacao/${encodeURIComponent(pendente.chave)}`, 200, sessao, "Como resolver", "/unificacao/[registro]");
+  await verificar("/relatorios/comissao?ano=2026", 307, sessao, undefined, "atalho anterior de comissões");
   // Perfil inexistente usa a regra de menor privilégio do próprio app.
   await verificar("/unificacao", 404, cookie("teste-sem-permissao-unificacao"));
   await verificar("/financeiro/contas-a-pagar", 404, cookie("teste-sem-permissao-unificacao"));
+  await verificar("/financeiro/comissoes", 404, cookie("teste-sem-permissao-unificacao"));
+  await verificar("/relatorios/comissao", 404, cookie("teste-sem-permissao-unificacao"));
+  await verificar("/relatorios/exportar?tipo=comissao&ano=2026", 404, cookie("teste-sem-permissao-unificacao"));
+  const menuRestrito = await fetch(new URL("/financeiro", base), {
+    headers: { cookie: cookie("teste-sem-permissao-unificacao") },
+  });
+  if (menuRestrito.status !== 200 || (await menuRestrito.text()).includes('href="/financeiro/comissoes"')) {
+    throw new Error("Menu de comissões visível para perfil sem permissão.");
+  }
+  console.log("OK menu de comissões: oculto para perfil sem permissão.");
+  for (const caminho of ["/", "/executivo", "/financeiro", "/recebimentos?visao=locacao", "/relatorios/resultado", "/paineis/empreendimentos", "/paineis/temporada", "/ajuda"]) {
+    const resposta = await fetch(new URL(caminho, base), { headers: { cookie: cookie("teste-sem-permissao-unificacao") } });
+    const html = await resposta.text();
+    if (resposta.status !== 200 || /comiss(?:ã|a)o|comiss(?:õ|o)es|base de c[aá]lculo/i.test(html)) {
+      throw new Error(`Informação reservada em tela geral: ${caminho} (HTTP ${resposta.status}).`);
+    }
+  }
+  console.log("OK telas gerais: sem conteúdo de comissões para perfil sem permissão.");
+  const exportacaoComissao = await fetch(new URL("/relatorios/exportar?tipo=comissao&ano=2026", base), {
+    headers: { cookie: sessao },
+  });
+  if (exportacaoComissao.status !== 200) throw new Error(`Exportação de comissões: HTTP ${exportacaoComissao.status}.`);
+  const livroComissao = new ExcelJS.Workbook();
+  await livroComissao.xlsx.load(Buffer.from(await exportacaoComissao.arrayBuffer()) as unknown as Parameters<typeof livroComissao.xlsx.load>[0]);
+  if (!livroComissao.getWorksheet("COMISSÃO")) throw new Error("Planilha de comissões indisponível ao administrador.");
+  console.log("OK exportação de comissões: disponível ao administrador.");
+  const resultado = await fetch(new URL("/relatorios/exportar?tipo=resultado&ano=2026", base), {
+    headers: { cookie: cookie("teste-sem-permissao-unificacao") },
+  });
+  if (resultado.status !== 200) throw new Error(`Exportação operacional: HTTP ${resultado.status}.`);
+  const livro = new ExcelJS.Workbook();
+  await livro.xlsx.load(Buffer.from(await resultado.arrayBuffer()) as unknown as Parameters<typeof livro.xlsx.load>[0]);
+  const cabecalhos = livro.getWorksheet("RESULTADO")?.getRow(1).values;
+  if (!Array.isArray(cabecalhos) || cabecalhos.some((item) => /COMISS|BASE C[AÁ]LCULO/i.test(String(item)))) {
+    throw new Error("Exportação operacional inclui coluna reservada.");
+  }
+  console.log("OK exportação operacional: somente colunas autorizadas.");
   await verificar("/unificacao", 307);
   console.log("Rotas unificadas, modos anteriores e restrições de acesso verificados.");
 }

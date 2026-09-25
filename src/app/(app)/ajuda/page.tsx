@@ -122,15 +122,9 @@ export default function PaginaAjuda() {
       {/* ---------- resumo de abertura ---------- */}
       <Card className="mb-8 border-l-4 border-l-oliva px-6 py-4">
         <p className="text-sm leading-relaxed text-tinta">
-          O sistema faz o que a planilha COMISSÃO fazia, sem fórmula quebrada:
-          você lança <strong>o que aconteceu</strong> (contratos, pagamentos,
-          gastos) e ele calcula <strong>o resto</strong> (total devido, base,
-          comissão, saldos). A regra de ouro:{" "}
-          <strong>
-            a comissão incide só sobre o aluguel recebido — IPTU e condomínio
-            são repasses ao proprietário
-          </strong>
-          .
+          Você registra contratos, pagamentos e gastos. O sistema calcula o
+          total devido, acompanha o que foi recebido e mostra os saldos.
+          IPTU e condomínio continuam identificados como repasses.
         </p>
       </Card>
 
@@ -208,7 +202,7 @@ export default function PaginaAjuda() {
             rotuloLink="Recebimentos"
           >
             Com tudo conferido, clique em <strong>Fechar mês</strong>. É como
-            enviar a planilha ao cliente: a comissão fica travada e os
+            enviar a planilha ao cliente: os valores ficam travados e os
             lançamentos não aceitam mais alteração. Precisou corrigir?{" "}
             <strong>Reabrir</strong> existe, mas é um ato explícito — o
             fechamento é apagado e refeito.
@@ -219,7 +213,7 @@ export default function PaginaAjuda() {
             href="/relatorios"
             rotuloLink="Relatórios"
           >
-            Matriz de comissão, resultado consolidado e inadimplência, prontos
+            Resultado consolidado e inadimplência, prontos
             para imprimir ou enviar. Os números são os mesmos das telas —
             calculados na hora, nunca digitados.
           </Passo>
@@ -244,7 +238,7 @@ export default function PaginaAjuda() {
         </Topico>
         <Topico titulo="Regra de ouro: meses inteiros, sempre">
           O sistema apura tudo por <strong>competência mensal</strong> — cada
-          cobrança, comissão e fechamento pertence a um mês, como cada aba da
+          cobrança e fechamento pertence a um mês, como cada aba da
           planilha era um mês. Por isso o período considera os{" "}
           <strong>meses inteiros</strong> entre as duas datas: de 15/03 a
           10/05, a análise cobre MAR + ABR + MAI, completos. Não existe
@@ -291,8 +285,8 @@ export default function PaginaAjuda() {
             nome="Empreendimento"
             exemplo="um prédio comercial com 8 salas é 1 empreendimento com 8 unidades."
           >
-            O imóvel (ou conjunto) administrado — o nível em que a comissão é
-            somada na matriz mensal.
+            O imóvel (ou conjunto) administrado, que reúne as unidades nas
+            consultas do sistema.
           </Termo>
           <Termo
             nome="Unidade / Localização"
@@ -317,17 +311,17 @@ export default function PaginaAjuda() {
           </Termo>
           <Termo
             nome="Valor"
-            exemplo="R$ 5.347,00 — só esta parte gera comissão."
+            exemplo="R$ 5.347,00 de aluguel-base contratado."
           >
             O aluguel-base do contrato, sem IPTU nem condomínio.
           </Termo>
           <Termo
             nome="IPTU e Cond. (repasses)"
-            exemplo="IPTU de R$ 400,92 cobrado junto: entra no total, mas sai da conta da comissão."
+            exemplo="IPTU de R$ 400,92 cobrado junto ao aluguel."
           >
             Valores que o locatário paga junto com o aluguel e que são
-            repassados ao proprietário. A administradora não ganha nada sobre
-            eles — nunca entram na comissão.
+            repassados ao proprietário. Permanecem separados do aluguel nos
+            relatórios.
           </Termo>
           <Termo
             nome="Total devido"
@@ -344,28 +338,12 @@ export default function PaginaAjuda() {
             como inadimplência.
           </Termo>
           <Termo
-            nome="Base de cálculo"
-            exemplo="R$ 5.747,92 − R$ 400,92 de IPTU = R$ 5.347,00."
-          >
-            Recebido menos IPTU e condomínio: a parte de aluguel do que
-            entrou. É sobre ela que a comissão incide.
-          </Termo>
-          <Termo
-            nome="Comissão"
-            exemplo="10% de R$ 5.347,00 = R$ 534,70."
-          >
-            O ganho da administradora: base de cálculo × taxa vigente no
-            lançamento (padrão 10%), arredondada ao centavo. Sempre calculada,
-            nunca digitada.
-          </Termo>
-          <Termo
             nome="Competência × Mês de lançamento"
             exemplo="aluguel de maio pago em julho: competência MAI/2026, lançado em JUL/2026."
           >
             Competência é o mês a que o aluguel se refere; mês de lançamento é
             o mês operacional em que a cobrança entrou na planilha. Só
-            diferem em atrasos e adiantamentos — e a comissão conta no mês de
-            lançamento.
+            diferem em atrasos e adiantamentos.
           </Termo>
           <Termo
             nome="Via"
@@ -383,11 +361,11 @@ export default function PaginaAjuda() {
           </Termo>
           <Termo
             nome="Fechamento"
-            exemplo="fechou junho com comissão de R$ 8.712,34: nada de junho muda até alguém reabrir."
+            exemplo="fechou junho: os lançamentos desse mês ficam travados."
           >
             O ato de travar o mês, como enviar a planilha ao cliente. Guarda a
-            comissão total e bloqueia alterações; reabrir é explícito e apaga
-            o fechamento.
+            os totais e bloqueia alterações; reabrir é explícito e apaga o
+            fechamento.
           </Termo>
           <Termo
             nome="Centro de custo"
@@ -420,10 +398,9 @@ export default function PaginaAjuda() {
             Ao registrar, ajuste o campo Competência; a linha fica destacada
             em âmbar para mostrar que é atraso.
           </Erro>
-          <Erro titulo="Achar que IPTU e condomínio entram na comissão">
-            Eles entram no total devido, mas são repasses ao proprietário. O
-            sistema já desconta sozinho: comissão = (recebido − IPTU − cond.)
-            × taxa. Não tente &quot;corrigir&quot; a base à mão.
+          <Erro titulo="Misturar aluguel e repasses">
+            IPTU e condomínio entram no total devido, mas são repasses ao
+            proprietário. Confira cada parcela ao registrar o recebimento.
           </Erro>
           <Erro titulo="Deixar a via vazia">
             Sem a via, ninguém sabe depois se foi boleto, PIX ou espécie — e a
@@ -456,29 +433,19 @@ export default function PaginaAjuda() {
       <Card className="mt-3 px-6 py-4">
         <p className="text-sm leading-relaxed text-tinta-suave">
           <strong className="text-tinta">
-            Total devido, base de cálculo e comissão são sempre calculados —
-            nunca digitados.
+            O total devido é calculado a partir do contrato.
           </strong>{" "}
-          Você informa só os fatos (valores do contrato e o que foi recebido);
-          o sistema aplica a regra única:
+          Você informa os valores do contrato e o que foi recebido; o sistema
+          acompanha o saldo:
         </p>
         <div className="mt-3 overflow-x-auto rounded border border-contorno bg-papel px-4 py-3 font-mono text-[13px] leading-7 text-tinta">
           total devido&nbsp;&nbsp;= valor + IPTU + cond.
           <br />
-          base&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=
-          recebido − IPTU − cond.
-          <br />
-          comissão&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= base × taxa (padrão 10%),
-          arredondada ao centavo
+          saldo em aberto = total devido − recebido
         </div>
         <p className="mt-3 text-sm leading-relaxed text-tinta-suave">
-          É a mesma fórmula da planilha COMISSÃO de sempre — na migração, o
-          sistema reproduziu a planilha <strong>ao centavo</strong>, linha por
-          linha. Se um número parecer estranho, o caminho é conferir o
-          lançamento (recebido, IPTU, condomínio, taxa), nunca editar o
-          resultado: ele não é editável em lugar nenhum. A taxa gravada em
-          cada lançamento é um retrato do momento — mudar a taxa vigente hoje
-          não altera meses já lançados.
+          Se um número parecer estranho, confira o contrato e os pagamentos
+          registrados antes de corrigir a origem do lançamento.
         </p>
       </Card>
 

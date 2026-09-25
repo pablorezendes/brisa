@@ -13,7 +13,7 @@ import {
   btnSecundario,
   inputBase,
 } from "@/components/ui";
-import { calcularRecebimento, comissaoTotal } from "@/lib/dominio/comissao";
+import { calcularRecebimento } from "@/lib/dominio/comissao";
 import { statusVisualBoleto } from "@/lib/dominio/boletos";
 import { formatarBRL } from "@/lib/dominio/dinheiro";
 import { formatarCompetencia } from "@/lib/dominio/normalizacao";
@@ -127,12 +127,10 @@ export default async function PaginaRecebimentos({
       t.cond += r.cond;
       t.total += calc.totalDevido ?? 0;
       t.recebido += r.recebido ?? 0;
-      t.base += calc.baseCalculo ?? 0;
       return t;
     },
-    { valor: 0, iptu: 0, cond: 0, total: 0, recebido: 0, base: 0 }
+    { valor: 0, iptu: 0, cond: 0, total: 0, recebido: 0 }
   );
-  const totalComissao = comissaoTotal(exibidos);
   const pendentes = todasLinhas.filter(({ saldoAberto }) => saldoAberto > 0).length;
 
   // Totais da janela para a conferência (respeitam o filtro de empreendimento).
@@ -255,9 +253,7 @@ export default async function PaginaRecebimentos({
             <>
               <Badge cor="vermelho">Mês fechado</Badge>
               <span className="text-sm text-tinta-suave">
-                Comissão fechada:{" "}
-                <Dinheiro centavos={fechamento.comissaoTotal} destaque /> em{" "}
-                {fechamento.fechadoEm.toLocaleDateString("pt-BR")}
+                Fechado em {fechamento.fechadoEm.toLocaleDateString("pt-BR")}
               </span>
               <Link href={urlBase({ reabrir: "1" })} className={btnSecundario}>
                 Reabrir
@@ -311,7 +307,7 @@ export default async function PaginaRecebimentos({
 
       {/* Totais da janela — só no modo período (conferência) */}
       {periodo ? (
-        <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Kpi
             rotulo="Devido no período"
             valor={<Dinheiro centavos={totais.total} />}
@@ -350,23 +346,14 @@ export default async function PaginaRecebimentos({
             }
             ajuda="Cobranças da janela cujo total devido ainda supera o recebido. Pagamentos parciais permanecem em âmbar até a quitação."
           />
-          <Kpi
-            rotulo="Comissão no período"
-            valor={<Dinheiro centavos={totalComissao} />}
-            detalhe="taxa de cada lançamento sobre a base recebida"
-            nivel="info"
-            selo="total da janela"
-            ajuda="Soma das comissões de todos os lançamentos da janela: base de cálculo (recebido − IPTU − condomínio) × taxa do lançamento, centavo a centavo. É a mesma conta da coluna Comissão."
-          />
         </div>
       ) : null}
 
       {confirmarReabrir && fechamento ? (
         <Card className="mb-4 border-ambar/40 bg-ambar/10 p-4">
           <p className="text-sm">
-            Reabrir <strong>{formatarCompetencia(mes)}</strong>? O fechamento de{" "}
-            <Dinheiro centavos={fechamento.comissaoTotal} destaque /> será
-            apagado e os lançamentos voltarão a aceitar alterações.
+            Reabrir <strong>{formatarCompetencia(mes)}</strong>? O fechamento
+            será desfeito e os lançamentos voltarão a aceitar alterações.
           </p>
           <div className="mt-3 flex gap-2">
             <form action={reabrirMes}>
@@ -440,15 +427,15 @@ export default async function PaginaRecebimentos({
                 <th>Localização</th>
                 <th style={{ textAlign: "right" }}>
                   Valor{" "}
-                  <Ajuda dica="Aluguel-base do contrato, sem IPTU nem condomínio. É a única parte que gera comissão para a administradora." />
+                  <Ajuda dica="Aluguel-base do contrato, sem IPTU nem condomínio." />
                 </th>
                 <th style={{ textAlign: "right" }}>
                   IPTU{" "}
-                  <Ajuda dica="Repasse: o locatário paga junto e o valor vai para o proprietário. Não entra na comissão — o sistema já desconta sozinho." />
+                  <Ajuda dica="IPTU cobrado junto com o aluguel, incluído no total devido." />
                 </th>
                 <th style={{ textAlign: "right" }}>
                   Cond.{" "}
-                  <Ajuda dica="Condomínio cobrado junto com o aluguel. Assim como o IPTU, é repasse ao proprietário e fica fora da comissão." />
+                  <Ajuda dica="Condomínio cobrado junto com o aluguel, incluído no total devido." />
                 </th>
                 <th style={{ textAlign: "right" }}>
                   Total{" "}
@@ -465,14 +452,6 @@ export default async function PaginaRecebimentos({
                 <th>
                   Boleto{" "}
                   <Ajuda dica="Situação do título no Sicoob. 'Pagamento informado' ainda aguarda a confirmação de liquidação antes da baixa financeira." />
-                </th>
-                <th style={{ textAlign: "right" }}>
-                  Base de cálculo{" "}
-                  <Ajuda dica="Recebido − IPTU − condomínio: só a parte de aluguel do que entrou. É sobre ela que incide a comissão. Calculada automaticamente." />
-                </th>
-                <th style={{ textAlign: "right" }}>
-                  Comissão{" "}
-                  <Ajuda dica="Base de cálculo × taxa do lançamento (padrão 10%), arredondada ao centavo. Ex.: recebeu R$ 5.747,92 com IPTU de R$ 400,92 → base R$ 5.347,00 → comissão R$ 534,70." />
                 </th>
                 <th>Data</th>
                 <th>
@@ -491,7 +470,7 @@ export default async function PaginaRecebimentos({
               {linhas.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={comMes ? 18 : 17}
+                    colSpan={comMes ? 16 : 15}
                     className="py-6 text-center text-tinta-suave/60"
                   >
                     {periodo
@@ -550,8 +529,6 @@ export default async function PaginaRecebimentos({
                         <span className="text-tinta-suave">—</span>
                       )}
                     </td>
-                    <td className="text-right"><Dinheiro centavos={calc.baseCalculo} /></td>
-                    <td className="text-right"><Dinheiro centavos={calc.comissao} destaque /></td>
                     <td>{formatarDataBR(r.dataPagamento)}</td>
                     <td>
                       {r.competencia === r.mesLancamento ? (
@@ -605,8 +582,6 @@ export default async function PaginaRecebimentos({
                   <td className="text-right"><Dinheiro centavos={totais.recebido} /></td>
                   <td className="text-right"><Dinheiro centavos={valorPendente} destaque /></td>
                   <td></td>
-                  <td className="text-right"><Dinheiro centavos={totais.base} /></td>
-                  <td className="text-right"><Dinheiro centavos={totalComissao} destaque /></td>
                   <td colSpan={5}></td>
                 </tr>
               </tfoot>
@@ -641,7 +616,7 @@ function FormRegistrar({
       <p className="mb-3 text-xs text-tinta-suave">
         Total devido: {formatarBRL(calc.totalDevido)} (valor {formatarBRL(lancamento.valor)}
         {" + "}IPTU {formatarBRL(lancamento.iptu)} + cond. {formatarBRL(lancamento.cond)})
-        — IPTU e condomínio são repasses e não entram na comissão.
+        — IPTU e condomínio compõem o total devido.
       </p>
       <form action={registrarRecebimento} className="flex flex-wrap items-end gap-3">
         <input type="hidden" name="id" value={lancamento.id} />

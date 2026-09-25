@@ -472,7 +472,7 @@ function mostrarRotulo(n: number, i: number, forcar = false): boolean {
 export function BarrasMensais({
   valores,
   mesSelecionado,
-  rotuloAcessivel = "Comissão mês a mês",
+  rotuloAcessivel = "Valores mês a mês",
   cor = COR_1,
   rotulos,
 }: {

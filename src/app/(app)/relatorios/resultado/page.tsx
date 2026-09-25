@@ -42,8 +42,8 @@ export default async function ResultadoPage({
         titulo="Resultado consolidado"
         descricao={
           periodo
-            ? `Totais acumulados no período ${periodo.rotulo} por unidade: recebidos, repasses, base de cálculo e comissão.`
-            : `Totais acumulados de ${ano} por unidade: recebidos, repasses, base de cálculo e comissão.`
+            ? `Totais acumulados no período ${periodo.rotulo} por unidade: recebidos e repasses.`
+            : `Totais acumulados de ${ano} por unidade: recebidos e repasses.`
         }
         acoes={
           <div className="flex flex-wrap items-center gap-2">
@@ -69,8 +69,6 @@ export default async function ResultadoPage({
                 <th className="text-right">Recebidos</th>
                 <th className="text-right">IPTU</th>
                 <th className="text-right">Cond.</th>
-                <th className="text-right">Base de cálculo</th>
-                <th className="text-right">Comissão</th>
               </tr>
             </thead>
             <tbody>
@@ -90,17 +88,11 @@ export default async function ResultadoPage({
                   <td className="text-right">
                     <Dinheiro centavos={l.cond} />
                   </td>
-                  <td className="text-right">
-                    <Dinheiro centavos={l.base} />
-                  </td>
-                  <td className="text-right">
-                    <Dinheiro centavos={l.comissao} destaque />
-                  </td>
                 </tr>
               ))}
               {resultado.linhas.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-6 text-center text-tinta-suave">
+                  <td colSpan={6} className="py-6 text-center text-tinta-suave">
                     Nenhum recebimento lançado {janelaCurta}.
                   </td>
                 </tr>
@@ -117,12 +109,6 @@ export default async function ResultadoPage({
                 </td>
                 <td className="text-right">
                   <Dinheiro centavos={resultado.totalGeral.cond} destaque />
-                </td>
-                <td className="text-right">
-                  <Dinheiro centavos={resultado.totalGeral.base} destaque />
-                </td>
-                <td className="text-right">
-                  <Dinheiro centavos={resultado.totalGeral.comissao} destaque />
                 </td>
               </tr>
             </tfoot>

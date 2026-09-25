@@ -10,19 +10,11 @@ export const metadata = { title: "Relatórios — Brisa" };
 const SECOES = (ano: number, mes: string, qsPeriodo: string | null) => [
   {
     href: qsPeriodo
-      ? `/relatorios/comissao?${qsPeriodo}`
-      : `/relatorios/comissao?ano=${ano}`,
-    titulo: "Matriz de comissão",
-    descricao:
-      "Comissão por empreendimento × mês, com totais por linha e por mês. Equivale à aba COMISSÃO da planilha.",
-  },
-  {
-    href: qsPeriodo
       ? `/relatorios/resultado?${qsPeriodo}`
       : `/relatorios/resultado?ano=${ano}`,
     titulo: "Resultado consolidado",
     descricao:
-      "Recebidos, IPTU, condomínio, base de cálculo e comissão acumulados na janela, por unidade. Equivale à aba RESULTADO.",
+      "Recebidos, IPTU e condomínio acumulados na janela, por unidade.",
   },
   {
     href: qsPeriodo

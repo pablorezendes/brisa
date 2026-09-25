@@ -276,8 +276,7 @@ export function FormularioContrato({
           </label>
         </div>
         <p className="mt-3 text-xs text-tinta-suave">
-          IPTU e condomínio são repasses: compõem o total devido, mas nunca
-          entram na base de cálculo da comissão.
+          IPTU e condomínio compõem o total devido do contrato.
         </p>
       </Card>
 

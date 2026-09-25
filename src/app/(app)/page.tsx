@@ -18,20 +18,16 @@ import {
 import {
   AreaTendencia,
   BarraComposicao,
-  BarrasHorizontais,
   BarrasMensais,
   COR_1,
   COR_2,
   Sparkline,
 } from "@/components/graficos";
 import {
-  comissaoDoMesPorEmpreendimento,
-  comissaoDoPeriodoPorEmpreendimento,
   contratosAReajustarDoMes,
   contratosAReajustarDoPeriodo,
   kpisDoMes,
   kpisDoPeriodo,
-  matrizComissao,
   mesMaisRecenteComLancamentos,
   pendentesDoMes,
   pendentesDoPeriodo,
@@ -81,20 +77,19 @@ export default async function Home({
   //  de N competências + série da própria janela)
   const vm = periodo
     ? await (async () => {
-        const [k, porEmp, reajustes, pendentes] = await Promise.all([
+        const [k, reajustes, pendentes] = await Promise.all([
           kpisDoPeriodo(periodo.meses),
-          comissaoDoPeriodoPorEmpreendimento(periodo.meses),
           contratosAReajustarDoPeriodo(periodo.meses),
           pendentesDoPeriodo(periodo.meses),
         ]);
         return {
           janela: periodo.rotulo,
           janelaCurta: "no período",
-          comissao: k.comissaoTotal,
-          serie: k.comissaoPorMes,
+          serie: k.recebidoPorMes,
+          serieDevido: k.devidoPorMes,
           rotulosSerie: rotulosCompetencias(periodo.meses),
           destaqueSerie: undefined as number | undefined,
-          tituloSerie: `Comissão mês a mês — ${periodo.rotulo}`,
+          tituloSerie: `Recebimentos mês a mês — ${periodo.rotulo}`,
           inadimplencia: k.inadimplencia,
           devido: k.devidoTotal,
           recebido: k.recebidoTotal,
@@ -102,28 +97,27 @@ export default async function Home({
           reajustesQtde: k.contratosAReajustar,
           saldoCaixa: k.saldoCaixa,
           lucroTemporada: k.lucroTemporada,
-          porEmp,
           reajustes,
           pendentes,
           comMesNaTabela: periodo.meses.length > 1,
         };
       })()
     : await (async () => {
-        const [k, porEmp, reajustes, pendentes, matriz] = await Promise.all([
+        const mesesAno = Array.from({ length: 12 }, (_, i) => `${ano}-${String(i + 1).padStart(2, "0")}`);
+        const [k, serieAno, reajustes, pendentes] = await Promise.all([
           kpisDoMes(mes),
-          comissaoDoMesPorEmpreendimento(mes),
+          kpisDoPeriodo(mesesAno),
           contratosAReajustarDoMes(mes),
           pendentesDoMes(mes),
-          matrizComissao(ano),
         ]);
         return {
           janela: formatarCompetencia(mes),
           janelaCurta: `em ${formatarCompetencia(mes)}`,
-          comissao: k.comissaoMes,
-          serie: matriz.totalPorMes,
+          serie: serieAno.recebidoPorMes,
+          serieDevido: serieAno.devidoPorMes,
           rotulosSerie: undefined as string[] | undefined,
           destaqueSerie: mesNum as number | undefined,
-          tituloSerie: `Comissão mês a mês em ${ano}`,
+          tituloSerie: `Recebimentos mês a mês em ${ano}`,
           inadimplencia: k.inadimplencia,
           devido: k.devidoMes,
           recebido: k.recebidoMes,
@@ -131,7 +125,6 @@ export default async function Home({
           reajustesQtde: k.contratosAReajustar,
           saldoCaixa: k.saldoCaixaMes,
           lucroTemporada: k.lucroTemporadaMes,
-          porEmp,
           reajustes,
           pendentes: pendentes.map((p) => ({ ...p, mes })),
           comMesNaTabela: false,
@@ -146,9 +139,7 @@ export default async function Home({
   // links de aprofundamento carregam a MESMA janela em tela: os destinos
   // aceitam ?de/?ate e o clique tem de bater com o que o card afirma
   const qs = periodo ? `de=${periodo.de}&ate=${periodo.ate}` : `mes=${mes}`;
-  const qsAno = periodo ? qs : `ano=${ano}`;
-
-  // ---- tipo de gráfico da curva de comissão (?g=) ------------------------
+  // ---- tipo de gráfico da curva de recebimentos (?g=) ---------------------
   const TIPOS_GRAFICO = [
     { valor: "area", rotulo: "Área" },
     { valor: "linha", rotulo: "Linha" },
@@ -182,21 +173,6 @@ export default async function Home({
   const nivelReaj = nivelTarefas(vm.reajustesQtde, periodo ? 8 * Math.max(1, periodo.meses.length / 2) : 8);
   const nivelTemporada: Nivel =
     vm.lucroTemporada > 0 ? "otimo" : vm.lucroTemporada < 0 ? "critico" : "neutro";
-
-  // comissão da janela vs. média dos meses com movimento da série
-  const mesesComComissao = vm.serie.filter((v) => v > 0);
-  const mediaComissao = mesesComComissao.length
-    ? mesesComComissao.reduce((a, v) => a + v, 0) / mesesComComissao.length
-    : 0;
-  const nivelComissao: Nivel = periodo
-    ? "info"
-    : mediaComissao === 0
-      ? "neutro"
-      : vm.comissao >= mediaComissao
-        ? "otimo"
-        : vm.comissao >= mediaComissao * 0.85
-          ? "info"
-          : "atencao";
 
   const vencidasGraves = vm.pendentes.filter(
     (p) => p.diasDesdeVencimento !== null && p.diasDesdeVencimento > 30
@@ -257,19 +233,14 @@ export default async function Home({
       )
     : vm.reajustes;
 
-  const rankingEmp = vm.porEmp
-    .filter((c) => c.comissao > 0)
-    .slice(0, 6)
-    .map((c) => ({ rotulo: c.empreendimento, valor: c.comissao }));
-
   return (
     <div className="max-w-7xl">
       <PageHeader
         titulo="Visão geral"
         descricao={
           periodo
-            ? `Resumo gerencial do período ${periodo.rotulo} — comissão, inadimplência, reajustes, caixa e temporada.`
-            : `Resumo gerencial de ${vm.janela} — comissão, inadimplência, reajustes, caixa e temporada.`
+            ? `Resumo gerencial do período ${periodo.rotulo} — recebimentos, inadimplência, reajustes, caixa e temporada.`
+            : `Resumo gerencial de ${vm.janela} — recebimentos, inadimplência, reajustes, caixa e temporada.`
         }
         acoes={
           <div className="flex flex-wrap items-center gap-2">
@@ -288,7 +259,7 @@ export default async function Home({
       {/* ---------- indicadores, do mais decisivo ao menos ----------
            Ordem pedida pelo cliente: primeiro o que decide o dia (o caixa, o
            que falta entrar, quanto do devido entrou); depois o que é tarefa e
-           resultado (reajustes na mesa, comissão, temporada). */}
+           resultado (reajustes na mesa, recebimentos, temporada). */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Kpi
           rotulo={periodo ? "Saldo de caixa no período" : "Saldo de caixa do mês"}
@@ -381,46 +352,18 @@ export default async function Home({
           href={vm.reajustesQtde > 0 ? "/contratos" : undefined}
           ajuda="Contratos que fazem aniversário de correção na janela em análise. É hora de aplicar o índice (IGP-M, IPCA...) e atualizar o valor do aluguel na tela de Contratos — o sistema não reajusta sozinho."
         />
-        {/* comissão do mês e acumulada do ano no MESMO card — são a mesma
-            história contada em dois prazos, não merecem dois cartões */}
         <Kpi
-          rotulo={periodo ? "Comissão no período" : "Comissão do mês"}
-          valor={<Dinheiro centavos={vm.comissao} />}
-          detalhe={
-            periodo
-              ? `${periodo.meses.length} ${periodo.meses.length === 1 ? "competência" : "competências"} somadas`
-              : `mês de lançamento ${vm.janela}`
-          }
+          rotulo={periodo ? "Recebido no período" : "Recebido no mês"}
+          valor={<Dinheiro centavos={vm.recebido} />}
+          detalhe="Pagamentos registrados de aluguel e repasses"
           secundario={{
-            rotulo: periodo ? "média mensal" : `acumulada JAN–${vm.janela}`,
-            valor: (
-              <Dinheiro
-                centavos={
-                  periodo
-                    ? Math.round(vm.comissao / Math.max(1, periodo.meses.length))
-                    : vm.serie.slice(0, mesNum).reduce((a, v) => a + v, 0)
-                }
-              />
-            ),
+            rotulo: "total devido",
+            valor: <Dinheiro centavos={vm.devido} />,
           }}
-          nivel={nivelComissao}
-          selo={
-            periodo
-              ? "total da janela"
-              : nivelComissao === "otimo"
-                ? "acima da média"
-                : nivelComissao === "info"
-                  ? "na média"
-                  : "abaixo da média"
-          }
-          nota={
-            !periodo && mediaComissao > 0 && vm.comissao < mediaComissao * 0.85
-              ? `Média dos meses com movimento no ano: ${formatarBRL(Math.round(mediaComissao))}. Confira se faltam recebimentos por lançar.`
-              : undefined
-          }
+          nivel={nivelTaxa}
           grafico={<Sparkline valores={vm.serie} rotulos={vm.rotulosSerie} />}
-          href={`/relatorios/comissao?${qsAno}`}
-          ajuda="O que a administradora ganhou na janela em análise: a taxa vigente (padrão 10%) sobre o aluguel efetivamente recebido — e, na linha de baixo, o acumulado do ano até aqui. IPTU e condomínio são repasses ao proprietário e nunca entram na conta."
+          href={`/recebimentos?${qs}`}
+          ajuda="Soma dos pagamentos registrados na janela, incluindo repasses de IPTU e condomínio quando cobrados junto com o aluguel."
         />
         <Kpi
           rotulo={periodo ? "Lucro temporada no período" : "Lucro temporada"}
@@ -639,25 +582,16 @@ export default async function Home({
           </div>
         )}
 
-      {/* ---------- as duas leituras da comissão, lado a lado ---------- */}
+      {/* ---------- evolução de cobranças e pagamentos ---------- */}
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
-        {/* ---------- comissão da janela, mês a mês ---------- */}
         <Card className="px-5 py-4">
           <TituloCard
             titulo={vm.tituloSerie}
-            ajuda="O ganho da administradora pelo mês de lançamento de cada cobrança. Escolha a forma de ver: Área e Linha mostram a tendência, Barras comparam mês a mês, Acumulado soma o ano até cada mês. A curva termina no último mês com movimento — meses à frente ainda não aconteceram e não valem como zero."
+            ajuda="Pagamentos registrados em cada competência. Alterne entre área, linha, barras e acumulado para acompanhar a evolução."
             direita={
-              <>
-                <span className="font-mono text-[12px] text-tinta-suave">
-                  total:{" "}
-                  <strong className="text-tinta">
-                    {formatarBRL(vm.serie.reduce((a, v) => a + v, 0))}
-                  </strong>
-                </span>
-                <LinkCard href={`/relatorios/comissao?${qsAno}`}>
-                  Matriz completa
-                </LinkCard>
-              </>
+              <span className="font-mono text-[12px] text-tinta-suave">
+                total: <strong className="text-tinta">{formatarBRL(vm.serie.reduce((a, v) => a + v, 0))}</strong>
+              </span>
             }
           />
           <div className="mb-3">
@@ -686,49 +620,28 @@ export default async function Home({
           )}
           <p className="mt-2 text-xs text-tinta-suave">
             {tipoGrafico === "acumulado"
-              ? "Cada ponto é a soma de tudo o que entrou de comissão até aquele mês — a curva só sobe."
+              ? "Cada ponto soma os pagamentos registrados até aquele mês."
               : tipoGrafico === "barras"
-                ? "Cada coluna é o ganho daquele mês; a etiqueta marca o mês em tela e o melhor do ano."
+                ? "Cada coluna mostra o recebido naquele mês."
                 : "Passe o mouse em qualquer ponto para ver o valor exato do mês."}
           </p>
         </Card>
 
-        {/* ---------- comissão por empreendimento ---------- */}
         <Card className="px-5 py-4">
           <TituloCard
-            titulo={
-              periodo
-                ? "Comissão por empreendimento no período"
-                : "Comissão por empreendimento no mês"
-            }
-            ajuda="De onde veio o ganho da administradora na janela em análise. A barra compara cada empreendimento com o maior deles — quanto mais curta, menor a participação. Serve para ver de quem o resultado depende."
-            direita={
-              <LinkCard href={`/relatorios/comissao?${qsAno}`}>
-                Matriz completa
-              </LinkCard>
-            }
+            titulo={periodo ? `Cobranças devidas — ${periodo.rotulo}` : `Cobranças devidas em ${ano}`}
+            ajuda="Total devido em cada competência, antes de descontar os pagamentos registrados. Compare com o gráfico de recebimentos ao lado."
+            direita={<span className="font-mono text-[12px] text-tinta-suave">total: <strong className="text-tinta">{formatarBRL(vm.serieDevido.reduce((a, v) => a + v, 0))}</strong></span>}
           />
-          {rankingEmp.length > 0 ? (
-            <>
-              <BarrasHorizontais itens={rankingEmp} cor={COR_1} />
-              {vm.porEmp.length > rankingEmp.length ? (
-                <p className="mt-2 text-xs text-tinta-suave">
-                  Mostrando os {rankingEmp.length} maiores de {vm.porEmp.length}{" "}
-                  empreendimentos com comissão na janela.
-                </p>
-              ) : null}
-              <div className="mt-3 flex items-center justify-between border-t border-contorno pt-2.5 text-sm">
-                <span className="font-semibold text-tinta">
-                  Total {periodo ? "do período" : "do mês"}
-                </span>
-                <Dinheiro centavos={vm.comissao} destaque />
-              </div>
-            </>
-          ) : (
-            <p className="py-8 text-center text-sm text-tinta-suave">
-              Nenhuma comissão {nomeJanela}.
-            </p>
-          )}
+          <BarrasMensais
+            valores={vm.serieDevido}
+            mesSelecionado={vm.destaqueSerie}
+            rotulos={vm.rotulosSerie}
+            rotuloAcessivel="Cobranças devidas mês a mês"
+          />
+          <p className="mt-2 text-xs text-tinta-suave">
+            Valores contratuais de aluguel, IPTU e condomínio lançados em cada mês.
+          </p>
         </Card>
       </div>
 

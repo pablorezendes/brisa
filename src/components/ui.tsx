@@ -402,7 +402,7 @@ export function Alerta({ item }: { item: ItemAlerta }) {
 export function PainelAlertas({
   itens,
   ajuda,
-  vazio = "Nada pedindo atenção neste mês — comissão em dia, cobranças recebidas e nenhum reajuste a aplicar.",
+  vazio = "Nada pedindo atenção neste mês — cobranças recebidas e nenhum reajuste a aplicar.",
 }: {
   itens: ItemAlerta[];
   ajuda?: string;

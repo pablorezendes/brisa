@@ -39,7 +39,7 @@ const RE_MES = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 type IconeFinanceiro = Extract<
   IconeMenuNome,
-  "recebimentos" | "boletos" | "contas-bancarias" | "integracao" | "cobranca" | "caixa" | "comissoes" | "reajustes"
+  "recebimentos" | "boletos" | "contas-bancarias" | "integracao" | "cobranca" | "caixa" | "reajustes"
 >;
 
 function percentual(valor: number | null): string {
@@ -196,7 +196,7 @@ export default async function PaginaFinanceiro({
     podeAuditarMigracao ? listarUnificados({ dominio: "PAGAR", mes, porPagina: 1 }) : Promise.resolve(null),
     podeAuditarMigracao ? listarUnificados({ dominio: "MOVIMENTO", mes, porPagina: 1 }) : Promise.resolve(null),
   ]);
-  const { ano, mes: mesNumero } = parseCompetencia(mes);
+  const { mes: mesNumero } = parseCompetencia(mes);
   const linhaAnterior = mesNumero > 1 ? dados.porMes[mesNumero - 2] : null;
 
   const nivelTaxa = nivelTaxaRecebimento(dados.taxaRecebimento);
@@ -291,19 +291,11 @@ export default async function PaginaFinanceiro({
     });
   }
 
-  const maioresComissoes = dados.porEmpreendimento
-    .filter((item) => item.comissaoMes > 0)
-    .slice(0, 4);
-  const maiorComissao = Math.max(
-    1,
-    ...maioresComissoes.map((item) => item.comissaoMes),
-  );
-
   return (
     <div>
       <PageHeader
         titulo="Financeiro"
-        descricao="Uma central para acompanhar o que deve entrar, priorizar cobranças e manter caixa, comissões e reajustes sob controle."
+        descricao="Uma central para acompanhar recebimentos, priorizar cobranças e manter caixa e reajustes sob controle."
         acoes={
           <>
             <Link href={`/executivo?mes=${mes}`} className={btnSecundario}>
@@ -448,15 +440,6 @@ export default async function PaginaFinanceiro({
           selo={dados.caixaMes ? (dados.saldoCaixaMes >= 0 ? "positivo" : "negativo") : undefined}
           href={`/caixa?visao=livro&mes=${mes}`}
           ajuda="Entradas menos as saídas AL e CH no livro-caixa. Recebimentos em espécie ficam fora desse saldo."
-        />
-        <Kpi
-          rotulo="Comissão"
-          valor={<Dinheiro centavos={dados.comissaoMes} destaque />}
-          detalhe={<><Sigilo>{formatarBRL(dados.comissaoAcumuladaAno)}</Sigilo> acumulados em {ano}</>}
-          nivel={dados.comissaoMes > 0 ? "info" : "neutro"}
-          selo={dados.comissaoMes > 0 ? "apurada" : undefined}
-          href={`/relatorios/comissao?ano=${ano}`}
-          ajuda="Comissão calculada sobre o aluguel efetivamente recebido, sem incluir IPTU e condomínio."
         />
       </div>
 
@@ -680,57 +663,6 @@ export default async function PaginaFinanceiro({
         ) : null}
 
         <ModuloFinanceiro
-          icone="comissoes"
-          titulo="Comissões"
-          descricao="Acompanhe o ganho da administradora por empreendimento."
-          nivel={dados.comissaoMes > 0 ? "info" : "neutro"}
-          status={dados.comissaoMes > 0 ? "apurada" : "sem base"}
-          href={`/relatorios/comissao?ano=${ano}`}
-          acao="Abrir matriz"
-          hrefSecundario={`/executivo?mes=${mes}`}
-          acaoSecundaria="Ver análise"
-          className="xl:col-span-6"
-        >
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-            <MiniValor
-              rotulo="Comissão do mês"
-              valor={<Dinheiro centavos={dados.comissaoMes} destaque />}
-              destaque
-            />
-            <MiniValor
-              rotulo={`Acumulado ${ano}`}
-              valor={<Dinheiro centavos={dados.comissaoAcumuladaAno} />}
-            />
-          </div>
-          {maioresComissoes.length > 0 ? (
-            <div className="space-y-2.5">
-              {maioresComissoes.map((item) => (
-                <div key={item.id} className="grid grid-cols-[minmax(80px,0.8fr)_1.4fr_auto] items-center gap-3">
-                  <span className="truncate text-[10px] font-semibold text-tinta-suave">
-                    {item.nome}
-                  </span>
-                  <span className="h-1.5 overflow-hidden rounded-full bg-[#e9eef0]">
-                    <span
-                      className="block h-full rounded-full bg-[#4a68a8]"
-                      style={{
-                        width: `${Math.max(5, Math.round((item.comissaoMes / maiorComissao) * 100))}%`,
-                      }}
-                    />
-                  </span>
-                  <span className="font-mono text-[10px] font-semibold text-tinta">
-                    <Sigilo>{formatarBRL(item.comissaoMes)}</Sigilo>
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-[12px] text-tinta-suave">
-              A comissão aparece conforme os recebimentos são registrados.
-            </p>
-          )}
-        </ModuloFinanceiro>
-
-        <ModuloFinanceiro
           icone="reajustes"
           titulo="Reajustes"
           descricao="Veja os contratos que fazem aniversário nesta competência."
@@ -774,7 +706,7 @@ export default async function PaginaFinanceiro({
       </div>
 
       <p className="mt-5 text-[10px] leading-relaxed text-tinta-suave/70">
-        O hub consolida recebimentos, livro-caixa, comissão e contratos já registrados no Brisa. Valores de IPTU e condomínio são repasses e não entram na base da comissão.
+        O hub consolida recebimentos, livro-caixa e contratos já registrados no Brisa. Valores de IPTU e condomínio são repasses.
       </p>
     </div>
   );

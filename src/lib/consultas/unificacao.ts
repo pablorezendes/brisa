@@ -1,7 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { notFound } from "next/navigation";
-import { perfilAtual } from "../autorizacao";
+import { perfilAtual, perfilPodeVerComissoes } from "../autorizacao";
 import { prisma } from "../db";
 import { normalizar } from "../dominio/normalizacao";
 import { lerOperacaoUnificada } from "../unificacao/servico";
@@ -11,8 +11,12 @@ import { DOMINIOS_UNIFICACAO, type FiltrosUnificacao, type LinhaUnificada, type 
 const ler = cache(async () => {
   const perfil = await perfilAtual();
   if (!["ADMINISTRADOR", "FINANCEIRO"].includes(perfil)) notFound();
-  return lerOperacaoUnificada(prisma);
+  return { ...(await lerOperacaoUnificada(prisma)), perfil };
 });
+
+const parametroReservado = (linha: LinhaUnificada) =>
+  linha.dominio === "PARAMETRO" &&
+  /COMISS|TAXA.{0,20}ADMINISTR/.test(normalizar(`${linha.titulo} ${linha.descricao}`));
 
 export function hojeUnificacao(): string {
   const partes = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
@@ -21,7 +25,7 @@ export function hojeUnificacao(): string {
 const venceu = (linha: LinhaUnificada, hoje: string) => !linha.cancelado && (linha.aberto ?? 0) > 0 && Boolean(linha.vencimento && linha.vencimento < hoje);
 
 export async function listarUnificados(filtros: FiltrosUnificacao = {}): Promise<ListaUnificada> {
-  const { linhas, decisoes } = await ler();
+  const { linhas, decisoes, perfil } = await ler();
   const hoje = hojeUnificacao();
   const q = normalizar(filtros.q?.slice(0,120));
   const dominio = DOMINIOS_UNIFICACAO.find(d => d === filtros.dominio);
@@ -29,6 +33,7 @@ export async function listarUnificados(filtros: FiltrosUnificacao = {}): Promise
   const de = /^\d{4}-\d{2}-\d{2}$/.test(filtros.de ?? "") ? filtros.de : null;
   const ate = /^\d{4}-\d{2}-\d{2}$/.test(filtros.ate ?? "") ? filtros.ate : null;
   const universo = linhas.filter(l => {
+    if (!perfilPodeVerComissoes(perfil) && parametroReservado(l)) return false;
     if (dominio && l.dominio !== dominio) return false;
     if (q && !normalizar(`${l.titulo} ${l.descricao} ${Object.values(l.campos).map(c => c.valor).join(" ")}`).includes(q)) return false;
     if (mes && mesOperacionalUnificado(l) !== mes) return false;
@@ -68,12 +73,12 @@ export async function listarUnificados(filtros: FiltrosUnificacao = {}): Promise
 }
 
 export async function detalheUnificado(chave: string, buscaDestino?: string) {
-  const { linhas, fontes } = await ler();
+  const { linhas, fontes, perfil } = await ler();
   const registro = linhas.find(l => l.chave === chave);
-  if (!registro) return null;
+  if (!registro || (!perfilPodeVerComissoes(perfil) && parametroReservado(registro))) return null;
   const chaves = new Set(registro.candidatos.map(c => c.chave));
   const busca = normalizar(buscaDestino?.slice(0,120));
-  const candidatos = linhas.filter(l => l.chave !== chave && l.dominio === registro.dominio && l.estado === "ATIVO" && (!busca ? chaves.has(l.chave) : normalizar(`${l.titulo} ${l.descricao}`).includes(busca))).slice(0,100);
+  const candidatos = linhas.filter(l => l.chave !== chave && l.dominio === registro.dominio && l.estado === "ATIVO" && (perfilPodeVerComissoes(perfil) || !parametroReservado(l)) && (!busca ? chaves.has(l.chave) : normalizar(`${l.titulo} ${l.descricao}`).includes(busca))).slice(0,100);
   const historico = await prisma.unificacaoDecisao.findMany({ where: { registroChave: chave }, orderBy: { criadoEm: "desc" }, take: 30, select: { acao: true, justificativa: true, criadoEm: true } });
   const chavesFonte = new Set(registro.fontes);
   const associadas = fontes.filter(f => chavesFonte.has(f.chave));
