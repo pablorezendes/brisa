@@ -58,6 +58,159 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Configuração não contém credenciais em claro. Env AUTOMACOES_CHAVE cifra tokens.
+model ConfiguracaoComunicacao {
+  id                    String   @id @default("cobranca")
+  dados                 String   @default("{}")
+  emailTokenCifrado      String?
+  whatsappTokenCifrado   String?
+  versao                Int      @default(1)
+  atualizadoPor         String
+  criadoEm              DateTime @default(now())
+  atualizadoEm          DateTime @updatedAt
+}
+
+// Contato importado não é autorização de envio. Evidência e revogação explícitas.
+model ContatoCobranca {
+  id             String   @id @default(uuid())
+  pessoaChave    String
+  canal          String
+  destino        String
+  autorizado     Boolean  @default(false)
+  evidencia      String
+  revisadoPor    String
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
+
+  @@unique([pessoaChave, canal, destino])
+  @@index([canal, destino, autorizado])
+}
+
+model MensagemCobranca {
+  id             String   @id @default(uuid())
+  chave          String   @unique
+  tituloChave    String
+  pessoaChave    String
+  contatoId      String
+  canal          String
+  etapa          String
+  destino        String
+  conteudo       String
+  fonteHash      String
+  fontes         String   @default("[]")
+  configVersao   Int
+  status         String   @default("AGENDADA")
+  tentativas     Int      @default(0)
+  proximoEnvio   DateTime @default(now())
+  reservadoEm    DateTime?
+  providerId     String?  @unique
+  erroCodigo     String?
+  criadoPor      String
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
+  enviadoEm      DateTime?
+
+  @@index([status, proximoEnvio])
+  @@index([tituloChave, canal])
+  @@index([contatoId])
+}
+
+model EventoComunicacao {
+  id             String   @id @default(uuid())
+  mensagemId     String?
+  tipo           String
+  codigo         String?
+  usuarioId      String?
+  criadoEm       DateTime @default(now())
+
+  @@index([mensagemId, criadoEm])
+}
+
+// Reserva atômica do worker: evita ultrapassar limites com cron concorrente.
+model TravaAutomacao {
+  id             String   @id
+  token          String
+  expiraEm       DateTime
+}
+
+// Inbox durável: callbacks podem chegar antes da resposta do envio.
+model RetornoComunicacao {
+  chave          String   @id
+  providerId     String
+  phoneNumberId  String
+  status         String
+  codigo         String?
+  ocorridoEm     DateTime
+  criadoEm       DateTime @default(now())
+
+  @@index([providerId])
+}
+
+model ConfiguracaoFiscal {
+  id                    String   @id @default("goiania")
+  provedor              String   @default("FOCUS")
+  ambiente              String   @default("HOMOLOGACAO")
+  habilitada            Boolean  @default(false)
+  emitenteCnpj           String   @default("")
+  inscricaoMunicipal    String   @default("")
+  razaoSocial           String   @default("")
+  codigoMunicipio       String   @default("5208707")
+  parametros            String   @default("{}")
+  homologacaoValidada   Boolean  @default(false)
+  atualizadoPor         String?
+  criadoEm              DateTime @default(now())
+  atualizadoEm          DateTime @updatedAt
+}
+
+model NotaFiscalServico {
+  id                    String   @id @default(uuid())
+  chaveIdempotencia      String   @unique
+  referencia            String   @unique
+  origemChave            String?
+  ambiente              String
+  status                String   @default("RASCUNHO")
+  emitenteCnpj           String
+  competencia           String
+  tomadorNome            String
+  tomadorDocumento       String
+  valorServico          Int
+  descricao             String
+  payload               String
+  payloadHash           String
+  configHash            String
+  numero                String?
+  codigoVerificacao     String?
+  protocolo             String?
+  urlDocumento          String?
+  erroCodigo            String?
+  erroMensagem          String?
+  tentativas            Int      @default(0)
+  lockEm                DateTime?
+  criadoPor             String
+  aprovadoPor           String?
+  aprovadoEm            DateTime?
+  transmitidoEm         DateTime?
+  consultadoEm          DateTime?
+  criadoEm              DateTime @default(now())
+  atualizadoEm          DateTime @updatedAt
+  eventos               EventoFiscal[]
+
+  @@index([status, criadoEm])
+  @@index([origemChave])
+}
+
+model EventoFiscal {
+  id             String   @id @default(uuid())
+  notaFiscalId   String
+  notaFiscal     NotaFiscalServico @relation(fields: [notaFiscalId], references: [id], onDelete: Restrict)
+  tipo           String
+  mensagem       String
+  usuarioId      String?
+  criadoEm       DateTime @default(now())
+
+  @@index([notaFiscalId, criadoEm])
+}
+
 // ---------- Autenticação ----------
 
 model Usuario {

@@ -516,6 +516,35 @@ lembre que com proxy os logs do Traefik passam a mostrar IPs do Cloudflare.
 
 ## Segurança — leia antes de divulgar a URL
 
+### NFS-e e central de comunicação (setembro/2026)
+
+O deploy acrescenta tabelas de rascunhos fiscais, configurações, autorização de
+contatos, fila, retornos e auditoria. Não altera valores da operação existente.
+Faça backup consistente antes do bootstrap (sem seed):
+
+```bash
+cd /srv/stack/acamargo
+git pull --ff-only origin main
+docker compose build brisa
+docker compose stop brisa
+mkdir -p backups
+cp -a dados "backups/dados-pre-fiscal-$(date +%Y%m%d-%H%M%S)"
+docker compose up -d brisa
+docker compose logs --tail 80 brisa
+curl --retry 12 --retry-delay 5 --retry-all-errors -fsSI https://brisa.tescod.com/login
+```
+
+Não rode `db:seed`, reimportação ou emissão para aplicar essa atualização.
+O banco local de desenvolvimento não deve ser copiado sobre o banco do servidor.
+Os módulos novos estão restritos a administradores. Envios e emissão em produção
+ficam desabilitados por padrão e dependem de configuração e homologação.
+
+Consulte [comunicação e cron](docs/comunicacoes-cobranca.md) e
+[NFS-e de Goiânia](docs/fiscal-goiania.md) para configuração. As variáveis novas
+constam em `docker-compose.yml`; apenas defini-las não autoriza disparos.
+
+### Acesso e dados privados
+
 - O repo GitHub está **público**: o histórico publicado foi sanitizado (sem
   `dev.db`/`dataset.json`), mas o ideal é torná-lo **privado**
   (Settings → General → Danger Zone → Change visibility).

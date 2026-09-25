@@ -28,6 +28,15 @@ services:
       - SICOOB_WEBHOOK_SECRET=${SICOOB_WEBHOOK_SECRET:-}
       - SICOOB_SYNC_SECRET=${SICOOB_SYNC_SECRET:-}
       - SICOOB_WEBHOOK_EMAIL=${SICOOB_WEBHOOK_EMAIL:-}
+      # Nenhum envio real até ativação explícita e configuração no painel.
+      - AUTOMACOES_ENVIO_HABILITADO=${AUTOMACOES_ENVIO_HABILITADO:-0}
+      - AUTOMACOES_CHAVE=${AUTOMACOES_CHAVE:-}
+      - WHATSAPP_API_VERSION=${WHATSAPP_API_VERSION:-}
+      - WHATSAPP_APP_SECRET=${WHATSAPP_APP_SECRET:-}
+      - WHATSAPP_WEBHOOK_VERIFY_TOKEN=${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-}
+      - FOCUS_NFSE_TOKEN_HOMOLOGACAO=${FOCUS_NFSE_TOKEN_HOMOLOGACAO:-}
+      - FOCUS_NFSE_TOKEN_PRODUCAO=${FOCUS_NFSE_TOKEN_PRODUCAO:-}
+      - FISCAL_EMISSAO_PRODUCAO=${FISCAL_EMISSAO_PRODUCAO:-0}
     volumes:
       - ./dados:/data          # banco SQLite (backup = copiar esta pasta)
       - ./data:/app/data       # dataset.json p/ seed + relatório de exceções

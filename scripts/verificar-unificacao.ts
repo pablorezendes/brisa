@@ -34,6 +34,9 @@ async function main() {
     ["/executivo?mes=2026-06", "Brisa"], ["/financeiro/comissoes?ano=2026", "Comissões"],
     ["/relatorios/resultado?mes=2026-06", "Brisa"], ["/paineis/cobranca?mes=2026-06", "Brisa"],
     ["/paineis/caixa?ano=2026", "Brisa"], ["/temporada", "Brisa"],
+    ["/financeiro/automacoes", "Automações de cobrança"],
+    ["/financeiro/notas-fiscais", "NFS-e"],
+    ["/financeiro/notas-fiscais/configuracao", "Goiânia"],
   ]) await verificar(rota, 200, sessao, marcador);
   const pendente = await db.unificacaoRegistro.findFirst({ where: { status: "PENDENTE", dominio: "RECEBER" }, select: { chave: true } });
   if (pendente) await verificar(`/unificacao/${encodeURIComponent(pendente.chave)}`, 200, sessao, "Como resolver", "/unificacao/[registro]");
@@ -42,6 +45,13 @@ async function main() {
   await verificar("/unificacao", 404, cookie("teste-sem-permissao-unificacao"));
   await verificar("/financeiro/contas-a-pagar", 404, cookie("teste-sem-permissao-unificacao"));
   await verificar("/financeiro/comissoes", 404, cookie("teste-sem-permissao-unificacao"));
+  for (const rota of ["/financeiro/automacoes", "/financeiro/notas-fiscais", "/financeiro/notas-fiscais/configuracao", "/financeiro/notas-fiscais/novo"]) {
+    await verificar(rota, 404, cookie("teste-sem-permissao-unificacao"));
+    await verificar(rota, 307);
+  }
+  const webhookMeta = await fetch(new URL("/api/integracoes/whatsapp/webhook", base), { method: "POST", body: "{}", redirect: "manual" });
+  if (![403,503].includes(webhookMeta.status)) throw new Error("Webhook WhatsApp não bloqueou POST sem assinatura.");
+  console.log("OK webhook WhatsApp: rejeita POST não autenticado.");
   await verificar("/relatorios/comissao", 404, cookie("teste-sem-permissao-unificacao"));
   await verificar("/relatorios/exportar?tipo=comissao&ano=2026", 404, cookie("teste-sem-permissao-unificacao"));
   const menuRestrito = await fetch(new URL("/financeiro", base), {

@@ -63,6 +63,8 @@ const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
           { tipo: "link", href: "/financeiro/contas-a-pagar", rotulo: "Contas a pagar", icone: "financeiro", perfis: ["ADMINISTRADOR", "FINANCEIRO"] },
           { tipo: "link", href: "/financeiro/boletos", rotulo: "Boletos", icone: "boletos" },
           { tipo: "link", href: "/paineis/cobranca", rotulo: "Cobrança e atrasos", icone: "cobranca" },
+          { tipo: "link", href: "/financeiro/automacoes", rotulo: "Central de comunicação", icone: "mensagens", perfis: ["ADMINISTRADOR"] },
+          { tipo: "link", href: "/financeiro/notas-fiscais", rotulo: "Notas fiscais de serviço", icone: "notas-fiscais", perfis: ["ADMINISTRADOR"] },
           { tipo: "link", href: "/financeiro/contas-bancarias", rotulo: "Contas bancárias", icone: "contas-bancarias" },
           { tipo: "link", href: "/financeiro/conciliacao", rotulo: "Conciliação bancária", icone: "conciliacao" },
           {

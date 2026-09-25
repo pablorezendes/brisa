@@ -22,6 +22,8 @@ export type IconeMenuNome =
   | "contratos"
   | "recebimentos"
   | "boletos"
+  | "mensagens"
+  | "notas-fiscais"
   | "contas-bancarias"
   | "conciliacao"
   | "integracao"
@@ -45,6 +47,18 @@ export type IconeMenuNome =
   | "sair";
 
 const DESENHOS: Record<IconeMenuNome, ReactNode> = {
+  mensagens: (
+    <>
+      <path d="M4 4h16v12H9l-5 4V4Z" />
+      <path d="m4 5 8 6 8-6M8 14h5" />
+    </>
+  ),
+  "notas-fiscais": (
+    <>
+      <path d="M6 3h9l4 4v14H6zM14 3v5h5M9 11h6M9 14h3" />
+      <path d="m12 18 2 2 4-5" />
+    </>
+  ),
   inicio: (
     <>
       <rect x="3" y="3" width="7" height="7" rx="1.5" />

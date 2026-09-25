@@ -24,6 +24,7 @@
     "reconciliar": "tsx scripts/reconciliar.ts",
     "unificar:operacao": "tsx scripts/unificar-operacao.ts",
     "unificar:operacao:dry-run": "tsx scripts/unificar-operacao.ts --dry-run",
+    "comunicacoes:processar": "tsx scripts/processar-comunicacoes.ts",
     "test": "vitest run",
     "usuario": "tsx scripts/usuario.ts"
   },

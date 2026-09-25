@@ -56,6 +56,10 @@ export async function proxy(request: NextRequest) {
   if (request.nextUrl.pathname === "/api/integracoes/sicoob/sincronizar") {
     return NextResponse.next();
   }
+  // Exceção exata; callback Meta verifica HMAC do corpo bruto no servidor.
+  if (request.nextUrl.pathname === "/api/integracoes/whatsapp/webhook") {
+    return NextResponse.next();
+  }
   const token = request.cookies.get(COOKIE_SESSAO)?.value;
   if (await tokenValido(token)) return NextResponse.next();
 
