@@ -12,6 +12,7 @@ import {
   inputBase,
 } from "@/components/ui";
 import { dadosAuditoriaOperacaoWidesys } from "@/lib/consultas/operacao-widesys";
+import { listarUnificados } from "@/lib/consultas/unificacao";
 import { perfilAtual } from "@/lib/autorizacao";
 import type { EscopoOperacaoWidesys } from "@/lib/dominio/auditoria-widesys";
 import type { Nivel } from "@/lib/dominio/semaforo";
@@ -140,63 +141,64 @@ export default async function PaginaAuditoriaWidesys({
   if (perfil !== "ADMINISTRADOR" && perfil !== "FINANCEIRO") notFound();
 
   const sp = await searchParams;
-  const dados = await dadosAuditoriaOperacaoWidesys({
-    pagina: pagina(primeiro(sp.pagina)),
-    estado: primeiro(sp.estado),
-    natureza: primeiro(sp.natureza),
-  });
+  const dominios = ["CONTRATO", "RECEBER", "PAGAR", "BAIXA_RECEBER", "BAIXA_PAGAR", "MOVIMENTO"] as const;
+  const [dados, unificados] = await Promise.all([
+    dadosAuditoriaOperacaoWidesys({
+      pagina: pagina(primeiro(sp.pagina)),
+      estado: primeiro(sp.estado),
+      natureza: primeiro(sp.natureza),
+    }),
+    Promise.all(dominios.map((dominio) => listarUnificados({ dominio, porPagina: 1 }))),
+  ]);
   const lote = dados.lote;
   const nivelAtual = lote ? nivelLote(lote.status) : "neutro";
   const porEscopo = new Map(dados.escopos.map((linha) => [linha.escopo, linha]));
-  const preservadosSeparados = (escopo: EscopoOperacaoWidesys) => {
-    const linha = porEscopo.get(escopo);
-    return linha ? linha.staging + linha.quarentena + linha.reconciliados : 0;
-  };
+  const preservadosCaptura = (escopo: EscopoOperacaoWidesys) => porEscopo.get(escopo)?.totalAtual ?? 0;
   const comparacaoOperacional = [
     {
       rotulo: "Contratos",
+      href: "/contratos",
       plataforma: dados.origens.plataforma.contratos,
-      widesys: preservadosSeparados("CONTRATO"),
-      promovidos: porEscopo.get("CONTRATO")?.promovidos ?? 0,
+      widesys: preservadosCaptura("CONTRATO"),
     },
     {
       rotulo: "Títulos a receber",
+      href: "/recebimentos",
       plataforma: dados.origens.plataforma.titulosReceber,
-      widesys: preservadosSeparados("TITULO_RECEBER"),
-      promovidos: porEscopo.get("TITULO_RECEBER")?.promovidos ?? 0,
+      widesys: preservadosCaptura("TITULO_RECEBER"),
     },
     {
       rotulo: "Títulos a pagar",
-      plataforma: null,
-      widesys: preservadosSeparados("TITULO_PAGAR"),
-      promovidos: porEscopo.get("TITULO_PAGAR")?.promovidos ?? 0,
+      href: "/financeiro/contas-a-pagar",
+      plataforma: 0,
+      widesys: preservadosCaptura("TITULO_PAGAR"),
     },
     {
       rotulo: "Baixas a receber detalhadas",
+      href: "/unificacao?dominio=BAIXA_RECEBER",
       plataforma: dados.origens.plataforma.baixasReceber,
-      widesys: preservadosSeparados("BAIXA_RECEBER"),
-      promovidos: porEscopo.get("BAIXA_RECEBER")?.promovidos ?? 0,
+      widesys: preservadosCaptura("BAIXA_RECEBER"),
     },
     {
       rotulo: "Baixas a pagar detalhadas",
-      plataforma: null,
-      widesys: preservadosSeparados("BAIXA_PAGAR"),
-      promovidos: porEscopo.get("BAIXA_PAGAR")?.promovidos ?? 0,
+      href: "/unificacao?dominio=BAIXA_PAGAR",
+      plataforma: 0,
+      widesys: preservadosCaptura("BAIXA_PAGAR"),
     },
     {
       rotulo: "Movimentações",
+      href: "/caixa",
       plataforma: dados.origens.plataforma.movimentos,
-      widesys: preservadosSeparados("MOVIMENTO"),
-      promovidos: porEscopo.get("MOVIMENTO")?.promovidos ?? 0,
+      widesys: preservadosCaptura("MOVIMENTO"),
     },
-  ];
+  ].map((linha, indice) => ({ ...linha, dominio: dominios[indice], resumo: unificados[indice].resumo }));
 
   return (
     <div>
       <PageHeader
         titulo="Auditoria financeira Widesys"
-        descricao="Conferência somente leitura dos contratos, títulos, baixas e movimentos preservados no staging. Nenhum item desta página altera ou promove a operação atual."
-        acoes={<Link href="/financeiro" className={btnSecundario}>Voltar ao financeiro</Link>}
+        descricao="Auditoria da captura preservada do Widesys, com a situação atual da unificação. Consulte e trabalhe os registros nos módulos de contratos, contas a receber, contas a pagar e movimentações."
+        acoes={<><Link href="/unificacao" className={btnSecundario}>Trabalhar dados na operação</Link><Link href="/financeiro" className={btnSecundario}>Voltar ao financeiro</Link></>}
       />
 
       {lote ? (
@@ -236,14 +238,14 @@ export default async function PaginaAuditoriaWidesys({
         <div className="border-b border-contorno px-5 py-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <h2 className="text-[15px] font-bold text-tinta">Mapa de origem e convivência</h2>
+              <h2 className="text-[15px] font-bold text-tinta">Da captura à operação unificada</h2>
               <p className="mt-1 max-w-3xl text-[11px] leading-relaxed text-tinta-suave">
-                O núcleo Brisa e a fotografia do Widesys continuam separados. Contagens semelhantes não são tratadas como o mesmo registro; somente uma reconciliação explícita pode promover um item.
+                Brisa original e captura Widesys mostram registros preservados em cada fonte. As colunas unificadas mostram as decisões atuais: registros consolidados, fontes vinculadas sem nova soma e itens que ainda exigem conferência.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Badge cor="verde">Brisa · operacional</Badge>
-              <Badge cor="azul">Widesys · staging</Badge>
+              <Badge cor="verde">Operação unificada</Badge>
+              <Badge cor="azul">Captura preservada</Badge>
               <Badge cor="ambar">correspondência · revisar</Badge>
             </div>
           </div>
@@ -260,7 +262,7 @@ export default async function PaginaAuditoriaWidesys({
                 {dados.origens.plataformaCadastros.empreendimentos} empreendimentos · {dados.origens.plataformaCadastros.unidades} unidades · {dados.origens.plataformaCadastros.locatarios} inquilinos
               </div>
               <div className="mt-1 text-[10px] text-tinta-suave">
-                {dados.origens.plataformaCadastros.locatariosVinculadosWidesys} inquilino(s) têm vínculo externo comprovado; os demais continuam separados. Dos {dados.origens.plataforma.titulosReceber} recebimentos nativos, {dados.origens.plataforma.titulosReceberComValorPago} já guardam valor recebido no próprio título, sem baixa detalhada.
+                {dados.origens.plataformaCadastros.locatariosVinculadosWidesys} inquilino(s) têm vínculo cadastral externo registrado. As demais decisões são consultadas na base unificada. Dos {dados.origens.plataforma.titulosReceber} recebimentos originais, {dados.origens.plataforma.titulosReceberComValorPago} já guardam valor recebido no próprio título, sem baixa detalhada.
               </div>
             </div>
             <div className="rounded-xl border border-ambar/30 bg-ambar/5 px-4 py-3">
@@ -276,10 +278,12 @@ export default async function PaginaAuditoriaWidesys({
             <thead>
               <tr>
                 <th>Domínio</th>
-                <th className="text-right">Brisa operacional</th>
-                <th className="text-right">Widesys separado</th>
-                <th className="text-right">Já promovidos</th>
-                <th>Decisão atual</th>
+                <th className="text-right">Brisa original</th>
+                <th className="text-right">Captura Widesys</th>
+                <th className="text-right">Consolidados</th>
+                <th className="text-right">Vinculados</th>
+                <th>Pendências</th>
+                <th>Fluxo atual</th>
               </tr>
             </thead>
             <tbody>
@@ -287,29 +291,31 @@ export default async function PaginaAuditoriaWidesys({
                 <tr key={linha.rotulo}>
                   <td className="font-semibold text-tinta">{linha.rotulo}</td>
                   <td className="text-right font-mono tabular-nums">
-                    {linha.plataforma === null ? "módulo ainda não existe" : linha.plataforma}
+                    {linha.plataforma}
                   </td>
                   <td className="text-right font-mono tabular-nums">{linha.widesys}</td>
-                  <td className="text-right font-mono tabular-nums">{linha.promovidos}</td>
+                  <td className="text-right font-mono tabular-nums">{linha.resumo.ativos}</td>
+                  <td className="text-right font-mono tabular-nums">{linha.resumo.vinculados}</td>
                   <td>
-                    <Badge cor={linha.promovidos > 0 ? "ambar" : "azul"}>
-                      {linha.promovidos > 0 ? "revisar promoção" : "fontes separadas"}
-                    </Badge>
+                    <Link href={`/unificacao?dominio=${linha.dominio}`} className="inline-block hover:underline"><Badge cor={linha.resumo.pendentes > 0 ? "ambar" : "verde"}>{linha.resumo.pendentes} a conferir</Badge></Link>
+                    {linha.resumo.quarentena > 0 ? <div className="mt-1"><Link href={`/unificacao?dominio=${linha.dominio}&estado=QUARENTENA`} className="text-[10px] text-erro hover:underline">{linha.resumo.quarentena} em quarentena</Link></div> : null}
                   </td>
+                  <td><Link href={linha.href} className="text-xs font-semibold text-oliva-escura hover:underline">Abrir módulo →</Link></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        <p className="border-t border-contorno px-5 py-3 text-[10px] leading-relaxed text-tinta-suave">Consolidados são registros aceitos na consulta unificada; os totais financeiros respeitam cancelamentos e itens informativos. Baixas detalham o histórico dos títulos e não acrescentam valor novamente. As contagens das fontes permanecem preservadas após um vínculo.</p>
       </Card>
 
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <Kpi
           rotulo="Registros preservados"
           valor={dados.totais.registrosAtuais}
-          detalhe={`${dados.totais.staging} aguardando reconciliação`}
+          detalhe="Fotografia preservada da importação"
           nivel={dados.totais.registrosAtuais > 0 ? "info" : "neutro"}
-          ajuda="Soma histórica dos contratos, partes, títulos, baixas e movimentos canônicos, incluindo ausentes e eventuais promovidos."
+          ajuda="Contagem dos contratos, partes, títulos, baixas e movimentos preservados da captura. Consulte o quadro acima para saber o que já participa da operação unificada."
         />
         <Kpi
           rotulo="Quarentena atual"
@@ -344,8 +350,8 @@ export default async function PaginaAuditoriaWidesys({
 
       <Card className="mb-4 overflow-hidden">
         <div className="border-b border-contorno px-5 py-4">
-          <h2 className="text-[15px] font-bold text-tinta">Reconciliação por escopo</h2>
-          <p className="mt-0.5 text-[10px] text-tinta-suave">Contagens atuais do staging e somas sanitizadas registradas no último lote.</p>
+          <h2 className="text-[15px] font-bold text-tinta">Conferência da captura por escopo</h2>
+          <p className="mt-0.5 text-[10px] text-tinta-suave">Contagens preservadas e somas registradas no último lote. As decisões da operação unificada são apresentadas no quadro acima.</p>
         </div>
         <div className="overflow-x-auto">
           <table className="tabela">

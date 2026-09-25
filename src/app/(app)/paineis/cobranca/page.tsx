@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { podeAcessarUnificacao } from "@/components/operacao-unificada";
 import {
   Ajuda,
   Card,
@@ -12,6 +13,7 @@ import {
   SeletorMes,
   SeletorPeriodo,
   TituloCard,
+  btnSecundario,
   type ItemAlerta,
 } from "@/components/ui";
 import {
@@ -91,6 +93,7 @@ export default async function PainelCobranca({
   searchParams: Promise<{ mes?: string; de?: string; ate?: string }>;
 }) {
   const sp = await searchParams;
+  const podeUnificar = await podeAcessarUnificacao();
   const periodo = parsePeriodo(sp.de, sp.ate);
   const mes =
     sp.mes && /^\d{4}-\d{2}$/.test(sp.mes) ? sp.mes : await mesPadrao();
@@ -214,7 +217,7 @@ export default async function PainelCobranca({
   return (
     <div className="max-w-7xl">
       <PageHeader
-        titulo="Painel de cobrança"
+        titulo="Cobrança das locações administradas"
         descricao={
           periodo
             ? `Quem cobrar e o que registrar — ${periodo.rotulo}`
@@ -222,6 +225,7 @@ export default async function PainelCobranca({
         }
         acoes={
           <div className="flex flex-wrap items-center gap-2">
+            {podeUnificar ? <Link href="/recebimentos?vencidos=1" className={btnSecundario}>Todos os vencidos · base unificada</Link> : null}
             {!periodo ? (
               <SeletorMes base="/paineis/cobranca" mes={mes} />
             ) : null}
@@ -229,6 +233,8 @@ export default async function PainelCobranca({
           </div>
         }
       />
+
+      {podeUnificar ? <Card nivel="info" className="mb-4 p-4 text-xs leading-relaxed text-tinta-suave">Este painel acompanha os contratos de locação administrados no Brisa. A lista <Link href="/recebimentos?vencidos=1" className="font-semibold text-oliva-escura hover:underline">Todos os vencidos</Link> reúne também o Widesys e identifica as correspondências que precisam de revisão.</Card> : null}
 
       <PainelAlertas
         itens={alertas}

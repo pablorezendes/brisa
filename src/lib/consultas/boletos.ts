@@ -3,6 +3,7 @@ import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { boletoEstaAtivo, totalDevido } from "@/lib/dominio/boletos";
+import { filtroRecebimentosUnificados } from "@/lib/consultas/filtro-unificacao-nativa";
 
 const LIMITE_BOLETOS_EXIBIDOS = 150;
 const LIMITE_PAGAMENTOS_EXIBIDOS = 150;
@@ -154,7 +155,7 @@ export async function dadosPaginaBoletos(
     await Promise.all([
       listarBoletosPriorizados(mes, filtro),
       prisma.recebimento.findMany({
-        where: { mesLancamento: mes, recebido: null, origemAgregada: false },
+        where: { AND: [{ mesLancamento: mes, recebido: null, origemAgregada: false }, await filtroRecebimentosUnificados()] },
         include: incluirRecebimentoParaBoleto,
         orderBy: [
           { empreendimento: { nome: "asc" } },

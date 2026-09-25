@@ -12,6 +12,7 @@
 import { prisma } from "@/lib/db";
 import type { LancamentoCaixa } from "@prisma/client";
 import { competencia } from "@/lib/dominio/normalizacao";
+import { filtroCaixaUnificado } from "@/lib/consultas/filtro-unificacao-nativa";
 
 export const SEM_CATEGORIA = "SEM CATEGORIA";
 
@@ -112,7 +113,7 @@ function montarBlocos(todos: LancamentoCaixa[]): LancamentosDoMes {
 /** Lançamentos do mês agrupados nos 4 blocos do livro-caixa. */
 export async function lancamentosDoMes(mes: string): Promise<LancamentosDoMes> {
   const todos = await prisma.lancamentoCaixa.findMany({
-    where: { mesReferencia: mes },
+    where: { AND: [{ mesReferencia: mes }, await filtroCaixaUnificado()] },
     orderBy: [{ data: "asc" }],
   });
   return montarBlocos(todos);
@@ -148,7 +149,7 @@ function consolidar(grupos: SomaPorGrupo[]): ConsolidacaoMes {
 export async function consolidacaoDoMes(mes: string): Promise<ConsolidacaoMes> {
   const grupos = await prisma.lancamentoCaixa.groupBy({
     by: ["centroCusto", "tipo"],
-    where: { mesReferencia: mes },
+    where: { AND: [{ mesReferencia: mes }, await filtroCaixaUnificado()] },
     _sum: { valor: true },
   });
   return consolidar(
@@ -215,7 +216,7 @@ function somarTotais(linhas: LinhaAnual[]): ConsolidacaoMes {
 export async function consolidacaoAnual(ano: number): Promise<ConsolidacaoAnual> {
   const grupos = await prisma.lancamentoCaixa.groupBy({
     by: ["mesReferencia", "centroCusto", "tipo"],
-    where: { mesReferencia: { startsWith: `${ano}-` } },
+    where: { AND: [{ mesReferencia: { startsWith: `${ano}-` } }, await filtroCaixaUnificado()] },
     _sum: { valor: true },
   });
   const meses = Array.from({ length: 12 }, (_, i) => competencia(ano, i + 1));
@@ -246,7 +247,7 @@ export async function lancamentosDoPeriodo(
   meses: string[],
 ): Promise<LancamentosDoMes> {
   const todos = await prisma.lancamentoCaixa.findMany({
-    where: { mesReferencia: janela(meses) },
+    where: { AND: [{ mesReferencia: janela(meses) }, await filtroCaixaUnificado()] },
     orderBy: [{ mesReferencia: "asc" }, { data: "asc" }],
   });
   return montarBlocos(todos);
@@ -258,7 +259,7 @@ export async function consolidacaoDoPeriodo(
 ): Promise<ConsolidacaoMes> {
   const grupos = await prisma.lancamentoCaixa.groupBy({
     by: ["centroCusto", "tipo"],
-    where: { mesReferencia: janela(meses) },
+    where: { AND: [{ mesReferencia: janela(meses) }, await filtroCaixaUnificado()] },
     _sum: { valor: true },
   });
   return consolidar(
@@ -279,7 +280,7 @@ export async function consolidacaoMensalDoPeriodo(
 ): Promise<ConsolidacaoPeriodo> {
   const grupos = await prisma.lancamentoCaixa.groupBy({
     by: ["mesReferencia", "centroCusto", "tipo"],
-    where: { mesReferencia: janela(meses) },
+    where: { AND: [{ mesReferencia: janela(meses) }, await filtroCaixaUnificado()] },
     _sum: { valor: true },
   });
   const linhas = linhasComAcumulado(meses, mapaPorMes(grupos));
@@ -298,7 +299,7 @@ export async function categoriasPorCentro(): Promise<{ AL: string[]; CH: string[
       select: { centroCusto: true, nome: true },
     }),
     prisma.lancamentoCaixa.findMany({
-      where: { tipo: "SAIDA", categoria: { not: null } },
+      where: { AND: [{ tipo: "SAIDA", categoria: { not: null } }, await filtroCaixaUnificado()] },
       distinct: ["centroCusto", "categoria"],
       select: { centroCusto: true, categoria: true },
     }),

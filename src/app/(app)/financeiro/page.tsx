@@ -15,6 +15,7 @@ import {
 } from "@/components/ui";
 import { dadosExecutivos, mesPadrao } from "@/lib/consultas/executivo";
 import { resumoAtalhoMigracaoWidesys } from "@/lib/consultas/operacao-widesys";
+import { listarUnificados } from "@/lib/consultas/unificacao";
 import { perfilAtual } from "@/lib/autorizacao";
 import { formatarBRL } from "@/lib/dominio/dinheiro";
 import { prisma } from "@/lib/db";
@@ -173,6 +174,9 @@ export default async function PaginaFinanceiro({
     contasBancarias,
     conciliacoesPendentes,
     migracaoWidesys,
+    unificadoReceber,
+    unificadoPagar,
+    unificadoMovimento,
   ] = await Promise.all([
     dadosExecutivos(mes),
     prisma.boleto.count({ where: { recebimento: { mesLancamento: mes } } }),
@@ -188,6 +192,9 @@ export default async function PaginaFinanceiro({
     prisma.contaBancaria.count({ where: { ativa: true } }),
     prisma.pagamentoRecebimento.count({ where: { conciliadoEm: null } }),
     podeAuditarMigracao ? resumoAtalhoMigracaoWidesys() : Promise.resolve(null),
+    podeAuditarMigracao ? listarUnificados({ dominio: "RECEBER", mes, porPagina: 1 }) : Promise.resolve(null),
+    podeAuditarMigracao ? listarUnificados({ dominio: "PAGAR", mes, porPagina: 1 }) : Promise.resolve(null),
+    podeAuditarMigracao ? listarUnificados({ dominio: "MOVIMENTO", mes, porPagina: 1 }) : Promise.resolve(null),
   ]);
   const { ano, mes: mesNumero } = parseCompetencia(mes);
   const linhaAnterior = mesNumero > 1 ? dados.porMes[mesNumero - 2] : null;
@@ -254,7 +261,7 @@ export default async function PaginaFinanceiro({
       ),
       acao: {
         rotulo: "Conferir recebimentos",
-        href: `/recebimentos?mes=${mes}`,
+        href: `/recebimentos?visao=locacao&mes=${mes}`,
       },
     });
   }
@@ -268,7 +275,7 @@ export default async function PaginaFinanceiro({
           <Sigilo>{formatarBRL(Math.abs(dados.saldoCaixaMes))}</Sigilo>. Revise centros de custo e lançamentos do mês.
         </>
       ),
-      acao: { rotulo: "Revisar caixa", href: `/caixa?mes=${mes}` },
+      acao: { rotulo: "Revisar caixa", href: `/caixa?visao=livro&mes=${mes}` },
     });
   }
   if (dados.reajustesDoMes.length > 0) {
@@ -280,7 +287,7 @@ export default async function PaginaFinanceiro({
           <Sigilo>{dados.reajustesDoMes.length}</Sigilo> contrato(s) fazem aniversário neste mês e precisam de conferência manual.
         </>
       ),
-      acao: { rotulo: "Abrir contratos", href: "/contratos" },
+      acao: { rotulo: "Abrir contratos", href: "/contratos?visao=locacao" },
     });
   }
 
@@ -307,6 +314,18 @@ export default async function PaginaFinanceiro({
         }
       />
 
+      {unificadoReceber && unificadoPagar && unificadoMovimento ? <section className="mb-7" aria-label="Financeiro unificado">
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-bold tracking-tight">Financeiro unificado</h2><p className="mt-1 text-xs text-tinta-suave">Widesys, planilhas e operação · {formatarCompetencia(mes)} · cada ocorrência contabilizada uma vez</p></div><Link href="/unificacao?estado=PENDENTE" className={btnSecundario}>Resolver duplicidades</Link></div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Kpi rotulo="A receber · em aberto" valor={<Dinheiro centavos={unificadoReceber.resumo.aberto} />} detalhe={`${unificadoReceber.resumo.ativos} registros consolidados`} href={`/recebimentos?mes=${mes}`} ajuda="Saldo devido menos recebido dos registros aceitos das fontes unificadas. Correspondências pendentes ficam fora do total." />
+          <Kpi rotulo="A pagar · em aberto" valor={<Dinheiro centavos={unificadoPagar.resumo.aberto} />} detalhe={`${unificadoPagar.resumo.ativos} registros consolidados`} href={`/financeiro/contas-a-pagar?mes=${mes}`} ajuda="Saldo das obrigações trazidas para a operação e aceitas na conciliação." />
+          <Kpi rotulo="Saldo de movimentos" valor={<Dinheiro centavos={unificadoMovimento.resumo.entradas - unificadoMovimento.resumo.saidas} />} detalhe="Entradas menos saídas consolidadas" href={`/caixa?mes=${mes}`} ajuda="Movimentos aceitos na unificação. Uma cópia vinculada não é somada novamente e títulos não são adicionados ao caixa." />
+          <Kpi rotulo="Correspondências a resolver" valor={unificadoReceber.resumo.pendentes + unificadoPagar.resumo.pendentes + unificadoMovimento.resumo.pendentes} nivel="atencao" detalhe="Valores suspensos da consolidação" href="/unificacao?estado=PENDENTE" ajuda="Abra as correspondências para conferir contrato, competência e identidade; depois vincule ao principal ou confirme que é um registro distinto." />
+        </div>
+        {unificadoReceber.resumo.abertoPendente > 0 || unificadoPagar.resumo.abertoPendente > 0 ? <Card nivel="atencao" className="mt-3 flex flex-wrap items-center justify-between gap-3 px-4 py-3"><p className="text-xs text-tinta-suave">Saldo a conferir · fora dos totais consolidados</p><div className="flex flex-wrap gap-4 text-xs"><span>A receber: <Sigilo><Dinheiro centavos={unificadoReceber.resumo.abertoPendente} /></Sigilo></span><span>A pagar: <Sigilo><Dinheiro centavos={unificadoPagar.resumo.abertoPendente} /></Sigilo></span></div></Card> : null}
+        <div className="mt-3 flex flex-wrap gap-2"><Link href={`/recebimentos?mes=${mes}`} className={btnPrimario}>Contas a receber</Link><Link href={`/financeiro/contas-a-pagar?mes=${mes}`} className={btnSecundario}>Contas a pagar</Link><Link href={`/caixa?mes=${mes}`} className={btnSecundario}>Movimentações</Link></div>
+      </section> : null}
+
       <Card
         className="relative mb-5 overflow-hidden border-0 p-0 text-white"
         style={{
@@ -320,7 +339,7 @@ export default async function PaginaFinanceiro({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#9ec9bf]">
-                Posição financeira · {formatarCompetencia(mes)}
+                Locações administradas · {formatarCompetencia(mes)}
               </span>
               <span className="rounded-md border border-white/15 bg-white/[0.08] px-2 py-1 text-[9px] font-bold uppercase tracking-[0.09em] text-white/80">
                 {dados.mesFechado ? "mês fechado" : "em andamento"}
@@ -396,7 +415,7 @@ export default async function PaginaFinanceiro({
               ? "sem base no mês anterior"
               : <Sigilo>{`${variacaoRecebido >= 0 ? "+" : ""}${(variacaoRecebido * 100).toFixed(1).replace(".", ",")}% vs mês anterior`}</Sigilo>
           }
-          href={`/recebimentos?mes=${mes}`}
+          href={`/recebimentos?visao=locacao&mes=${mes}`}
           ajuda="Soma dos pagamentos registrados nesta competência, incluindo os repasses de IPTU e condomínio."
         />
         <Kpi
@@ -405,7 +424,7 @@ export default async function PaginaFinanceiro({
           detalhe={<Sigilo>{`${formatarBRL(dados.recebidoMes)} de ${formatarBRL(dados.devidoMes)}`}</Sigilo>}
           nivel={nivelTaxa}
           selo={dados.taxaRecebimento === null ? undefined : "do devido"}
-          href={`/recebimentos?mes=${mes}`}
+          href={`/recebimentos?visao=locacao&mes=${mes}`}
           ajuda="Total recebido dividido pelo total devido. Acima de 100% pode indicar quitação de competências anteriores."
         />
         <Kpi
@@ -427,7 +446,7 @@ export default async function PaginaFinanceiro({
           }
           nivel={nivelCaixa}
           selo={dados.caixaMes ? (dados.saldoCaixaMes >= 0 ? "positivo" : "negativo") : undefined}
-          href={`/caixa?mes=${mes}`}
+          href={`/caixa?visao=livro&mes=${mes}`}
           ajuda="Entradas menos as saídas AL e CH no livro-caixa. Recebimentos em espécie ficam fora desse saldo."
         />
         <Kpi
@@ -459,17 +478,19 @@ export default async function PaginaFinanceiro({
         <ModuloFinanceiro
           icone="recebimentos"
           titulo="Contas a receber"
-          descricao="Gere os devidos, dê baixa nos pagamentos e feche o mês."
+          descricao="Administre os lançamentos das locações e consulte as cobranças de todas as origens."
           nivel={nivelTaxa}
           status={dados.mesFechado ? "fechado" : "operacional"}
-          href={`/recebimentos?mes=${mes}`}
-          acao="Abrir recebimentos"
+          href={`/recebimentos?visao=locacao&mes=${mes}`}
+          acao="Gerenciar locações"
+          hrefSecundario={`/recebimentos?mes=${mes}`}
+          acaoSecundaria="Consulta unificada"
           className="xl:col-span-4"
         >
           <div className="grid grid-cols-2 gap-4">
-            <MiniValor rotulo="Devido" valor={<Dinheiro centavos={dados.devidoMes} />} />
+            <MiniValor rotulo="Devido · locações" valor={<Dinheiro centavos={dados.devidoMes} />} />
             <MiniValor
-              rotulo="Recebido"
+              rotulo="Recebido · locações"
               valor={<Dinheiro centavos={dados.recebidoMes} />}
               destaque
             />
@@ -584,7 +605,7 @@ export default async function PaginaFinanceiro({
                 : "saldo negativo"
               : "sem movimento"
           }
-          href={`/caixa?mes=${mes}`}
+          href={`/caixa?visao=livro&mes=${mes}`}
           acao="Abrir caixa"
           hrefSecundario={`/caixa/novo?mes=${mes}`}
           acaoSecundaria="Novo lançamento"
@@ -613,8 +634,8 @@ export default async function PaginaFinanceiro({
         {podeAuditarMigracao ? (
           <ModuloFinanceiro
             icone="integracao"
-            titulo="Migração Widesys"
-            descricao="Compare a operação antiga com o núcleo Brisa antes de promover qualquer registro."
+            titulo="Unificação Widesys e planilhas"
+            descricao="Trabalhe os registros importados na operação e resolva correspondências entre as fontes."
             nivel={nivelMigracao}
             status={
               !migracaoWidesys
@@ -623,8 +644,10 @@ export default async function PaginaFinanceiro({
                   ? "captura validada"
                   : migracaoWidesys.status.toLocaleLowerCase("pt-BR")
             }
-            href="/financeiro/migracao-widesys"
-            acao="Abrir auditoria"
+            href="/unificacao"
+            acao="Resolver correspondências"
+            hrefSecundario="/financeiro/migracao-widesys"
+            acaoSecundaria="Conferir captura"
             className="xl:col-span-12"
           >
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -651,7 +674,7 @@ export default async function PaginaFinanceiro({
               />
             </div>
             <p className="mt-4 border-t border-contorno pt-3 text-[11px] leading-relaxed text-tinta-suave">
-              Itens do legado ficam em staging com origem explícita; nome, valor ou descrição isolados nunca geram vínculo automático.
+              Os registros aceitos alimentam as consultas unificadas. Possíveis duplicidades ficam sinalizadas; vínculos preservam a origem e os valores do registro principal.
             </p>
           </ModuloFinanceiro>
         ) : null}
@@ -717,7 +740,7 @@ export default async function PaginaFinanceiro({
               ? "agenda limpa"
               : <><Sigilo>{dados.reajustesDoMes.length}</Sigilo> a revisar</>
           }
-          href="/contratos"
+          href="/contratos?visao=locacao"
           acao="Abrir contratos"
           className="xl:col-span-6"
         >

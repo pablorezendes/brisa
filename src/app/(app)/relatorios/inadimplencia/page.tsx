@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { podeAcessarUnificacao } from "@/components/operacao-unificada";
 import {
   Badge,
   Card,
@@ -5,6 +7,7 @@ import {
   PageHeader,
   SeletorMes,
   SeletorPeriodo,
+  btnSecundario,
 } from "@/components/ui";
 import {
   mesMaisRecenteComLancamentos,
@@ -42,6 +45,7 @@ export default async function InadimplenciaPage({
   searchParams: Promise<{ mes?: string; de?: string; ate?: string }>;
 }) {
   const sp = await searchParams;
+  const podeUnificar = await podeAcessarUnificacao();
   const periodo = parsePeriodo(sp.de, sp.ate);
   const mes = /^\d{4}-\d{2}$/.test(sp.mes ?? "")
     ? (sp.mes as string)
@@ -73,10 +77,11 @@ export default async function InadimplenciaPage({
   return (
     <div>
       <PageHeader
-        titulo="Inadimplência"
-        descricao={`Lançamentos ${vm.janela} cujo total devido ainda supera o valor recebido.`}
+        titulo="Inadimplência das locações administradas"
+        descricao={`Lançamentos dos contratos Brisa ${vm.janela} cujo total devido ainda supera o valor recebido.`}
         acoes={
           <div className="flex flex-wrap items-center gap-2">
+            {podeUnificar ? <Link href="/recebimentos?vencidos=1" className={btnSecundario}>Todos os vencidos · base unificada</Link> : null}
             {!periodo ? (
               <SeletorMes base="/relatorios/inadimplencia" mes={mes} />
             ) : null}
@@ -84,6 +89,8 @@ export default async function InadimplenciaPage({
           </div>
         }
       />
+
+      {podeUnificar ? <Card nivel="info" className="mb-4 p-4 text-xs leading-relaxed text-tinta-suave">Para acompanhar os títulos vencidos de todas as origens, abra a <Link href="/recebimentos?vencidos=1" className="font-semibold text-oliva-escura hover:underline">lista unificada de cobranças</Link>. As correspondências pendentes aparecem sinalizadas e ficam fora do saldo consolidado até a decisão.</Card> : null}
 
       <Card>
         <div className="overflow-x-auto">

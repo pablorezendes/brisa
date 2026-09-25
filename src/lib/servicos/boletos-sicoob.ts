@@ -4,6 +4,11 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Boleto, ContaBancaria, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import {
+  carregarProtecaoFinanceira,
+  impedimentoGeracaoUnificada,
+  impedimentoRecebimentoUnificado,
+} from "@/lib/unificacao/protecao-financeira";
+import {
   avaliarConciliacao,
   boletoEstaAtivo,
   camposPagadorPendentes,
@@ -331,6 +336,16 @@ function statusLocal(
   return status;
 }
 
+async function validarUnificacaoParaEmissao(
+  db: Parameters<typeof carregarProtecaoFinanceira>[0],
+  recebimento: { id: string; contratoId: string; competencia: string },
+): Promise<void> {
+  const contexto = await carregarProtecaoFinanceira(db);
+  const impedimento = impedimentoRecebimentoUnificado(contexto, recebimento.id, "EMITIR")
+    ?? impedimentoGeracaoUnificada(contexto, recebimento.contratoId, recebimento.competencia);
+  if (impedimento) throw new ErroOperacaoBoleto(impedimento, "UNIFICACAO_PENDENTE");
+}
+
 export async function emitirBoletoSicoob({
   recebimentoId,
   contaBancariaId,
@@ -401,6 +416,7 @@ export async function emitirBoletoSicoob({
       "BOLETO_DUPLICADO",
     );
   }
+  await validarUnificacaoParaEmissao(prisma, recebimento);
   validarContaEmissora(conta);
   const politicaInicial = politicaCobrancaParaEmissao(
     conta.configuracaoCobrancaSicoob,
@@ -497,6 +513,8 @@ export async function emitirBoletoSicoob({
           "RECEBIMENTO_EM_USO",
         );
       }
+      // A reserva serializa esta leitura com decisões de vínculo e mutações locais.
+      await validarUnificacaoParaEmissao(tx, recebimento);
       const fechamentoAtual = await tx.fechamentoMensal.findUnique({
         where: { mesLancamento: recebimento.mesLancamento },
         select: { id: true },

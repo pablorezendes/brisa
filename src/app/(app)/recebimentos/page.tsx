@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { OperacaoUnificada, podeAcessarUnificacao, type ParametrosUnificacao } from "@/components/operacao-unificada";
 import {
   Ajuda,
   PageHeader,
@@ -44,7 +45,8 @@ import {
   reabrirMes,
 } from "./actions";
 
-type SearchParams = Promise<{
+type SearchParams = Promise<ParametrosUnificacao & {
+  visao?: string;
   mes?: string;
   de?: string;
   ate?: string;
@@ -71,6 +73,9 @@ export default async function PaginaRecebimentos({
   searchParams: SearchParams;
 }) {
   const sp = await searchParams;
+  if (sp.visao !== "locacao" && !sp.editar && !sp.excluir && !sp.avulso && !sp.reabrir && !sp.erro && !sp.ok && !sp.emp && await podeAcessarUnificacao()) {
+    return <OperacaoUnificada dominio="RECEBER" titulo="Contas a receber" base="/recebimentos" parametros={sp} nativo={{ href: `/recebimentos?visao=locacao${sp.mes ? `&mes=${encodeURIComponent(sp.mes)}` : ""}`, rotulo: "Lançamentos de locação" }} />;
+  }
   // ?de/?ate válidos ligam o modo PERÍODO (conferência); sem eles, modo mês.
   const periodo = parsePeriodo(sp.de, sp.ate);
   const mes =
@@ -150,7 +155,7 @@ export default async function PaginaRecebimentos({
   const contratosSelecao = mostrarAvulso ? await contratosParaSelecao() : [];
 
   const urlBase = (extras?: Record<string, string>) => {
-    const p = new URLSearchParams();
+    const p = new URLSearchParams({ visao: "locacao" });
     if (periodo) {
       p.set("de", periodo.de);
       p.set("ate", periodo.ate);
@@ -164,7 +169,7 @@ export default async function PaginaRecebimentos({
 
   /** Link do filtro de empreendimento preservando o modo (mês ou período). */
   const urlComFiltro = (empId?: string) => {
-    const p = new URLSearchParams();
+    const p = new URLSearchParams({ visao: "locacao" });
     if (periodo) {
       p.set("de", periodo.de);
       p.set("ate", periodo.ate);
@@ -186,13 +191,14 @@ export default async function PaginaRecebimentos({
         }
         acoes={
           <div className="flex flex-wrap items-center gap-2">
+            <Link href={`/recebimentos?mes=${mes}`} className={btnSecundario}>Visão unificada</Link>
             {periodo === null ? (
-              <SeletorMes base="/recebimentos" mes={mes} />
+              <SeletorMes base="/recebimentos" mes={mes} extras={{ visao: "locacao" }} />
             ) : null}
             <SeletorPeriodo
               base="/recebimentos"
               periodo={periodo}
-              extras={empFiltro ? { emp: empFiltro } : undefined}
+              extras={{ visao: "locacao", ...(empFiltro ? { emp: empFiltro } : {}) }}
             />
           </div>
         }
@@ -218,7 +224,7 @@ export default async function PaginaRecebimentos({
             registrar pagamentos linha a linha; gerar devidos, lançar avulso e
             fechar/reabrir mês só na visão mensal.
           </span>
-          <Link href={`/recebimentos?mes=${mes}`} className={btnSecundario}>
+          <Link href={`/recebimentos?visao=locacao&mes=${mes}`} className={btnSecundario}>
             Abrir visão mensal
           </Link>
         </div>

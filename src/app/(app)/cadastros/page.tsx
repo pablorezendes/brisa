@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Card, Kpi, PageHeader, btnSecundario } from "@/components/ui";
 import { prisma } from "@/lib/db";
+import { perfilAtual } from "@/lib/autorizacao";
 import {
   CartaoModulo,
   NavegacaoCadastros,
@@ -9,6 +10,8 @@ import {
 export const metadata = { title: "Cadastros — Brisa" };
 
 export default async function PaginaCadastros() {
+  const perfil = await perfilAtual();
+  const podeUnificar = perfil === "ADMINISTRADOR" || perfil === "FINANCEIRO";
   const [
     pessoasLegado,
     papeisLegado,
@@ -50,6 +53,7 @@ export default async function PaginaCadastros() {
       />
 
       <NavegacaoCadastros atual="inicio" />
+      {podeUnificar ? <Card nivel="info" className="mb-5 flex flex-col justify-between gap-4 p-5 sm:flex-row sm:items-center"><div><h2 className="text-sm font-bold">Uma base para Widesys, planilhas e operação</h2><p className="mt-1 max-w-2xl text-xs leading-relaxed text-tinta-suave">Pessoas, imóveis e contratos com origem visível. Confira correspondências e resolva duplicidades mantendo as referências das duas fontes.</p></div><div className="flex shrink-0 flex-wrap gap-2"><Link href="/cadastros/base-unificada" className={btnSecundario}>Abrir base unificada</Link><Link href="/unificacao?estado=PENDENTE" className={btnSecundario}>Revisar correspondências</Link></div></Card> : null}
 
       <div className="mb-2 flex items-end justify-between gap-3">
         <div>

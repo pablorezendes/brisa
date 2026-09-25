@@ -13,6 +13,7 @@
  * Todos os valores em centavos (Int). Competências como "YYYY-MM".
  */
 import { prisma } from "@/lib/db";
+import { filtroRecebimentosUnificados } from "./filtro-unificacao-nativa";
 import type {
   DespesaTemporada,
   Limpeza,
@@ -175,7 +176,7 @@ export async function conciliacaoComNucleo(
   receitaModulo: number,
 ): Promise<ConciliacaoNucleo> {
   const linhas = await prisma.recebimento.findMany({
-    where: { origemAgregada: true, mesLancamento: mes },
+    where: { AND: [{ origemAgregada: true, mesLancamento: mes }, await filtroRecebimentosUnificados()] },
     select: { recebido: true },
   });
   return montarConciliacao(linhas, receitaModulo);
@@ -192,8 +193,10 @@ export async function conciliacaoComNucleoDoPeriodo(
 ): Promise<ConciliacaoNucleo> {
   const linhas = await prisma.recebimento.findMany({
     where: {
-      origemAgregada: true,
-      mesLancamento: { gte: meses[0], lte: meses[meses.length - 1] },
+      AND: [
+        { origemAgregada: true, mesLancamento: { gte: meses[0], lte: meses[meses.length - 1] } },
+        await filtroRecebimentosUnificados(),
+      ],
     },
     select: { recebido: true },
   });

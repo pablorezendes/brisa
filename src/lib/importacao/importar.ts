@@ -7,9 +7,8 @@
  *    depois empreendimento+locatário, senão exceção);
  *  - valores ×100 → centavos; taxa ×10000 → bps.
  *
- * Idempotência por RECARGA TOTAL: os dados importáveis são apagados e
- * reimportados a cada execução. Válido até o corte — depois do corte a
- * importação é desativada (o sistema passa a ser a fonte de verdade).
+ * Carga inicial exclusiva para base operacional vazia. Novas planilhas e
+ * fontes devem passar pela unificação; esta rotina nunca apaga dados atuais.
  */
 import type { PrismaClient } from "@prisma/client";
 import {
@@ -19,6 +18,7 @@ import {
   normalizarCpfCnpj,
 } from "../dominio/normalizacao";
 import { paraCentavos, paraCentavosOuZero } from "../dominio/dinheiro";
+import { exigirBaseVaziaParaSeed } from "./protecao-seed";
 
 // ---------- Tipos do dataset.json ----------
 
@@ -110,25 +110,8 @@ export async function importarDataset(
   prisma: PrismaClient,
   ds: Dataset
 ): Promise<ResultadoImportacao> {
+  await exigirBaseVaziaParaSeed(prisma);
   const excecoes: Excecao[] = [];
-
-  // ---------- 0) recarga total (ordem respeita FKs) ----------
-  await prisma.$transaction([
-    prisma.recebimento.deleteMany(),
-    prisma.fechamentoMensal.deleteMany(),
-    prisma.limpeza.deleteMany(),
-    prisma.despesaTemporada.deleteMany(),
-    prisma.recebimentoTemporada.deleteMany(),
-    prisma.unidadeTemporada.deleteMany(),
-    prisma.apuracaoTemporadaHistorica.deleteMany(),
-    prisma.contrato.deleteMany(),
-    prisma.unidade.deleteMany(),
-    prisma.locatario.deleteMany(),
-    prisma.empreendimento.deleteMany(),
-    prisma.parametroComissao.deleteMany(),
-    prisma.lancamentoCaixa.deleteMany(),
-    prisma.categoriaCentroCusto.deleteMany(),
-  ]);
 
   // caches por chave normalizada
   const empPorNome = new Map<string, string>(); // nomeNorm -> id

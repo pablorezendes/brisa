@@ -23,6 +23,7 @@
  * Valores sempre em CENTAVOS (Int). Meses "YYYY-MM".
  */
 import { prisma } from "@/lib/db";
+import { filtroRecebimentosUnificados } from "./filtro-unificacao-nativa";
 import { calcularRecebimento } from "@/lib/dominio/comissao";
 import {
   competencia,
@@ -144,7 +145,7 @@ export async function dadosPainelCobranca(
 
   // Um único fetch do ano: alimenta lista, aging, série e ranking.
   const recebimentos = await prisma.recebimento.findMany({
-    where: { mesLancamento: { startsWith: `${ano}-` } },
+    where: { AND: [{ mesLancamento: { startsWith: `${ano}-` } }, await filtroRecebimentosUnificados()] },
     include: {
       empreendimento: true,
       contrato: { include: { unidade: true, locatario: true } },
@@ -350,7 +351,7 @@ export async function dadosPainelCobrancaPeriodo(
   const rotulos = rotulosCompetencias(meses);
 
   const recebimentos = await prisma.recebimento.findMany({
-    where: { mesLancamento: { gte: meses[0], lte: meses[meses.length - 1] } },
+    where: { AND: [{ mesLancamento: { gte: meses[0], lte: meses[meses.length - 1] } }, await filtroRecebimentosUnificados()] },
     include: {
       empreendimento: true,
       contrato: { include: { unidade: true, locatario: true } },

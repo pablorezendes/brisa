@@ -13,6 +13,7 @@
  */
 
 import { prisma } from "@/lib/db";
+import { filtroRecebimentosUnificados } from "./filtro-unificacao-nativa";
 import { calcularRecebimento } from "@/lib/dominio/comissao";
 import { competencia } from "@/lib/dominio/normalizacao";
 
@@ -178,7 +179,7 @@ async function agregadosPorEmpreendimento(meses: string[]) {
   const [recebs, unidades, empreendimentos] = await Promise.all([
     prisma.recebimento.findMany({
       where: {
-        mesLancamento: { gte: meses[0], lte: meses[meses.length - 1] },
+        AND: [{ mesLancamento: { gte: meses[0], lte: meses[meses.length - 1] } }, await filtroRecebimentosUnificados()],
       },
       select: {
         empreendimentoId: true,
@@ -344,8 +345,7 @@ async function detalheDaJanela(
   const [recebs, unidades] = await Promise.all([
     prisma.recebimento.findMany({
       where: {
-        empreendimentoId: id,
-        mesLancamento: { gte: meses[0], lte: meses[meses.length - 1] },
+        AND: [{ empreendimentoId: id, mesLancamento: { gte: meses[0], lte: meses[meses.length - 1] } }, await filtroRecebimentosUnificados()],
       },
       include: {
         contrato: { include: { unidade: true, locatario: true } },

@@ -11,6 +11,12 @@ import { prisma } from "@/lib/db";
 import { exigirPermissaoFinanceira } from "@/lib/autorizacao";
 import { parseBRL } from "@/lib/dominio/dinheiro";
 import {
+  carregarProtecaoFinanceira,
+  ErroProtecaoUnificacao,
+  impedimentoGeracaoUnificada,
+  impedimentoRecebimentoUnificado,
+} from "@/lib/unificacao/protecao-financeira";
+import {
   comissaoTotal,
   comissaoPorEmpreendimento,
 } from "@/lib/dominio/comissao";
@@ -109,44 +115,41 @@ export async function gerarDevidosDoMes(formData: FormData): Promise<void> {
   if (!RE_MES.test(mes)) voltar(mes, { erro: "Mês inválido." });
   await exigirMesAberto(mes);
 
-  const [contratos, existentes, taxaBps] = await Promise.all([
-    prisma.contrato.findMany({
-      where: { status: "ativo" },
-      include: { unidade: true },
-    }),
-    prisma.recebimento.findMany({
-      where: { mesLancamento: mes },
-      select: { contratoId: true },
-    }),
-    taxaComissaoParaMes(mes),
-  ]);
-  const jaLancados = new Set(existentes.map((r) => r.contratoId));
-
-  const novos = contratos
-    .filter(
-      (c) => c.valorBase + c.iptu + c.condominio > 0 && !jaLancados.has(c.id)
-    )
-    .map((c) => ({
-      contratoId: c.id,
-      empreendimentoId: c.unidade.empreendimentoId,
-      mesLancamento: mes,
-      competencia: mes,
-      valor: c.valorBase,
-      iptu: c.iptu,
-      cond: c.condominio,
-      recebido: null,
-      taxaComissaoBps: taxaBps,
-    }));
-
-  if (novos.length > 0) {
-    await prisma.recebimento.createMany({ data: novos });
-    revalidarLocacao();
+  const taxaBps = await taxaComissaoParaMes(mes);
+  let resultado: { criados: number; bloqueados: number };
+  try {
+    resultado = await prisma.$transaction(async (tx) => {
+      if (await tx.fechamentoMensal.findUnique({ where: { mesLancamento: mes } })) {
+        throw new ErroProtecaoUnificacao("O mês foi fechado. Reabra-o antes de gerar cobranças.");
+      }
+      const [contratos, existentes, protecao] = await Promise.all([
+        tx.contrato.findMany({ where: { status: "ativo" }, include: { unidade: true } }),
+        tx.recebimento.findMany({ where: { OR: [{ mesLancamento: mes }, { competencia: mes }] }, select: { contratoId: true } }),
+        carregarProtecaoFinanceira(tx),
+      ]);
+      const jaLancados = new Set(existentes.map((registro) => registro.contratoId));
+      const candidatos = contratos.filter(c => c.valorBase + c.iptu + c.condominio > 0 && !jaLancados.has(c.id));
+      const liberados = candidatos.filter(c => !impedimentoGeracaoUnificada(protecao, c.id, mes));
+      const novos = liberados.map(c => ({
+        contratoId: c.id, empreendimentoId: c.unidade.empreendimentoId,
+        mesLancamento: mes, competencia: mes, valor: c.valorBase, iptu: c.iptu,
+        cond: c.condominio, recebido: null, taxaComissaoBps: taxaBps,
+      }));
+      if (novos.length > 0) await tx.recebimento.createMany({ data: novos });
+      return { criados: novos.length, bloqueados: candidatos.length - liberados.length };
+    }, { maxWait: 15000, timeout: 60000 });
+  } catch (erro) {
+    if (erro instanceof ErroProtecaoUnificacao) voltar(mes, { erro: erro.message });
+    throw erro;
   }
+  if (resultado.criados > 0) revalidarLocacao();
+  const bloqueados = resultado.bloqueados > 0
+    ? ` ${resultado.bloqueados} contrato(s) aguardam conferência em Unificação por vínculo ou cobrança já existente no legado.`
+    : "";
   voltar(mes, {
-    ok:
-      novos.length > 0
-        ? `${novos.length} lançamento(s) devido(s) gerado(s).`
-        : "Nada a gerar — todos os contratos ativos já têm lançamento no mês.",
+    ok: (resultado.criados > 0
+      ? `${resultado.criados} lançamento(s) devido(s) gerado(s).`
+      : "Nenhuma nova cobrança gerada.") + bloqueados,
   });
 }
 
@@ -213,14 +216,16 @@ export async function limparRecebimento(formData: FormData): Promise<void> {
   if (!lancamento) voltar("", { erro: "Lançamento não encontrado." }, retorno);
   await exigirMesAberto(lancamento.mesLancamento, retorno);
 
-  const alterado = await prisma.recebimento.updateMany({
-    where: {
-      id,
-      reservaEmissaoToken: null,
-      boletos: { none: {} },
-      pagamentos: { none: {} },
-    },
-    data: { recebido: null, dataPagamento: null, via: null },
+  const alterado = await prisma.$transaction(async tx => {
+    const impedimento = impedimentoRecebimentoUnificado(await carregarProtecaoFinanceira(tx), id, "LIMPAR");
+    if (impedimento) throw new ErroProtecaoUnificacao(impedimento);
+    return tx.recebimento.updateMany({
+      where: { id, reservaEmissaoToken: null, boletos: { none: {} }, pagamentos: { none: {} } },
+      data: { recebido: null, dataPagamento: null, via: null },
+    });
+  }, { maxWait: 15000, timeout: 60000 }).catch(erro => {
+    if (erro instanceof ErroProtecaoUnificacao) voltar(lancamento.mesLancamento, { erro: erro.message }, retorno);
+    throw erro;
   });
   if (alterado.count !== 1) {
     voltar(
@@ -250,13 +255,15 @@ export async function excluirRecebimento(formData: FormData): Promise<void> {
   if (!lancamento) voltar("", { erro: "Lançamento não encontrado." }, retorno);
   await exigirMesAberto(lancamento.mesLancamento, retorno);
 
-  const removido = await prisma.recebimento.deleteMany({
-    where: {
-      id,
-      reservaEmissaoToken: null,
-      boletos: { none: {} },
-      pagamentos: { none: {} },
-    },
+  const removido = await prisma.$transaction(async tx => {
+    const impedimento = impedimentoRecebimentoUnificado(await carregarProtecaoFinanceira(tx), id, "EXCLUIR");
+    if (impedimento) throw new ErroProtecaoUnificacao(impedimento);
+    return tx.recebimento.deleteMany({
+      where: { id, reservaEmissaoToken: null, boletos: { none: {} }, pagamentos: { none: {} } },
+    });
+  }, { maxWait: 15000, timeout: 60000 }).catch(erro => {
+    if (erro instanceof ErroProtecaoUnificacao) voltar(lancamento.mesLancamento, { erro: erro.message }, retorno);
+    throw erro;
   });
   if (removido.count !== 1) {
     voltar(
@@ -356,8 +363,12 @@ export async function fecharMes(formData: FormData): Promise<void> {
           `${pendenciasBancarias} cobrança(s) bancária(s) ainda aguardam confirmação ou conciliação. Resolva-as antes de fechar o mês.`,
         );
       }
+      const unificacao = await carregarProtecaoFinanceira(tx);
+      const duplicatasConfirmadas = [...unificacao.porChave.values()]
+        .filter(l => l.origem === "BRISA" && l.dominio === "RECEBER" && l.campos.mesLancamento?.valor === mes && l.estado === "VINCULADO" && unificacao.decisoesPorChave.get(l.chave)?.destinoChave?.startsWith("BRISA:"))
+        .map(l => l.origemId);
       const recebimentos = await tx.recebimento.findMany({
-        where: { mesLancamento: mes },
+        where: { mesLancamento: mes, id: { notIn: duplicatasConfirmadas } },
         include: { empreendimento: true },
         orderBy: [
           { empreendimento: { nome: "asc" } },
@@ -384,7 +395,7 @@ export async function fecharMes(formData: FormData): Promise<void> {
 
       await tx.fechamentoMensal.update({
         where: { id: fechamento.id },
-        data: { comissaoTotal: total, detalhe: JSON.stringify(detalhe) },
+        data: { comissaoTotal: total, detalhe: JSON.stringify(detalhe), unificacaoExcluidos: JSON.stringify(duplicatasConfirmadas) },
       });
     });
   } catch (erro) {

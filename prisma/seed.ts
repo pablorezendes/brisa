@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { importarDataset, type Dataset } from "../src/lib/importacao/importar";
+import { ErroSeedBaseNaoVazia } from "../src/lib/importacao/protecao-seed";
 
 const prisma = new PrismaClient();
 
@@ -10,7 +11,7 @@ async function main() {
   const caminho = join(__dirname, "..", "data", "dataset.json");
   const ds = JSON.parse(readFileSync(caminho, "utf-8")) as Dataset;
 
-  console.log("Importando dataset…");
+  console.log("Verificando base vazia para a carga inicial de planilhas…");
   const r = await importarDataset(prisma, ds);
 
   console.log(`  empreendimentos : ${r.empreendimentos}`);
@@ -33,7 +34,7 @@ async function main() {
 
 main()
   .catch((e) => {
-    console.error(e);
+    console.error(e instanceof ErroSeedBaseNaoVazia ? `[${e.codigo}] ${e.message}` : e);
     process.exit(1);
   })
   .finally(() => prisma.$disconnect());

@@ -629,23 +629,24 @@ export function LinkCard({
  * Navegação de mês por querystring (?mes=YYYY-MM), server-friendly (links).
  * Uso: <SeletorMes base="/recebimentos" mes="2026-06" />
  */
-export function SeletorMes({ base, mes }: { base: string; mes: string }) {
+export function SeletorMes({ base, mes, extras }: { base: string; mes: string; extras?: Record<string, string> }) {
   const { ano, mes: m } = parseCompetencia(mes);
   const anterior =
     m === 1 ? fmtCompetencia(ano - 1, 12) : fmtCompetencia(ano, m - 1);
   const proximo =
     m === 12 ? fmtCompetencia(ano + 1, 1) : fmtCompetencia(ano, m + 1);
+  const hrefMes = (valor: string) => `${base}?${new URLSearchParams({ ...extras, mes: valor })}`;
   const seta =
     "flex h-9 w-9 items-center justify-center rounded-lg border border-contorno bg-carta text-tinta-suave shadow-[0_1px_2px_rgba(16,35,38,0.03)] transition-colors hover:border-[#aebabc] hover:bg-[#f8fafb] hover:text-tinta";
   return (
     <div className="flex items-center gap-1.5 text-sm">
-      <Link href={`${base}?mes=${anterior}`} className={seta} aria-label="Mês anterior">
+      <Link href={hrefMes(anterior)} className={seta} aria-label="Mês anterior">
         ‹
       </Link>
       <span className="flex h-9 min-w-24 items-center justify-center rounded-lg border border-contorno bg-carta px-3 text-center font-mono text-[12px] font-bold uppercase tracking-wider shadow-[0_1px_2px_rgba(16,35,38,0.03)]">
         {formatarCompetencia(mes)}
       </span>
-      <Link href={`${base}?mes=${proximo}`} className={seta} aria-label="Próximo mês">
+      <Link href={hrefMes(proximo)} className={seta} aria-label="Próximo mês">
         ›
       </Link>
     </div>

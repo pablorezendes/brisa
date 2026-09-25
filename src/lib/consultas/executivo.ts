@@ -6,6 +6,7 @@
  * saldo de caixa e contratos a reajustar.
  */
 import { prisma } from "@/lib/db";
+import { filtroCaixaUnificado, filtroRecebimentosUnificados } from "./filtro-unificacao-nativa";
 import { calcularRecebimento } from "@/lib/dominio/comissao";
 import { competencia, parseCompetencia } from "@/lib/dominio/normalizacao";
 
@@ -88,12 +89,13 @@ export interface DadosExecutivo {
  */
 export async function mesPadrao(): Promise<string> {
   const ultimo = await prisma.recebimento.findFirst({
-    where: { recebido: { not: null } },
+    where: { AND: [{ recebido: { not: null } }, await filtroRecebimentosUnificados()] },
     orderBy: { mesLancamento: "desc" },
     select: { mesLancamento: true },
   });
   if (ultimo) return ultimo.mesLancamento;
   const qualquer = await prisma.recebimento.findFirst({
+    where: await filtroRecebimentosUnificados(),
     orderBy: { mesLancamento: "desc" },
     select: { mesLancamento: true },
   });
@@ -104,18 +106,19 @@ export async function mesPadrao(): Promise<string> {
 
 export async function dadosExecutivos(mes: string): Promise<DadosExecutivo> {
   const { ano, mes: mesNum } = parseCompetencia(mes);
+  const [filtroRecebimentos, filtroCaixa] = await Promise.all([filtroRecebimentosUnificados(), filtroCaixaUnificado()]);
 
   const [recebs, caixa, fechamento, reajustes, recebT, despT, limpT] =
     await Promise.all([
       prisma.recebimento.findMany({
-        where: { mesLancamento: { startsWith: `${ano}-` } },
+        where: { AND: [{ mesLancamento: { startsWith: `${ano}-` } }, filtroRecebimentos] },
         include: {
           empreendimento: true,
           contrato: { include: { unidade: true, locatario: true } },
         },
       }),
       prisma.lancamentoCaixa.findMany({
-        where: { mesReferencia: { startsWith: `${ano}-` } },
+        where: { AND: [{ mesReferencia: { startsWith: `${ano}-` } }, filtroCaixa] },
       }),
       prisma.fechamentoMensal.findUnique({ where: { mesLancamento: mes } }),
       prisma.contrato.findMany({
@@ -388,7 +391,7 @@ export async function empreendimentosDoPeriodo(
 ): Promise<EmpreendimentoResumoPeriodo[]> {
   const idx = new Map(meses.map((m, i) => [m, i]));
   const recebs = await prisma.recebimento.findMany({
-    where: { mesLancamento: { gte: meses[0], lte: meses[meses.length - 1] } },
+    where: { AND: [{ mesLancamento: { gte: meses[0], lte: meses[meses.length - 1] } }, await filtroRecebimentosUnificados()] },
     select: {
       empreendimentoId: true,
       mesLancamento: true,

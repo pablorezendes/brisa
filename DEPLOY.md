@@ -371,7 +371,8 @@ antecipa quantos itens receberiam o estado `AUSENTE_NA_FONTE`. A aplicação é
 idempotente e nunca apaga esses registros; uma captura completa apenas os marca
 para conferência humana. Baixas só podem receber essa marca quando todo o escopo
 de títulos comprova que a enumeração das liquidações foi completa. Não use
-`npm run db:seed` neste fluxo, pois o seed é uma recarga total da operação.
+`npm run db:seed` neste fluxo: ele serve somente à primeira carga e agora recusa
+bases com dados operacionais, bancários ou importados. Não há exclusão ou reset.
 O modo `--refresh` refaz todas as telas e evita misturar a API atual com detalhes
 de uma execução anterior. Reserve `--resume` exclusivamente para continuar a
 mesma captura interrompida.
@@ -432,6 +433,52 @@ docker compose ps
 docker compose logs --tail 100 brisa
 curl -fsSI https://brisa.tescod.com/login | head -n 1
 ```
+
+## Unificação dos dados já importados (sem recapturar nem duplicar)
+
+Esta atualização acrescenta decisões e consultas operacionais comuns ao Brisa,
+às planilhas e ao Widesys. Não requer repetir o scraping, não reexecuta o seed,
+não apaga as fontes e não emite boletos. Aplique sobre o banco existente no
+servidor — o banco local e arquivos com dados pessoais não são enviados ao Git.
+
+```bash
+set -e
+cd /srv/stack/acamargo
+git pull --ff-only origin main
+# Construa antes de parar a aplicação para reduzir a indisponibilidade.
+docker compose build brisa
+mkdir -p /root/backups
+docker compose stop brisa
+# Copia também WAL/SHM, caso existam, com a aplicação parada.
+cp -a dados "/root/backups/brisa-pre-unificacao-$(date +%F-%H%M%S)"
+docker compose run --rm --no-deps brisa npx prisma db push --skip-generate
+docker compose run --rm --no-deps brisa npm run unificar:operacao:dry-run
+docker compose run --rm --no-deps brisa npm run unificar:operacao
+# Deve informar criados: 0 e atualizados: 0 se nada mudou desde a execução.
+docker compose run --rm --no-deps brisa npm run unificar:operacao:dry-run
+docker compose up -d brisa
+docker compose ps
+curl --retry 12 --retry-delay 5 --retry-all-errors -fsSI https://brisa.tescod.com/login | head -n 1
+```
+
+O bootstrap aplica as duas tabelas novas (`UnificacaoRegistro` e
+`UnificacaoDecisao`) e o campo de exclusões congeladas no fechamento mensal.
+A análise registra as decisões, mas não soma títulos,
+baixas e movimentos entre si. Os totais consolidados deixam correspondências
+pendentes e inconsistências de fora; os montantes pendentes permanecem visíveis.
+As contagens refletem a captura do servidor, que pode diferir da base local.
+
+Após o comando, confira `/financeiro`, `/recebimentos`,
+`/financeiro/contas-a-pagar`, `/caixa`, `/contratos` e `/cadastros/pessoas`.
+Em `/unificacao`, compare cada pendência: **Vincular** quando for a mesma
+ocorrência; **Confirmar registro distinto** quando houver evidência de que são
+fatos diferentes. Justificativa e versões são auditadas; decisões podem ser
+reabertas. Nomes e valores parecidos nunca confirmam identidade sozinhos.
+
+As visões de comissão, temporada e fechamento continuam usando a composição
+verificada das locações/planilhas. Títulos Widesys sem separação de aluguel,
+IPTU, condomínio e taxa não recebem comissão presumida. Movimentos e baixas
+históricas não disparam pagamento, reemissão ou contato com o banco.
 
 ## Cloudflare — a nuvem laranja e o certificado
 

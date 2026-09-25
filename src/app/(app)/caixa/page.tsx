@@ -11,6 +11,7 @@
  * continua mensal — o botão "Novo lançamento" leva à competência corrente.
  */
 import Link from "next/link";
+import { OperacaoUnificada, podeAcessarUnificacao, type ParametrosUnificacao } from "@/components/operacao-unificada";
 import type { LancamentoCaixa } from "@prisma/client";
 import {
   Ajuda,
@@ -312,9 +313,12 @@ function CabecalhoBloco({
 export default async function PaginaCaixa({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; de?: string; ate?: string }>;
+  searchParams: Promise<ParametrosUnificacao & { mes?: string; de?: string; ate?: string; visao?: string }>;
 }) {
   const sp = await searchParams;
+  if (sp.visao !== "livro" && await podeAcessarUnificacao()) {
+    return <OperacaoUnificada dominio="MOVIMENTO" titulo="Movimentações financeiras" base="/caixa" parametros={sp} nativo={{ href: `/caixa?visao=livro${sp.mes ? `&mes=${encodeURIComponent(sp.mes)}` : ""}`, rotulo: "Lançamentos do livro-caixa" }} />;
+  }
   const periodo = parsePeriodo(sp.de, sp.ate);
   const mes = sp.mes && RE_MES.test(sp.mes) ? sp.mes : await mesMaisRecente();
   const { ano } = parseCompetencia(mes);
@@ -341,6 +345,7 @@ export default async function PaginaCaixa({
         }
         acoes={
           <>
+            <Link href={`/caixa?mes=${mes}`} className={btnSecundario}>Visão unificada</Link>
             {periodo ? (
               <Link
                 href={`/caixa/ano?de=${periodo.de}&ate=${periodo.ate}`}
@@ -356,8 +361,8 @@ export default async function PaginaCaixa({
             <Link href={`/caixa/novo?mes=${mes}`} className={btnPrimario}>
               Novo lançamento
             </Link>
-            {!periodo ? <SeletorMes base="/caixa" mes={mes} /> : null}
-            <SeletorPeriodo base="/caixa" periodo={periodo} />
+            {!periodo ? <SeletorMes base="/caixa" mes={mes} extras={{ visao: "livro" }} /> : null}
+            <SeletorPeriodo base="/caixa" periodo={periodo} extras={{ visao: "livro" }} />
           </>
         }
       />

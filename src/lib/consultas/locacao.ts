@@ -6,6 +6,7 @@
  */
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
+import { filtroRecebimentosUnificados } from "./filtro-unificacao-nativa";
 
 // ---------- validação de formatos ----------
 
@@ -46,7 +47,7 @@ export async function recebimentosDoMes(
   mes: string
 ): Promise<RecebimentoComRelacoes[]> {
   return prisma.recebimento.findMany({
-    where: { mesLancamento: mes },
+    where: { AND: [{ mesLancamento: mes }, await filtroRecebimentosUnificados()] },
     include: incluirRelacoesRecebimento,
     orderBy: [
       { empreendimento: { nome: "asc" } },
@@ -66,7 +67,7 @@ export async function recebimentosDoPeriodo(
 ): Promise<RecebimentoComRelacoes[]> {
   if (meses.length === 0) return [];
   return prisma.recebimento.findMany({
-    where: { mesLancamento: { gte: meses[0], lte: meses[meses.length - 1] } },
+    where: { AND: [{ mesLancamento: { gte: meses[0], lte: meses[meses.length - 1] } }, await filtroRecebimentosUnificados()] },
     include: incluirRelacoesRecebimento,
     orderBy: [
       { mesLancamento: "asc" },
@@ -96,7 +97,7 @@ export async function recebimentosDoContrato(
   contratoId: string
 ): Promise<RecebimentoComRelacoes[]> {
   return prisma.recebimento.findMany({
-    where: { contratoId },
+    where: { AND: [{ contratoId }, await filtroRecebimentosUnificados()] },
     include: incluirRelacoesRecebimento,
     orderBy: [{ mesLancamento: "asc" }, { competencia: "asc" }],
   });
@@ -105,6 +106,7 @@ export async function recebimentosDoContrato(
 /** Meses "YYYY-MM" que possuem lançamentos, em ordem crescente. */
 export async function mesesComLancamento(): Promise<string[]> {
   const grupos = await prisma.recebimento.groupBy({
+    where: await filtroRecebimentosUnificados(),
     by: ["mesLancamento"],
     orderBy: { mesLancamento: "asc" },
   });
@@ -119,10 +121,11 @@ export async function mesesComLancamento(): Promise<string[]> {
 export async function mesPadraoRecebimentos(): Promise<string | null> {
   const comRecebido = await prisma.recebimento.aggregate({
     _max: { mesLancamento: true },
-    where: { recebido: { not: null } },
+    where: { AND: [{ recebido: { not: null } }, await filtroRecebimentosUnificados()] },
   });
   if (comRecebido._max.mesLancamento) return comRecebido._max.mesLancamento;
   const qualquer = await prisma.recebimento.aggregate({
+    where: await filtroRecebimentosUnificados(),
     _max: { mesLancamento: true },
   });
   return qualquer._max.mesLancamento;

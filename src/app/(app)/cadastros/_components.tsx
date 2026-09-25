@@ -4,6 +4,7 @@ import { Badge, Card } from "@/components/ui";
 
 export type SecaoCadastro =
   | "inicio"
+  | "base-unificada"
   | "pessoas"
   | "imoveis-legado"
   | "empreendimentos"
@@ -28,10 +29,17 @@ const SECOES: {
     icone: "inicio",
   },
   {
+    id: "base-unificada",
+    href: "/cadastros/base-unificada",
+    rotulo: "Base unificada",
+    descricao: "Todas as origens, uma consulta",
+    icone: "pessoas",
+  },
+  {
     id: "pessoas",
     href: "/cadastros/pessoas",
     rotulo: "Pessoas",
-    descricao: "Perfis trazidos do sistema anterior",
+    descricao: "Pessoas, empresas e seus papéis",
     icone: "pessoas",
   },
   {

@@ -22,6 +22,8 @@
     "legacy:capture-operation": "tsx scripts/capturar-operacao-widesys.ts",
     "legacy:scrape": "tsx scripts/scrape-widesys.ts",
     "reconciliar": "tsx scripts/reconciliar.ts",
+    "unificar:operacao": "tsx scripts/unificar-operacao.ts",
+    "unificar:operacao:dry-run": "tsx scripts/unificar-operacao.ts --dry-run",
     "test": "vitest run",
     "usuario": "tsx scripts/usuario.ts"
   },

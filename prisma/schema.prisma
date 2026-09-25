@@ -11,6 +11,48 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// Identidade operacional comum. A decisão não pertence ao status da captura:
+// recapturar o Widesys nunca apaga uma resolução ou duplica um lançamento.
+model UnificacaoRegistro {
+  chave          String   @id
+  dominio        String
+  origem         String
+  origemId       String
+  status         String   // ATIVO|PENDENTE|VINCULADO|QUARENTENA|REVISAR|AUSENTE
+  destinoChave   String?
+  hashFonte      String
+  hashDestino    String?
+  candidatos     String   @default("[]") // apenas chaves e motivos; sem PII
+  motivos        String   @default("[]")
+  proveniencia   String   @default("{}") // arquivo/aba/linha/hash, quando comprovados
+  decisao        String   @default("AUTOMATICA") // AUTOMATICA|MANUAL
+  versao         Int      @default(1)
+  decididoPor    String?
+  decididoEm     DateTime?
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
+
+  @@unique([origem, dominio, origemId])
+  @@index([dominio, status])
+  @@index([destinoChave])
+}
+
+model UnificacaoDecisao {
+  id             String   @id @default(uuid())
+  registroChave  String
+  acao           String
+  estadoAnterior String
+  estadoNovo     String
+  destinoChave   String?
+  hashFonte      String
+  hashDestino    String?
+  justificativa  String
+  usuarioId      String
+  criadoEm       DateTime @default(now())
+
+  @@index([registroChave, criadoEm])
+}
+
 datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")
@@ -811,6 +853,7 @@ model FechamentoMensal {
   mesLancamento String   @unique // "YYYY-MM" (mês operacional fechado — mesma dimensão da matriz)
   comissaoTotal Int // centavos (snapshot imutável)
   detalhe       String // JSON: comissão por empreendimento
+  unificacaoExcluidos String @default("[]") // IDs de cópias nativas suprimidas neste fechamento
   fechadoEm     DateTime @default(now())
 }
 

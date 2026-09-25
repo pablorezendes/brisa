@@ -26,6 +26,11 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
+vi.mock("./filtro-unificacao-nativa", () => ({
+  filtroRecebimentosUnificados: vi.fn(async () => ({})),
+  filtroCaixaUnificado: vi.fn(async () => ({})),
+}));
+
 import {
   kpisDoMes,
   kpisDoPeriodo,
@@ -109,7 +114,7 @@ describe("relatórios de inadimplência", () => {
     const resultado = await pendentesDoMes("2026-09");
 
     expect(mocks.recebimentoFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { mesLancamento: "2026-09" } })
+      expect.objectContaining({ where: { AND: [{ mesLancamento: "2026-09" }, {}] } })
     );
     expect(resultado.map(({ recebimentoId, totalDevido, recebido, saldoAberto }) => ({
       recebimentoId,
@@ -139,7 +144,7 @@ describe("relatórios de inadimplência", () => {
 
     expect(mocks.recebimentoFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { mesLancamento: { gte: "2026-09", lte: "2026-09" } },
+        where: { AND: [{ mesLancamento: { gte: "2026-09", lte: "2026-09" } }, {}] },
       })
     );
     expect(resultado.map((item) => [item.recebimentoId, item.saldoAberto])).toEqual([
@@ -153,6 +158,19 @@ describe("relatórios de inadimplência", () => {
 
     const mensal = await kpisDoMes("2026-09");
     const periodo = await kpisDoPeriodo(["2026-09"]);
+
+    expect(mocks.recebimentoFindMany).toHaveBeenNthCalledWith(1,
+      expect.objectContaining({ where: { AND: [{ mesLancamento: { gte: "2026-01", lte: "2026-09" } }, {}] } })
+    );
+    expect(mocks.recebimentoFindMany).toHaveBeenNthCalledWith(2,
+      expect.objectContaining({ where: { AND: [{ mesLancamento: { gte: "2026-09", lte: "2026-09" } }, {}] } })
+    );
+    expect(mocks.lancamentoCaixaGroupBy).toHaveBeenNthCalledWith(1,
+      expect.objectContaining({ where: { AND: [{ mesReferencia: "2026-09" }, {}] } })
+    );
+    expect(mocks.lancamentoCaixaGroupBy).toHaveBeenNthCalledWith(2,
+      expect.objectContaining({ where: { AND: [{ mesReferencia: { gte: "2026-09", lte: "2026-09" } }, {}] } })
+    );
 
     expect(mensal.inadimplencia).toEqual({
       quantidade: 2,

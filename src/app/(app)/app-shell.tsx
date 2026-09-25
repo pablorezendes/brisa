@@ -42,6 +42,7 @@ const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
         icone: "cadastros",
         itens: [
           { tipo: "link", href: "/cadastros", rotulo: "Visão cadastral", correspondencia: "exata" },
+          { tipo: "link", href: "/cadastros/base-unificada", rotulo: "Base unificada", icone: "integracao", perfis: ["ADMINISTRADOR", "FINANCEIRO"] },
           { tipo: "link", href: "/cadastros/pessoas", rotulo: "Pessoas e empresas", icone: "pessoas" },
           { tipo: "link", href: "/cadastros/imoveis-legado", rotulo: "Imóveis do legado", icone: "imoveis-legado" },
           { tipo: "link", href: "/cadastros/empreendimentos", rotulo: "Empreendimentos", icone: "empreendimentos" },
@@ -58,6 +59,7 @@ const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
         itens: [
           { tipo: "link", href: "/financeiro", rotulo: "Visão financeira", correspondencia: "exata" },
           { tipo: "link", href: "/recebimentos", rotulo: "Contas a receber", icone: "recebimentos" },
+          { tipo: "link", href: "/financeiro/contas-a-pagar", rotulo: "Contas a pagar", icone: "financeiro", perfis: ["ADMINISTRADOR", "FINANCEIRO"] },
           { tipo: "link", href: "/financeiro/boletos", rotulo: "Boletos", icone: "boletos" },
           { tipo: "link", href: "/paineis/cobranca", rotulo: "Cobrança e atrasos", icone: "cobranca" },
           { tipo: "link", href: "/financeiro/contas-bancarias", rotulo: "Contas bancárias", icone: "contas-bancarias" },
@@ -70,6 +72,7 @@ const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
             perfis: ["ADMINISTRADOR", "FINANCEIRO"],
           },
           { tipo: "link", href: "/caixa", rotulo: "Movimentações de caixa", icone: "caixa" },
+          { tipo: "link", href: "/unificacao", rotulo: "Resolver duplicidades", icone: "conciliacao", perfis: ["ADMINISTRADOR", "FINANCEIRO"] },
           { tipo: "link", href: "/relatorios/comissao", rotulo: "Comissões", icone: "comissoes" },
         ],
       },

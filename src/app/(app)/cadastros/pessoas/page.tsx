@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { OperacaoUnificada, podeAcessarUnificacao } from "@/components/operacao-unificada";
 import { Badge, Card, Kpi, PageHeader, Sigilo, btnSecundario, inputBase } from "@/components/ui";
 import { IconeMenu } from "@/components/icones-menu";
 import { listarPessoasWidesys } from "@/lib/consultas/cadastros-widesys";
@@ -81,7 +82,7 @@ function qualidadeCadastro(item: {
 }
 
 function hrefFiltro(q: string, papel: PapelFiltro) {
-  const params = new URLSearchParams();
+  const params = new URLSearchParams({ visao: "origem" });
   if (q) params.set("q", q);
   if (papel !== "todos") params.set("papel", papel);
   const query = params.toString();
@@ -104,6 +105,7 @@ export default async function PaginaPessoas({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const sp = await searchParams;
+  if (primeiro(sp.visao) !== "origem" && await podeAcessarUnificacao()) return <OperacaoUnificada dominio="PESSOA" titulo="Pessoas e empresas" base="/cadastros/pessoas" parametros={sp} nativo={{ href: "/cadastros/pessoas?visao=origem", rotulo: "Conferir cadastro de origem" }} />;
   const q = (primeiro(sp.q) ?? "").trim().slice(0, 120);
   const papel = papelValido(primeiro(sp.papel));
   const pagina = paginaValida(primeiro(sp.pagina));
@@ -177,6 +179,7 @@ export default async function PaginaPessoas({
               </div>
             </div>
             <form method="get" action="/cadastros/pessoas" className="flex w-full gap-2 lg:w-auto">
+              <input type="hidden" name="visao" value="origem" />
               {papel !== "todos" ? <input type="hidden" name="papel" value={papel} /> : null}
               <label className="sr-only" htmlFor="busca-pessoa">Buscar pessoa ou empresa</label>
               <input
@@ -327,7 +330,7 @@ export default async function PaginaPessoas({
           pagina={resultado.pagina}
           total={resultado.total}
           porPagina={resultado.porPagina}
-          parametros={{ q: q || undefined, papel: papel === "todos" ? undefined : papel }}
+          parametros={{ visao: "origem", q: q || undefined, papel: papel === "todos" ? undefined : papel }}
         />
       </Card>
 

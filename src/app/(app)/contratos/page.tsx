@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { OperacaoUnificada, podeAcessarUnificacao, type ParametrosUnificacao } from "@/components/operacao-unificada";
 import {
   Ajuda,
   PageHeader,
@@ -17,7 +18,7 @@ import {
 } from "@/lib/consultas/locacao";
 import { badgeStatus } from "./status";
 
-type SearchParams = Promise<{ todos?: string; erro?: string }>;
+type SearchParams = Promise<ParametrosUnificacao & { todos?: string; erro?: string; visao?: string }>;
 
 export default async function PaginaContratos({
   searchParams,
@@ -25,6 +26,9 @@ export default async function PaginaContratos({
   searchParams: SearchParams;
 }) {
   const sp = await searchParams;
+  if (sp.visao !== "locacao" && !sp.todos && !sp.erro && await podeAcessarUnificacao()) {
+    return <OperacaoUnificada dominio="CONTRATO" titulo="Contratos" base="/contratos" parametros={sp} nativo={{ href: "/contratos?visao=locacao", rotulo: "Administrar locações" }} />;
+  }
   const incluirEncerrados = sp.todos === "1";
   const contratos = await contratosParaLista(incluirEncerrados);
 
@@ -57,8 +61,9 @@ export default async function PaginaContratos({
         descricao="Rent roll por empreendimento — valores contratados em vigor"
         acoes={
           <>
+            <Link href="/contratos" className={btnSecundario}>Visão unificada</Link>
             <Link
-              href={incluirEncerrados ? "/contratos" : "/contratos?todos=1"}
+              href={incluirEncerrados ? "/contratos?visao=locacao" : "/contratos?visao=locacao&todos=1"}
               className={btnSecundario}
             >
               {incluirEncerrados ? "Ocultar encerrados" : "Mostrar encerrados"}

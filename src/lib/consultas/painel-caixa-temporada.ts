@@ -27,6 +27,7 @@ import {
   type LinhaAnual,
 } from "@/lib/consultas/caixa";
 import { historicoTemporada } from "@/lib/consultas/temporada";
+import { filtroCaixaUnificado, filtroRecebimentosUnificados } from "@/lib/consultas/filtro-unificacao-nativa";
 
 // ---------------------------------------------------------------------------
 // /paineis/caixa
@@ -83,11 +84,11 @@ export async function painelCaixa(ano: number): Promise<PainelCaixa> {
     consolidacaoAnual(ano),
     prisma.lancamentoCaixa.groupBy({
       by: ["categoria", "centroCusto"],
-      where: { tipo: "SAIDA", mesReferencia: { startsWith: `${ano}-` } },
+      where: { AND: [{ tipo: "SAIDA", mesReferencia: { startsWith: `${ano}-` } }, await filtroCaixaUnificado()] },
       _sum: { valor: true },
     }),
     prisma.lancamentoCaixa.findMany({
-      where: { tipo: "SAIDA", mesReferencia: { startsWith: `${ano}-` } },
+      where: { AND: [{ tipo: "SAIDA", mesReferencia: { startsWith: `${ano}-` } }, await filtroCaixaUnificado()] },
       orderBy: { valor: "desc" },
       take: 12,
     }),
@@ -120,16 +121,16 @@ export async function painelCaixaPeriodo(
   const [grupos, porCategoria, maioresSaidas] = await Promise.all([
     prisma.lancamentoCaixa.groupBy({
       by: ["mesReferencia", "centroCusto", "tipo"],
-      where: { mesReferencia: janela },
+      where: { AND: [{ mesReferencia: janela }, await filtroCaixaUnificado()] },
       _sum: { valor: true },
     }),
     prisma.lancamentoCaixa.groupBy({
       by: ["categoria", "centroCusto"],
-      where: { tipo: "SAIDA", mesReferencia: janela },
+      where: { AND: [{ tipo: "SAIDA", mesReferencia: janela }, await filtroCaixaUnificado()] },
       _sum: { valor: true },
     }),
     prisma.lancamentoCaixa.findMany({
-      where: { tipo: "SAIDA", mesReferencia: janela },
+      where: { AND: [{ tipo: "SAIDA", mesReferencia: janela }, await filtroCaixaUnificado()] },
       orderBy: { valor: "desc" },
       take: 12,
     }),
@@ -272,15 +273,19 @@ export async function painelTemporada(): Promise<PainelTemporada> {
     const [agregadas, recebsAirbnb] = await Promise.all([
       prisma.recebimento.findMany({
         where: {
-          origemAgregada: true,
-          mesLancamento: { startsWith: `${anoNucleo}-` },
+          AND: [
+            { origemAgregada: true, mesLancamento: { startsWith: `${anoNucleo}-` } },
+            await filtroRecebimentosUnificados(),
+          ],
         },
         select: { mesLancamento: true, recebido: true },
       }),
       prisma.recebimento.findMany({
         where: {
-          mesLancamento: { startsWith: `${anoNucleo}-` },
-          empreendimento: { nome: "AIRBNB" },
+          AND: [
+            { mesLancamento: { startsWith: `${anoNucleo}-` }, empreendimento: { nome: "AIRBNB" } },
+            await filtroRecebimentosUnificados(),
+          ],
         },
         select: {
           valor: true,
@@ -419,11 +424,11 @@ export async function painelTemporadaPeriodo(
       select: { ano: true, mes: true, receita: true, despesa: true },
     }),
     prisma.recebimento.findMany({
-      where: { origemAgregada: true, mesLancamento: janela },
+      where: { AND: [{ origemAgregada: true, mesLancamento: janela }, await filtroRecebimentosUnificados()] },
       select: { mesLancamento: true, recebido: true },
     }),
     prisma.recebimento.findMany({
-      where: { mesLancamento: janela, empreendimento: { nome: "AIRBNB" } },
+      where: { AND: [{ mesLancamento: janela, empreendimento: { nome: "AIRBNB" } }, await filtroRecebimentosUnificados()] },
       select: {
         valor: true,
         iptu: true,
