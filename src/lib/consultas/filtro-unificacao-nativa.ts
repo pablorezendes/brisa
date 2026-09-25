@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { cache } from "react";
 import { prisma } from "../db";
-import { lerOperacaoUnificada } from "../unificacao/servico";
+import { operacaoNaRequisicao } from "./operacao-na-requisicao";
 
 /**
  * As apurações de aluguel preservam seus insumos e a fórmula de comissão.
@@ -18,7 +18,7 @@ const idsSuprimidos = cache(async (): Promise<{ recebimentos: string[]; caixa: s
   });
   if (!candidato) return { recebimentos: [], caixa: [] };
 
-  const { linhas, decisoes } = await lerOperacaoUnificada(prisma);
+  const { linhas, decisoes } = await operacaoNaRequisicao();
   const porChave = new Map(linhas.map(linha => [linha.chave, linha]));
   const recebimentos = new Set<string>();
   const caixa = new Set<string>();

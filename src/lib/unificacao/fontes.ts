@@ -22,23 +22,97 @@ function fonte(dominio: DominioUnificacao, origem: "BRISA" | "WIDESYS", id: stri
   return { ...registro, hash: hashUnificacao(registro) };
 }
 
-/** Lê a operação nas tabelas originais. Valores não são duplicados em outra tabela. */
-export async function carregarFontesUnificacao(db: BancoUnificacao): Promise<FonteUnificacao[]> {
+/**
+ * Fotografia mínima das tabelas originais. Snapshots de importação, anexos e
+ * metadados não usados na projeção não precisam atravessar o Prisma em cada
+ * navegação. Todos os insumos dos hashes e da proveniência são preservados.
+ */
+export async function carregarDadosFontesUnificacao(db: BancoUnificacao) {
   const [locatarios, pessoas, unidades, imoveis, contratos, contratosLegados, recebimentos, titulos, pagamentos, baixas, caixa, movimentos, parametros] = await Promise.all([
-    db.locatario.findMany(),
-    db.pessoa.findMany({ where: { origem: "WIDESYS" }, include: { papeis: true, emails: { orderBy: { principal: "desc" } }, telefones: { orderBy: { principal: "desc" } } } }),
-    db.unidade.findMany({ include: { empreendimento: true } }),
-    db.imovelLegado.findMany({ where: { origem: "WIDESYS" } }),
-    db.contrato.findMany({ include: { locatario: true, unidade: { include: { empreendimento: true } } } }),
-    db.contratoLegado.findMany({ where: { origem: "WIDESYS" }, include: { partes: { orderBy: { ordem: "asc" } } } }),
-    db.recebimento.findMany({ include: { contrato: { include: { locatario: true, unidade: true } }, empreendimento: true } }),
-    db.tituloFinanceiroLegado.findMany({ where: { origem: "WIDESYS" } }),
-    db.pagamentoRecebimento.findMany(),
-    db.baixaFinanceiraLegado.findMany({ where: { origem: "WIDESYS" } }),
-    db.lancamentoCaixa.findMany(),
-    db.movimentoFinanceiroLegado.findMany({ where: { origem: "WIDESYS" } }),
-    db.catalogoLegadoRegistro.findMany({ where: { origem: "WIDESYS" }, select: { id: true, modulo: true, legadoId: true, titulo: true, label: true, status: true, quarentenaMotivo: true, snapshotHash: true } }),
+    db.locatario.findMany({ select: {
+      id: true, nome: true, cpfCnpj: true, pessoaId: true, email: true,
+      telefone: true, contato: true, endereco: true, numeroEndereco: true,
+      bairro: true, cidade: true, uf: true, cep: true,
+    } }),
+    db.pessoa.findMany({ where: { origem: "WIDESYS" }, select: {
+      id: true, legadoId: true, nome: true, cpfCnpj: true, endereco: true,
+      numeroEndereco: true, bairro: true, cidade: true, uf: true, cep: true,
+      papeis: { select: { papel: true } },
+      emails: { orderBy: { principal: "desc" }, select: { email: true } },
+      telefones: { orderBy: { principal: "desc" }, select: { telefone: true } },
+    } }),
+    db.unidade.findMany({ select: {
+      id: true, identificacao: true, tipo: true, ativo: true,
+      empreendimento: { select: { nome: true } },
+    } }),
+    db.imovelLegado.findMany({ where: { origem: "WIDESYS" }, select: {
+      id: true, legadoId: true, nome: true, referencia: true, empreendimentoNome: true,
+      endereco: true, numeroEndereco: true, tipo: true, cidade: true, uf: true,
+      valorLocacao: true, valorIptu: true, valorCondominio: true,
+    } }),
+    db.contrato.findMany({ select: {
+      id: true, locatarioId: true, unidadeId: true, valorBase: true, inicio: true,
+      fim: true, iptu: true, condominio: true, status: true, observacao: true,
+      locatario: { select: { nome: true } },
+      unidade: { select: { identificacao: true, empreendimento: { select: { nome: true } } } },
+    } }),
+    db.contratoLegado.findMany({ where: { origem: "WIDESYS" }, select: {
+      id: true, legadoId: true, imovelLegadoId: true, numeroContrato: true,
+      statusImportacao: true, quarentenaMotivo: true, valorLocacao: true,
+      valorAdministracao: true, inicio: true, fim: true, situacaoOrigem: true,
+      partes: { orderBy: { ordem: "asc" }, select: { papel: true, pessoaLegadoId: true, statusImportacao: true } },
+    } }),
+    db.recebimento.findMany({ select: {
+      id: true, contratoId: true, valor: true, iptu: true, cond: true,
+      recebido: true, competencia: true, mesLancamento: true, dataPagamento: true,
+      taxaComissaoBps: true, observacao: true, origemAgregada: true, via: true,
+      empreendimento: { select: { nome: true } },
+      contrato: { select: {
+        diaVencimento: true, locatarioId: true, unidadeId: true,
+        locatario: { select: { nome: true } }, unidade: { select: { identificacao: true } },
+      } },
+    } }),
+    db.tituloFinanceiroLegado.findMany({ where: { origem: "WIDESYS" }, select: {
+      id: true, legadoId: true, escopo: true, natureza: true, pessoaLegadoId: true,
+      contratoLegadoId: true, tipoCobrancaRotulo: true, planoContaRotulo: true,
+      statusImportacao: true, quarentenaMotivo: true, competencia: true,
+      vencimento: true, pagamento: true, valorDevido: true, valorPago: true,
+      valorAberto: true, situacaoNormalizada: true, numeroDocumento: true,
+      parcela: true, contaBancariaRotulo: true,
+    } }),
+    db.pagamentoRecebimento.findMany({ select: {
+      id: true, forma: true, status: true, recebimentoId: true,
+      dataPagamento: true, valor: true, identificadorBanco: true,
+    } }),
+    db.baixaFinanceiraLegado.findMany({ where: { origem: "WIDESYS" }, select: {
+      id: true, legadoId: true, tituloEscopo: true, tituloLegadoId: true,
+      escopo: true, forma: true, statusImportacao: true, quarentenaMotivo: true,
+      valor: true, dataPagamento: true, estornada: true, contaBancariaRotulo: true,
+      movimentoLegadoId: true,
+    } }),
+    db.lancamentoCaixa.findMany({ select: {
+      id: true, mesReferencia: true, centroCusto: true, tipo: true, categoria: true,
+      data: true, valor: true, descricao: true, cliente: true, local: true,
+    } }),
+    db.movimentoFinanceiroLegado.findMany({ where: { origem: "WIDESYS" }, select: {
+      id: true, legadoId: true, tituloEscopo: true, tituloLegadoId: true,
+      descricao: true, planoContaRotulo: true, contaBancariaRotulo: true,
+      statusImportacao: true, quarentenaMotivo: true, dataMovimento: true,
+      competencia: true, natureza: true, valor: true, documento: true,
+    } }),
+    db.catalogoLegadoRegistro.findMany({ where: { origem: "WIDESYS" }, select: {
+      id: true, modulo: true, legadoId: true, titulo: true, label: true,
+      status: true, quarentenaMotivo: true,
+    } }),
   ]);
+  return { locatarios, pessoas, unidades, imoveis, contratos, contratosLegados, recebimentos, titulos, pagamentos, baixas, caixa, movimentos, parametros };
+}
+
+export type DadosFontesUnificacao = Awaited<ReturnType<typeof carregarDadosFontesUnificacao>>;
+
+/** Deriva hashes e proveniência da fotografia, sem novas consultas ao banco. */
+export async function derivarFontesUnificacao(dados: DadosFontesUnificacao): Promise<FonteUnificacao[]> {
+  const { locatarios, pessoas, unidades, imoveis, contratos, contratosLegados, recebimentos, titulos, pagamentos, baixas, caixa, movimentos, parametros } = dados;
   const pLegado = new Map(pessoas.map(p => [p.legadoId, p]));
   const iLegado = new Map(imoveis.map(i => [i.legadoId, i]));
   const cLegado = new Map(contratosLegados.map(c => [c.legadoId, c]));
@@ -154,4 +228,9 @@ export async function carregarFontesUnificacao(db: BancoUnificacao): Promise<Fon
     }
   }
   return fontes;
+}
+
+/** Mutações continuam lendo e verificando as fontes dentro da própria transação. */
+export async function carregarFontesUnificacao(db: BancoUnificacao): Promise<FonteUnificacao[]> {
+  return derivarFontesUnificacao(await carregarDadosFontesUnificacao(db));
 }

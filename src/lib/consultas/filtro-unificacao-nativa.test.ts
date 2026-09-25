@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DecisaoUnificacao, LinhaUnificada } from "../unificacao/tipos";
 
 const mocks = vi.hoisted(() => ({ candidato: vi.fn(), fechamentos: vi.fn(), operacao: vi.fn() }));
+vi.mock("server-only", () => ({}));
 vi.mock("../db", () => ({ prisma: {
   unificacaoRegistro: { findFirst: mocks.candidato },
   fechamentoMensal: { findMany: mocks.fechamentos },

@@ -83,6 +83,21 @@ export function projetarUnificados(fontes: FonteUnificacao[], decisoes: DecisaoU
   const porChave = new Map(fontes.map(f => [f.chave, f]));
   const decisoesPorChave = new Map(decisoes.map(d => [d.chave,d]));
   const linhas = new Map<string,LinhaUnificada>();
+  const destinosSemVinculo = new Map<string, string>();
+  let fontesPorDominio: Map<FonteUnificacao["dominio"], FonteUnificacao[]> | undefined;
+  const fontesDoDominio = (dominio: FonteUnificacao["dominio"]) => {
+    // Só constrói o índice se uma fonte realmente precisar de candidatos novos.
+    // Preserva a ordem original; os vínculos e a avaliação continuam usando a base inteira.
+    if (!fontesPorDominio) {
+      fontesPorDominio = new Map();
+      for (const fonte of fontes) {
+        const grupo = fontesPorDominio.get(fonte.dominio);
+        if (grupo) grupo.push(fonte);
+        else fontesPorDominio.set(fonte.dominio, [fonte]);
+      }
+    }
+    return fontesPorDominio.get(dominio) ?? [];
+  };
   for (const f of fontes) {
     const d = decisoesPorChave.get(f.chave);
     const reavaliarNativo = Boolean(d && d.hashFonte !== f.hash && f.origem === "BRISA" && d.status === "ATIVO" && d.decisao === "AUTOMATICA");
@@ -90,7 +105,7 @@ export function projetarUnificados(fontes: FonteUnificacao[], decisoes: DecisaoU
     const alvo = d?.destinoChave ? porChave.get(d.destinoChave) : null;
     const alvoDecisao = d?.destinoChave ? decisoesPorChave.get(d.destinoChave) : null;
     const alvoInvalido = d?.destinoChave && (!alvo || alvo.dominio !== f.dominio || alvo.hash !== d.hashDestino || alvo.qualidade !== "OK" || alvoDecisao?.status !== "ATIVO" || alvoDecisao?.hashFonte !== alvo.hash);
-    const propostas = d && !reavaliarNativo ? listaJson<CandidatoUnificacao>(d.candidatos) : candidatosPara(f, fontes, new Map());
+    const propostas = d && !reavaliarNativo ? listaJson<CandidatoUnificacao>(d.candidatos) : candidatosPara(f, fontesDoDominio(f.dominio), destinosSemVinculo);
     // Cadastros e lançamentos novos do próprio Brisa não exigem uma migração
     // para funcionar. Ainda passam pela mesma checagem de repetição interna.
     const estadoNovo = (!d || reavaliarNativo) && f.origem === "BRISA"

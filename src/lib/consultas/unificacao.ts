@@ -4,14 +4,14 @@ import { notFound } from "next/navigation";
 import { perfilAtual, perfilPodeVerComissoes } from "../autorizacao";
 import { prisma } from "../db";
 import { normalizar } from "../dominio/normalizacao";
-import { lerOperacaoUnificada } from "../unificacao/servico";
+import { operacaoNaRequisicao } from "./operacao-na-requisicao";
 import { dataOperacionalUnificada, mesOperacionalUnificado } from "../unificacao/periodo";
 import { DOMINIOS_UNIFICACAO, type FiltrosUnificacao, type LinhaUnificada, type ListaUnificada } from "../unificacao/tipos";
 
 const ler = cache(async () => {
   const perfil = await perfilAtual();
   if (!["ADMINISTRADOR", "FINANCEIRO"].includes(perfil)) notFound();
-  return { ...(await lerOperacaoUnificada(prisma)), perfil };
+  return { ...(await operacaoNaRequisicao()), perfil };
 });
 
 const parametroReservado = (linha: LinhaUnificada) =>

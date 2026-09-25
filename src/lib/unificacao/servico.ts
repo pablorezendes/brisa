@@ -1,7 +1,7 @@
 import type { PrismaClient, Prisma } from "@prisma/client";
 import { STATUS_BOLETO_ATIVOS } from "../dominio/boletos";
 import { avaliarFonte, candidatosPara, projetarUnificados } from "./reconciliacao";
-import { carregarFontesUnificacao } from "./fontes";
+import { carregarDadosFontesUnificacao, carregarFontesUnificacao, derivarFontesUnificacao } from "./fontes";
 import type { DecisaoUnificacao, DominioUnificacao, FonteUnificacao } from "./tipos";
 
 export class ErroUnificacao extends Error {
@@ -101,8 +101,12 @@ export async function decidirUnificacao(db: PrismaClient, entrada: ResolverUnifi
 }
 
 export async function lerOperacaoUnificada(db: PrismaClient) {
-  return db.$transaction(async tx => {
-    const [fontes, decisoes] = await Promise.all([carregarFontesUnificacao(tx), tx.unificacaoRegistro.findMany()]);
-    return { fontes, decisoes, linhas: projetarUnificados(fontes,decisoes as DecisaoUnificacao[]) };
-  }, { timeout: 60000 });
+  // Somente a fotografia relacional precisa manter a conexão reservada.
+  // Hashes, leitura da planilha e reconciliação acontecem depois do commit,
+  // sem prolongar a transação de leitura nem misturar versões das tabelas.
+  const [dados, decisoes] = await db.$transaction(tx => Promise.all([
+    carregarDadosFontesUnificacao(tx), tx.unificacaoRegistro.findMany(),
+  ]), { maxWait: 2000, timeout: 60000 });
+  const fontes = await derivarFontesUnificacao(dados);
+  return { fontes, decisoes, linhas: projetarUnificados(fontes,decisoes as DecisaoUnificacao[]) };
 }

@@ -18,8 +18,28 @@ async function main() {
   async function verificar(caminho: string, esperado: number, sessao?: string, marcador?: string, rotulo = caminho) {
     const resposta = await fetch(new URL(caminho, base), { redirect: "manual", headers: sessao ? { cookie: sessao } : undefined });
     const conteudo = await resposta.text();
-    if (resposta.status !== esperado || (marcador && !conteudo.includes(marcador)) || conteudo.includes("Application error:")) throw new Error(`Falha na rota ${rotulo}: HTTP ${resposta.status}.`);
-    console.log(`OK ${rotulo}: HTTP ${resposta.status}`);
+    // Depois do loading, Next pode sinalizar notFound no stream já HTTP 200.
+    // Aceita só essa negação explícita, nunca um 200 genérico ou exportação.
+    const routeHandler = caminho.startsWith("/api/") || caminho.startsWith("/relatorios/exportar");
+    const negacaoNoStream = esperado === 404 && !routeHandler && resposta.status === 200 &&
+      conteudo.includes("NEXT_HTTP_ERROR_FALLBACK;404") &&
+      /<meta\b(?=[^>]*name="robots")(?=[^>]*content="[^"]*noindex")[^>]*>/i.test(conteudo);
+    const destinoLegado = caminho === "/relatorios/comissao?ano=2026" ? "/financeiro/comissoes?ano=2026" : null;
+    const redirecionamentoNoStream = esperado === 307 && destinoLegado !== null && resposta.status === 200 &&
+      conteudo.includes(`NEXT_REDIRECT;replace;${destinoLegado};307;`) &&
+      [...conteudo.matchAll(/<meta\b[^>]*>/gi)].some(([tag]) => tag.includes('http-equiv="refresh"') && tag.includes(`url=${destinoLegado}`));
+    const marcadoresRestritos = [
+      "Atualizar conciliação", "Registro e origem", "Devido consolidado",
+      "Comissão por empreendimento", "Mapa de calor da comissão",
+      "Canais e mensagens", "Régua de cobrança", "Fila e histórico",
+      "Um serviço. Uma referência. Um documento.", "Documentos e histórico",
+      "1. Identificação do emitente", "CNPJ numérico do prestador",
+      "Cadastre e valide os parâmetros fiscais antes de criar o primeiro rascunho.",
+      'name="tomadorNome"',
+    ];
+    const vazamento = esperado === 404 && marcadoresRestritos.some(texto => conteudo.includes(texto));
+    if ((resposta.status !== esperado && !negacaoNoStream && !redirecionamentoNoStream) || vazamento || (marcador && !conteudo.includes(marcador)) || conteudo.includes("Application error:") || /<template\b[^>]*data-dgst="\d+"/i.test(conteudo)) throw new Error(`Falha na rota ${rotulo}: HTTP ${resposta.status}.`);
+    console.log(`OK ${rotulo}: HTTP ${resposta.status}${negacaoNoStream ? " · acesso negado no stream, sem conteúdo restrito" : redirecionamentoNoStream ? " · redirecionamento confirmado no stream" : ""}`);
   }
   const sessao = cookie(admin.id);
   for (const [rota, marcador] of [

@@ -5,11 +5,15 @@ import { basename, join, resolve, sep } from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { carregarFontesUnificacao } from "./fontes";
+import { carregarDadosFontesUnificacao, carregarFontesUnificacao, derivarFontesUnificacao, type DadosFontesUnificacao } from "./fontes";
 import { analisarUnificacao, decidirUnificacao, lerOperacaoUnificada } from "./servico";
 import type { FonteUnificacao } from "./tipos";
 
-vi.mock("./fontes", () => ({ carregarFontesUnificacao: vi.fn() }));
+vi.mock("./fontes", () => ({
+  carregarFontesUnificacao: vi.fn(),
+  carregarDadosFontesUnificacao: vi.fn(),
+  derivarFontesUnificacao: vi.fn(),
+}));
 
 let diretorio: string;
 let prisma: PrismaClient;
@@ -48,6 +52,8 @@ beforeEach(async () => {
   await prisma.$executeRaw`CREATE TABLE "FechamentoMensal" (id TEXT PRIMARY KEY, mesLancamento TEXT NOT NULL)`;
   fontes = [fonte("BRISA", "principal"), fonte("WIDESYS", "origem")];
   vi.mocked(carregarFontesUnificacao).mockImplementation(async () => fontes);
+  vi.mocked(carregarDadosFontesUnificacao).mockResolvedValue({} as DadosFontesUnificacao);
+  vi.mocked(derivarFontesUnificacao).mockImplementation(async () => fontes);
 });
 
 afterEach(async () => {
