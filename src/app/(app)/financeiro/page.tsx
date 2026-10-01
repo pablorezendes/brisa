@@ -218,7 +218,7 @@ export default async function PaginaFinanceiro({
           ? "info"
           : "atencao";
   const totalSaidas = dados.caixaMes
-    ? dados.caixaMes.despesaAL + dados.caixaMes.despesaCH
+    ? dados.caixaMes.despesaAL + dados.caixaMes.despesaCH + dados.caixaMes.despesaOutros
     : 0;
   const baseComparacaoRecebido = linhaAnterior?.recebido ?? null;
   const variacaoRecebido =

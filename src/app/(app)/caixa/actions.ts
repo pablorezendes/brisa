@@ -16,7 +16,7 @@ import { parseBRL } from "@/lib/dominio/dinheiro";
 export type EstadoFormLancamento = { erro: string | null };
 
 const TIPOS = new Set(["SAIDA", "ENTRADA", "RECEB_DINHEIRO"]);
-const CENTROS_SAIDA = new Set(["AL", "CH"]);
+const CENTROS_SAIDA = new Set(["AL", "CH", "BRISA"]);
 const RE_MES = /^\d{4}-(0[1-9]|1[0-2])$/;
 const RE_DATA = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 
@@ -56,8 +56,10 @@ export async function salvarLancamento(
   let categoria: string | null = null;
   if (tipo === "SAIDA") {
     centroCusto = texto(formData, "centro") ?? "";
-    if (!CENTROS_SAIDA.has(centroCusto)) {
-      return { erro: "Saída exige centro de custo (Antonio/Laura ou Chácara Brisa)." };
+    const centroPreservado = id && !CENTROS_SAIDA.has(centroCusto)
+      ? await prisma.lancamentoCaixa.findUnique({ where: { id }, select: { centroCusto: true, tipo: true } }) : null;
+    if (!CENTROS_SAIDA.has(centroCusto) && !(centroPreservado?.tipo === "SAIDA" && centroPreservado.centroCusto === centroCusto)) {
+      return { erro: "Saída exige centro de custo (Antonio/Laura, Chácara Brisa ou Brisa)." };
     }
     categoria = texto(formData, "categoria");
     if (categoria === null) return { erro: "Saída exige uma categoria." };

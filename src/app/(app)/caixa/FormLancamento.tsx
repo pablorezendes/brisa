@@ -3,7 +3,7 @@
 /**
  * Formulário de lançamento (novo e edição).
  *
- * Decisão documentada: as categorias dos DOIS centros (AL e CH) são
+ * Decisão documentada: as categorias dos centros AL, CH e BRISA são
  * carregadas no servidor e passadas como props; a alternância dos campos
  * (centro/categoria para SAIDA, cliente/local para RECEB_DINHEIRO) acontece
  * no cliente com useState — evita etapa extra server-side e mantém o form
@@ -14,11 +14,13 @@ import Link from "next/link";
 import { useActionState, useState } from "react";
 import { btnPrimario, btnSecundario, inputBase } from "@/components/ui";
 import type { EstadoFormLancamento } from "./actions";
+import { rotuloCaixaOrigem } from "@/lib/dominio/caixa-origem";
 
 export type LancamentoInicial = {
   id: string;
   mesReferencia: string;
   centroCusto: string;
+  caixaOrigem?: string | null;
   tipo: string;
   categoria: string | null;
   data: string | null;
@@ -57,21 +59,23 @@ export function FormLancamento({
   acao,
   categoriasAL,
   categoriasCH,
+  categoriasBRISA = [],
   mes,
   inicial,
 }: {
   acao: (prev: EstadoFormLancamento, fd: FormData) => Promise<EstadoFormLancamento>;
   categoriasAL: string[];
   categoriasCH: string[];
+  categoriasBRISA?: string[];
   /** Mês em foco (volta do "Cancelar" e default do mês de referência). */
   mes: string;
   inicial?: LancamentoInicial;
 }) {
   const [estado, dispatch, pendente] = useActionState(acao, { erro: null });
   const [tipo, setTipo] = useState(inicial?.tipo ?? "SAIDA");
-  const [centro, setCentro] = useState(inicial?.centroCusto === "CH" ? "CH" : "AL");
+  const [centro, setCentro] = useState(inicial?.tipo === "SAIDA" ? inicial.centroCusto : "AL");
 
-  const categorias = centro === "CH" ? categoriasCH : categoriasAL;
+  const categorias = centro === "CH" ? categoriasCH : centro === "BRISA" ? categoriasBRISA : centro === "AL" ? categoriasAL : [];
   const opcoesCategoria =
     inicial?.categoria && !categorias.includes(inicial.categoria)
       ? [inicial.categoria, ...categorias]
@@ -80,6 +84,10 @@ export function FormLancamento({
   return (
     <form action={dispatch} className="flex flex-col gap-4">
       {inicial ? <input type="hidden" name="id" value={inicial.id} /> : null}
+      {inicial?.caixaOrigem ? <p className="rounded-lg border border-contorno bg-papel px-3 py-2 text-sm">
+        Caixa de origem: <strong>{rotuloCaixaOrigem(inicial.caixaOrigem)}</strong>
+        <span className="mt-1 block text-xs text-tinta-suave">Identificação preservada da importação; não é alterada por este formulário.</span>
+      </p> : null}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Campo rotulo="Tipo">
@@ -118,6 +126,9 @@ export function FormLancamento({
               >
                 <option value="AL">Antonio/Laura (AL)</option>
                 <option value="CH">Chácara Brisa (CH)</option>
+                <option value="BRISA">Brisa (BRISA)</option>
+                {inicial?.tipo === "SAIDA" && !["AL", "CH", "BRISA"].includes(inicial.centroCusto)
+                  ? <option value={inicial.centroCusto}>{inicial.centroCusto}</option> : null}
               </select>
             </Campo>
 

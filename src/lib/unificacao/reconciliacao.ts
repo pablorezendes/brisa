@@ -33,7 +33,8 @@ export function candidatosPara(f: FonteUnificacao, fontes: FonteUnificacao[], de
       if (mesmoMes && mesmoValor && f.valor! > 0 && (f.origem !== outro.origem || nomeIgual)) razoes.push("MES_E_VALOR");
       if (f.origem === outro.origem && mesmoMes && mesmoValor && nomeIgual && f.data === outro.data && f.pago === outro.pago && f.descricao === outro.descricao) razoes.push("CONTEUDO_REPETIDO");
     } else if (f.dominio === "MOVIMENTO") {
-      if (f.data && f.data === outro.data && mesmoValor && f.natureza === outro.natureza && (f.origem !== outro.origem || nomeIgual)) razoes.push("DATA_VALOR_NATUREZA");
+      const caixasDistintos = f.caixaChave && outro.caixaChave && f.caixaChave !== outro.caixaChave;
+      if (!caixasDistintos && f.data && f.data === outro.data && mesmoValor && f.natureza === outro.natureza && (f.origem !== outro.origem || nomeIgual)) razoes.push("DATA_VALOR_NATUREZA");
     } else if (f.dominio.startsWith("BAIXA_")) {
       if (mesmoTitulo && f.data && f.data === outro.data && mesmoValor) razoes.push("TITULO_DATA_VALOR");
     } else if (f.dominio === "PARAMETRO" && nomeIgual && f.descricao === outro.descricao) razoes.push("PARAMETRO_IGUAL");

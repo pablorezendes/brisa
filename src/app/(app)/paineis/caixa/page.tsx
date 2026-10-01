@@ -23,10 +23,12 @@ import {
   COR_2,
   COR_SAIDA,
   COR_SAIDA_2,
+  COR_SAIDA_3,
   Legenda,
 } from "@/components/graficos";
 import { nivelSaldo } from "@/lib/dominio/semaforo";
 import { formatarBRL } from "@/lib/dominio/dinheiro";
+import { rotuloCaixaOrigem } from "@/lib/dominio/caixa-origem";
 import { parsePeriodo, rotulosCompetencias } from "@/lib/dominio/periodo";
 import {
   anoPadraoCaixa,
@@ -53,6 +55,7 @@ function pctDoTotal(valor: number, total: number): string {
 function BadgeCentro({ centro }: { centro: string }) {
   if (centro === "AL") return <Badge cor="vermelho">Antonio/Laura</Badge>;
   if (centro === "CH") return <Badge cor="vermelho">Chácara Brisa</Badge>;
+  if (centro === "BRISA") return <Badge cor="vermelho">Brisa</Badge>;
   return <Badge cor="slate">{centro}</Badge>;
 }
 
@@ -62,7 +65,7 @@ function BadgeCentro({ centro }: { centro: string }) {
  * centro usa a mesma paleta do Executivo: saída principal em vermelho e a
  * segunda série em roxo.) Mesma geometria do componente comum.
  */
-function ComparativoCentros({ al, ch }: { al: number; ch: number }) {
+function ComparativoCentros({ al, ch, outros }: { al: number; ch: number; outros: number }) {
   const LARG = 560;
   const ALT_BARRA = 18;
   const GAP = 10;
@@ -71,8 +74,9 @@ function ComparativoCentros({ al, ch }: { al: number; ch: number }) {
   const itens = [
     { rotulo: "Antonio/Laura", valor: al, cor: COR_SAIDA },
     { rotulo: "Chácara Brisa", valor: ch, cor: COR_SAIDA_2 },
+    ...(outros ? [{ rotulo: "Brisa / outros", valor: outros, cor: COR_SAIDA_3 }] : []),
   ];
-  const max = Math.max(al, ch, 1);
+  const max = Math.max(al, ch, outros, 1);
   const plotW = LARG - ROTULO_W - VALOR_W;
   const altura = itens.length * (ALT_BARRA + GAP);
   return (
@@ -161,7 +165,8 @@ export default async function PaginaPainelCaixa({
   }
 
   const t = d.totais;
-  const despesaTotal = t.despesaAL + t.despesaCH;
+  const despesaTotal = t.despesaAL + t.despesaCH + t.despesaOutros;
+  const temOutros = d.linhas.some(linha => linha.despesaOutros !== 0);
   const top10 = d.categorias.slice(0, 10);
   const resto = d.categorias.slice(10);
   const restoTotal = resto.reduce((a, c) => a + c.total, 0);
@@ -220,7 +225,7 @@ export default async function PaginaPainelCaixa({
         <Kpi
           rotulo="Saldo acumulado"
           valor={<Dinheiro centavos={t.saldo} destaque />}
-          detalhe="receita − saídas AL − saídas CH"
+          detalhe="receita − saídas de todos os centros"
           nivel={nivelSaldo(t.saldo)}
           selo={t.saldo > 0 ? "sobrou" : t.saldo < 0 ? "faltou" : undefined}
           nota={
@@ -235,11 +240,12 @@ export default async function PaginaPainelCaixa({
                   { rotulo: "entradas", valor: t.receita, cor: COR_1 },
                   { rotulo: "saídas AL", valor: t.despesaAL, cor: COR_SAIDA },
                   { rotulo: "saídas CH", valor: t.despesaCH, cor: COR_SAIDA_2 },
+                  ...(temOutros ? [{ rotulo: "Brisa / outros", valor: t.despesaOutros, cor: COR_SAIDA_3 }] : []),
                 ]}
               />
             ) : undefined
           }
-          ajuda="Quanto sobrou na janela em análise: receita menos as saídas dos dois centros, somando mês a mês. Se aparecer em vermelho, saiu mais do que entrou até aqui."
+          ajuda="Quanto sobrou na janela em análise: receita menos as saídas de todos os centros, somando mês a mês. Se aparecer em vermelho, saiu mais do que entrou até aqui."
         />
         <Kpi
           rotulo="Recebido em dinheiro"
@@ -247,6 +253,9 @@ export default async function PaginaPainelCaixa({
           detalhe="registro paralelo — fora do saldo"
           ajuda="Registro paralelo do que foi recebido em espécie na janela, só para conferência — NÃO entra no saldo. Ao receber em dinheiro vivo, lance como RECEB_DINHEIRO anotando cliente e local."
         />
+        {temOutros ? <Kpi rotulo="Despesa Brisa / outros" valor={<Dinheiro centavos={t.despesaOutros} destaque />}
+          detalhe={pctDoTotal(t.despesaOutros, despesaTotal) + " das saídas"}
+          ajuda="Saídas dos demais centros, incluindo Brisa, preservadas separadamente de AL e CH e incluídas no saldo consolidado." /> : null}
       </div>
 
       {/* ---------- evolução mensal ---------- */}
@@ -263,6 +272,7 @@ export default async function PaginaPainelCaixa({
               { cor: COR_1, nome: "Receita (entradas)" },
               { cor: COR_SAIDA, nome: "Despesa Antonio/Laura" },
               { cor: COR_SAIDA_2, nome: "Despesa Chácara Brisa" },
+              ...(temOutros ? [{ cor: COR_SAIDA_3, nome: "Despesa Brisa / outros" }] : []),
             ]}
           />
         </div>
@@ -270,11 +280,12 @@ export default async function PaginaPainelCaixa({
           receita={d.linhas.map((l) => l.receita)}
           despesaAL={d.linhas.map((l) => l.despesaAL)}
           despesaCH={d.linhas.map((l) => l.despesaCH)}
+          despesaOutros={d.linhas.map((l) => l.despesaOutros)}
           rotulos={rotulosMeses}
         />
         <p className="mt-2 text-xs text-tinta-suave">
-          Verde é o que entrou; a pilha vermelha + roxa é o que saiu em cada
-          centro. Mês bom é o verde maior que a pilha.
+          Verde é o que entrou; as saídas de todos os centros aparecem empilhadas.
+          Mês bom é o verde maior que a pilha.
         </p>
         <div className="mt-3 overflow-x-auto">
           <table className="tabela">
@@ -284,6 +295,7 @@ export default async function PaginaPainelCaixa({
                 <th className="text-right!">Receita</th>
                 <th className="text-right!">Despesa AL</th>
                 <th className="text-right!">Despesa CH</th>
+                {temOutros ? <th className="text-right!">Brisa / outros</th> : null}
                 <th className="text-right!">Saldo</th>
                 <th className="text-right!">
                   <span className="inline-flex items-center gap-1.5">
@@ -325,6 +337,7 @@ export default async function PaginaPainelCaixa({
                     <td className="text-right!">
                       <Dinheiro centavos={tem ? l.despesaCH : null} />
                     </td>
+                    {temOutros ? <td className="text-right!"><Dinheiro centavos={tem ? l.despesaOutros : null} /></td> : null}
                     <td className="text-right!">
                       <Dinheiro centavos={tem ? l.saldo : null} destaque={tem} />
                     </td>
@@ -347,6 +360,7 @@ export default async function PaginaPainelCaixa({
                 <td className="text-right!">
                   <Dinheiro centavos={t.despesaCH} destaque />
                 </td>
+                {temOutros ? <td className="text-right!"><Dinheiro centavos={t.despesaOutros} destaque /></td> : null}
                 <td className="text-right!">
                   <Dinheiro centavos={t.saldo} destaque />
                 </td>
@@ -364,7 +378,7 @@ export default async function PaginaPainelCaixa({
             <h2 className="text-sm font-semibold">
               Despesas por categoria — top 10 {daJanela}
             </h2>
-            <Ajuda dica="Soma das saídas da janela por categoria, juntando os dois centros. Abra 'Ver dados por centro' para ver quanto cada centro gastou em cada categoria. Saídas sem categoria aparecem como SEM CATEGORIA — vale voltar no lançamento e classificar." />
+            <Ajuda dica="Soma das saídas da janela por categoria, juntando todos os centros. Abra 'Ver dados por centro' para conferir a composição. Saídas sem categoria aparecem como SEM CATEGORIA — vale voltar no lançamento e classificar." />
           </div>
           {top10.length === 0 ? (
             <p className="text-sm text-tinta-suave">
@@ -404,6 +418,7 @@ export default async function PaginaPainelCaixa({
                           [
                             { centro: "AL", valor: c.al },
                             { centro: "CH", valor: c.ch },
+                            { centro: "Brisa / outros", valor: c.outros },
                           ] as const
                         )
                           .filter((x) => x.valor > 0)
@@ -433,20 +448,22 @@ export default async function PaginaPainelCaixa({
         <Card className="p-5">
           <div className="mb-2 flex items-baseline justify-between">
             <h2 className="text-sm font-semibold">
-              Quem gastou mais {periodo ? "no período" : "no ano"} — AL × CH
+              Quem gastou mais {periodo ? "no período" : "no ano"} — por centro
             </h2>
             <Legenda
               itens={[
                 { cor: COR_2, nome: "Antonio/Laura" },
                 { cor: COR_SAIDA_2, nome: "Chácara Brisa" },
+                ...(temOutros ? [{ cor: COR_SAIDA_3, nome: "Brisa / outros" }] : []),
               ]}
             />
           </div>
-          <ComparativoCentros al={t.despesaAL} ch={t.despesaCH} />
+          <ComparativoCentros al={t.despesaAL} ch={t.despesaCH} outros={t.despesaOutros} />
           <p className="mt-2 text-xs text-tinta-suave">
             Total de saídas {naJanela}: {formatarBRL(despesaTotal)} —{" "}
             {pctDoTotal(t.despesaAL, despesaTotal)} de Antonio/Laura e{" "}
-            {pctDoTotal(t.despesaCH, despesaTotal)} da Chácara Brisa.
+            {pctDoTotal(t.despesaCH, despesaTotal)} da Chácara Brisa
+            {temOutros ? ` e ${pctDoTotal(t.despesaOutros, despesaTotal)} de Brisa / outros` : ""}.
           </p>
           <Card className="mt-4 border-l-4 border-l-ambar bg-papel px-4 py-3">
             <p className="text-xs leading-relaxed text-tinta">
@@ -499,6 +516,7 @@ export default async function PaginaPainelCaixa({
                     <td className="text-tinta-suave">{formatarData(l.data)}</td>
                     <td>
                       <BadgeCentro centro={l.centroCusto} />
+                      {l.caixaOrigem ? <span className="mt-1 block text-[11px] text-tinta-suave">{rotuloCaixaOrigem(l.caixaOrigem)}</span> : null}
                     </td>
                     <td>{l.categoria ?? "—"}</td>
                     <td>
@@ -520,8 +538,8 @@ export default async function PaginaPainelCaixa({
       </Card>
 
       <p className="mt-6 text-xs text-tinta-suave/60">
-        Fonte: lançamentos do livro-caixa CONTA_AC. Saldo = entradas − saídas
-        AL − saídas CH; recebimentos em dinheiro são registro paralelo de
+        Fonte: lançamentos do livro-caixa. Saldo = entradas − saídas
+        de todos os centros; recebimentos em dinheiro são registro paralelo de
         espécie e não entram no saldo.
       </p>
     </div>

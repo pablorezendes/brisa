@@ -43,7 +43,7 @@ const dados: DadosFontesUnificacao = {
     forma: "PIX", statusImportacao: "STAGING", quarentenaMotivo: null, valor: 50000, dataPagamento: "2026-06-12",
     estornada: false, contaBancariaRotulo: "Conta sintética", movimentoLegadoId: "6" }],
   caixa: [{ id: "caixa", mesReferencia: "2026-06", centroCusto: "AL", tipo: "SAIDA", categoria: "Manutenção",
-    data: "2026-06-04", valor: 2000, descricao: "Teste de caixa", cliente: null, local: null }],
+    data: "2026-06-04", valor: 2000, descricao: "Teste de caixa", cliente: null, local: null, caixaOrigem: null, importacoesPlanilha: [] }],
   movimentos: [{ id: "movimento", legadoId: "6", tituloEscopo: "TITULO_RECEBER", tituloLegadoId: "4",
     descricao: "Entrada sintética", planoContaRotulo: "Locação", contaBancariaRotulo: "Conta sintética",
     statusImportacao: "STAGING", quarentenaMotivo: null, dataMovimento: "2026-06-12", competencia: "2026-06-01",
@@ -74,7 +74,7 @@ function selecionar(registro: Record<string, unknown>, select: Selecao): Record<
   }));
 }
 
-function bancoArtificial() {
+function bancoArtificial(importacoesPlanilha: DadosFontesUnificacao["caixa"][number]["importacoesPlanilha"] = []) {
   const tabelas = {
     locatario: dados.locatarios, pessoa: dados.pessoas, unidade: dados.unidades,
     imovelLegado: dados.imoveis, contrato: dados.contratos, contratoLegado: dados.contratosLegados,
@@ -82,6 +82,7 @@ function bancoArtificial() {
     pagamentoRecebimento: dados.pagamentos, baixaFinanceiraLegado: dados.baixas,
     lancamentoCaixa: dados.caixa, movimentoFinanceiroLegado: dados.movimentos,
     catalogoLegadoRegistro: dados.parametros,
+    importacaoPlanilhaLinha: importacoesPlanilha,
   };
   const mocks = Object.fromEntries(Object.entries(tabelas).map(([nome, registros]) => [nome, {
     findMany: vi.fn(async (consulta: Consulta) => registros.map(registro => selecionar({ ...registro,
@@ -121,6 +122,23 @@ describe("fotografia compacta das fontes de unificação", () => {
     const atuais = await carregarDadosFontesUnificacao(db);
     expect(atuais).toEqual(dados);
     expect(readFileSync).not.toHaveBeenCalled();
+  });
+
+  it("lê proveniências pela FK em lote, sem relação reversa, e mantém a primeira por lançamento", async () => {
+    const primeira = { lancamentoCaixaId: "caixa", aba: "Plan1", linha: 10, faixa: "SAIDA", celulas: "A10:E10",
+      caixaOrigem: "GASTOS_BRISA:Plan1", hashConteudo: "hash-artificial", lote: { arquivo: "fixture-gastos.xlsx", hashArquivo: "hash-arquivo" } };
+    const posterior = { ...primeira, linha: 11, lote: { arquivo: "fixture-revisado.xlsx", hashArquivo: "hash-revisado" } };
+    const outro = { ...primeira, lancamentoCaixaId: "outro-caixa" };
+    const { db, mocks } = bancoArtificial([primeira, posterior, outro]);
+    const foto = await carregarDadosFontesUnificacao(db);
+    expect(foto.caixa[0].importacoesPlanilha).toEqual([primeira]);
+    expect(mocks.lancamentoCaixa.findMany).toHaveBeenCalledWith(expect.objectContaining({ select: expect.not.objectContaining({ importacoesPlanilha: expect.anything() }) }));
+    expect(mocks.importacaoPlanilhaLinha.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { reservado: false, status: { in: ["IMPORTADO", "JA_EXISTENTE"] }, lancamentoCaixaId: { not: null } },
+      orderBy: [{ criadoEm: "asc" }, { id: "asc" }],
+    }));
+    const fontes = await derivarFontesUnificacao(foto);
+    expect(fontes.find(f => f.origemId === "caixa")?.proveniencia).toMatchObject({ arquivo: "fixture-gastos.xlsx", aba: "Plan1", linha: 10 });
   });
 
   it("mantém a operação sem dataset, mas não esconde um dataset existente inválido", async () => {

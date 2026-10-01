@@ -49,12 +49,16 @@ next-env.d.ts
 prisma/dev.db
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 /data/*.json
 /data/legacy-widesys/
 /data/legacy-widesys*/
 /data/.legacy-widesys-*/
 /dados/
 /auth/
+/importação/
+/data/importacao-planilhas/
 
 # banco de provas visual dos gráficos (gerado por scripts/lab-graficos.tsx)
 public/lab-graficos.svg

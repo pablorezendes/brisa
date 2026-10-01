@@ -35,10 +35,11 @@ import { filtroCaixaUnificado, filtroRecebimentosUnificados } from "@/lib/consul
 
 export type CategoriaAnual = {
   categoria: string;
-  /** Σ SAIDA da categoria no ano (AL + CH juntos). */
+  /** Σ SAIDA da categoria no ano, em todos os centros. */
   total: number;
   al: number;
   ch: number;
+  outros: number;
 };
 
 export type PainelCaixa = {
@@ -69,10 +70,11 @@ function agruparCategorias(
     const nome = g.categoria ?? SEM_CATEGORIA;
     const soma = g._sum.valor ?? 0;
     let c = mapa.get(nome);
-    if (!c) mapa.set(nome, (c = { categoria: nome, total: 0, al: 0, ch: 0 }));
+    if (!c) mapa.set(nome, (c = { categoria: nome, total: 0, al: 0, ch: 0, outros: 0 }));
     c.total += soma;
     if (g.centroCusto === "AL") c.al += soma;
     else if (g.centroCusto === "CH") c.ch += soma;
+    else c.outros += soma;
   }
   return [...mapa.values()].sort(
     (a, b) => b.total - a.total || a.categoria.localeCompare(b.categoria, "pt-BR"),
@@ -138,19 +140,20 @@ export async function painelCaixaPeriodo(
 
   const porMes = new Map<
     string,
-    { despesaAL: number; despesaCH: number; receita: number; recebDinheiro: number }
+    { despesaAL: number; despesaCH: number; despesaOutros: number; receita: number; recebDinheiro: number }
   >();
   for (const g of grupos) {
     let c = porMes.get(g.mesReferencia);
     if (!c) {
       porMes.set(
         g.mesReferencia,
-        (c = { despesaAL: 0, despesaCH: 0, receita: 0, recebDinheiro: 0 }),
+        (c = { despesaAL: 0, despesaCH: 0, despesaOutros: 0, receita: 0, recebDinheiro: 0 }),
       );
     }
     const soma = g._sum.valor ?? 0;
     if (g.tipo === "SAIDA" && g.centroCusto === "AL") c.despesaAL += soma;
     else if (g.tipo === "SAIDA" && g.centroCusto === "CH") c.despesaCH += soma;
+    else if (g.tipo === "SAIDA") c.despesaOutros += soma;
     else if (g.tipo === "ENTRADA") c.receita += soma;
     else if (g.tipo === "RECEB_DINHEIRO") c.recebDinheiro += soma;
   }
@@ -158,13 +161,14 @@ export async function painelCaixaPeriodo(
   let acumulado = 0;
   const linhas: LinhaAnual[] = meses.map((mes) => {
     const c = porMes.get(mes);
-    const saldo = (c?.receita ?? 0) - (c?.despesaAL ?? 0) - (c?.despesaCH ?? 0);
+    const saldo = (c?.receita ?? 0) - (c?.despesaAL ?? 0) - (c?.despesaCH ?? 0) - (c?.despesaOutros ?? 0);
     acumulado += saldo;
     return {
       mes,
       temLancamentos: c !== undefined,
       despesaAL: c?.despesaAL ?? 0,
       despesaCH: c?.despesaCH ?? 0,
+      despesaOutros: c?.despesaOutros ?? 0,
       receita: c?.receita ?? 0,
       recebDinheiro: c?.recebDinheiro ?? 0,
       saldo,
@@ -176,11 +180,12 @@ export async function painelCaixaPeriodo(
     (acc, l) => ({
       despesaAL: acc.despesaAL + l.despesaAL,
       despesaCH: acc.despesaCH + l.despesaCH,
+      despesaOutros: acc.despesaOutros + l.despesaOutros,
       receita: acc.receita + l.receita,
       recebDinheiro: acc.recebDinheiro + l.recebDinheiro,
       saldo: acc.saldo + l.saldo,
     }),
-    { despesaAL: 0, despesaCH: 0, receita: 0, recebDinheiro: 0, saldo: 0 },
+    { despesaAL: 0, despesaCH: 0, despesaOutros: 0, receita: 0, recebDinheiro: 0, saldo: 0 },
   );
 
   return {

@@ -28,6 +28,22 @@ function vinculo(f: FonteUnificacao, alvo: FonteUnificacao): DecisaoUnificacao {
 const mapa = (fontes: FonteUnificacao[]) => new Map(fontes.map(f => [f.chave, f]));
 
 describe("reconciliação entre fontes sem duplicar a operação", () => {
+  it("caixas explicitamente diferentes não são sugeridos como o mesmo movimento", () => {
+    const valores = { dominio: "MOVIMENTO" as const, data: "2026-09-20", natureza: "SAIDA", valor: 50000 };
+    const fontes = ["Plan1", "Plan3", "Plan4", "ALIANA"].map(aba => fonte(`BRISA:MOVIMENTO:${aba}`, { ...valores, caixaChave: `GASTOS_BRISA:${aba}` }));
+    for (const f of fontes) expect(candidatosPara(f, fontes, new Map())).toEqual([]);
+    expect(projetarUnificados(fontes, []).filter(f => f.contabiliza)).toHaveLength(4);
+  });
+
+  it("mesmo caixa e caixa desconhecido continuam exigindo conferência", () => {
+    const valores = { dominio: "MOVIMENTO" as const, data: "2026-09-20", natureza: "SAIDA", valor: 50000 };
+    const atual = fonte("BRISA:MOVIMENTO:1", { ...valores, caixaChave: "GASTOS_BRISA:Plan1" });
+    const duplicado = fonte("BRISA:MOVIMENTO:2", { ...valores, caixaChave: "GASTOS_BRISA:Plan1" });
+    const desconhecido = fonte("WIDESYS:MOVIMENTO:3", valores);
+    expect(candidatosPara(atual, [atual, duplicado, desconhecido], new Map()).map(c => c.chave))
+      .toEqual([duplicado.chave, desconhecido.chave]);
+  });
+
   it("nativo novo fica pendente quando um título Widesys correspondente já está ativo", () => {
     const valores = { competencia: "2026-06", valor: 50000, pago: 0, aberto: 50000 };
     const legado = fonte("WIDESYS:RECEBER:anterior", valores);

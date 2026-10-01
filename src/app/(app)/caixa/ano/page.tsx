@@ -21,6 +21,7 @@ import {
   COR_1,
   COR_SAIDA,
   COR_SAIDA_2,
+  COR_SAIDA_3,
 } from "@/components/graficos";
 import { NOME_MES_COMPLETO, parseCompetencia } from "@/lib/dominio/normalizacao";
 import { parsePeriodo } from "@/lib/dominio/periodo";
@@ -48,6 +49,7 @@ export default async function PaginaCaixaAnual({
     : await consolidacaoAnual(ano);
 
   const detalheJanela = periodo ? "no período" : `ano ${ano}`;
+  const temOutros = resumo.linhas.some(linha => linha.despesaOutros !== 0);
 
   return (
     <>
@@ -55,8 +57,8 @@ export default async function PaginaCaixaAnual({
         titulo={periodo ? "Caixa — mês a mês no período" : `Caixa — resumo anual ${ano}`}
         descricao={
           periodo
-            ? `Consolidação mês a mês do livro-caixa CONTA_AC — ${periodo.rotulo}`
-            : "Consolidação mês a mês do livro-caixa CONTA_AC"
+            ? `Consolidação mês a mês do livro-caixa — ${periodo.rotulo}`
+            : "Consolidação mês a mês do livro-caixa"
         }
         acoes={
           <>
@@ -109,10 +111,12 @@ export default async function PaginaCaixaAnual({
           detalhe={detalheJanela}
           ajuda="Tudo o que entrou na conta na janela em análise (tipo ENTRADA, centro GERAL). Recebimentos em dinheiro NÃO estão aqui — são registro paralelo de espécie."
         />
+        {temOutros ? <Kpi rotulo="Despesa Brisa / outros" valor={<Dinheiro centavos={resumo.totais.despesaOutros} destaque />}
+          detalhe={detalheJanela} ajuda="Saídas dos demais centros de custo, incluindo Brisa. Entram integralmente no saldo consolidado; o livro-caixa detalha sua origem." /> : null}
         <Kpi
           rotulo={periodo ? "Saldo do período" : "Saldo do ano"}
           valor={<Dinheiro centavos={resumo.totais.saldo} destaque />}
-          detalhe="receita − despesa AL − despesa CH"
+          detalhe="receita − saídas de todos os centros"
           nivel={nivelSaldo(resumo.totais.saldo)}
           selo={
             resumo.totais.saldo > 0
@@ -131,17 +135,18 @@ export default async function PaginaCaixaAnual({
           grafico={
             resumo.totais.receita > 0 ||
             resumo.totais.despesaAL > 0 ||
-            resumo.totais.despesaCH > 0 ? (
+            resumo.totais.despesaCH > 0 || resumo.totais.despesaOutros > 0 ? (
               <BarraComposicao
                 partes={[
                   { rotulo: "entradas", valor: resumo.totais.receita, cor: COR_1 },
                   { rotulo: "saídas AL", valor: resumo.totais.despesaAL, cor: COR_SAIDA },
                   { rotulo: "saídas CH", valor: resumo.totais.despesaCH, cor: COR_SAIDA_2 },
+                  ...(temOutros ? [{ rotulo: "Brisa / outros", valor: resumo.totais.despesaOutros, cor: COR_SAIDA_3 }] : []),
                 ]}
               />
             ) : undefined
           }
-          ajuda="Entradas da janela menos as saídas dos dois centros. Positivo: sobrou dinheiro no período; negativo: as saídas superaram as entradas. O registro de espécie fica fora desta conta."
+          ajuda="Entradas da janela menos as saídas de todos os centros. Positivo: sobrou dinheiro no período; negativo: as saídas superaram as entradas. O registro de espécie fica fora desta conta."
         />
       </div>
 
@@ -153,6 +158,7 @@ export default async function PaginaCaixaAnual({
                 <th>Mês</th>
                 <th className="text-right!">Despesa AL</th>
                 <th className="text-right!">Despesa CH</th>
+                {temOutros ? <th className="text-right!">Brisa / outros</th> : null}
                 <th className="text-right!">Receita</th>
                 <th className="text-right!">Saldo</th>
                 <th className="text-right!">
@@ -188,6 +194,7 @@ export default async function PaginaCaixaAnual({
                     <td className="text-right!">
                       <Dinheiro centavos={tem ? linha.despesaCH : null} />
                     </td>
+                    {temOutros ? <td className="text-right!"><Dinheiro centavos={tem ? linha.despesaOutros : null} /></td> : null}
                     <td className="text-right!">
                       <Dinheiro centavos={tem ? linha.receita : null} />
                     </td>
@@ -210,6 +217,7 @@ export default async function PaginaCaixaAnual({
                 <td className="text-right!">
                   <Dinheiro centavos={resumo.totais.despesaCH} destaque />
                 </td>
+                {temOutros ? <td className="text-right!"><Dinheiro centavos={resumo.totais.despesaOutros} destaque /></td> : null}
                 <td className="text-right!">
                   <Dinheiro centavos={resumo.totais.receita} destaque />
                 </td>

@@ -1084,8 +1084,63 @@ model LancamentoCaixa {
   descricao     String?
   cliente       String? // só RECEB_DINHEIRO
   local         String? // só RECEB_DINHEIRO
+  caixaOrigem   String? // identidade do caixa da fonte; não é centro de custo nem conta bancária inferida
+  importacoesPlanilha ImportacaoPlanilhaLinha[]
 
   @@index([mesReferencia, centroCusto])
+}
+
+// Cargas incrementais: a origem é imutável e nunca substitui dataset.json/seed.
+// Pendências permanecem aqui, fora do caixa operacional e de seus indicadores.
+model ImportacaoPlanilhaLote {
+  id            String   @id @default(uuid())
+  arquivo       String
+  hashArquivo   String
+  tipoArquivo   String
+  versao        String
+  status        String   @default("CONCLUIDO")
+  resumo        String   @default("{}")
+  controles     String   @default("[]")
+  avisos        String   @default("[]")
+  criadoEm      DateTime @default(now())
+  linhas        ImportacaoPlanilhaLinha[]
+
+  @@unique([hashArquivo, versao])
+  @@index([criadoEm])
+}
+
+model ImportacaoPlanilhaLinha {
+  id                 String   @id @default(uuid())
+  loteId             String
+  aba                String
+  linha              Int
+  faixa              String
+  celulas            String
+  hashConteudo       String
+  mesReferencia      String?
+  data               String?
+  centroCusto        String
+  caixaOrigem        String
+  tipo               String
+  valor              Int?
+  descricao          String?
+  categoria          String?
+  cliente            String?
+  local              String?
+  status             String   // IMPORTADO|JA_EXISTENTE|PENDENTE
+  reservado          Boolean  @default(false)
+  motivos            String   @default("[]")
+  candidatos         String   @default("[]") // apenas referências, não dados de terceiros
+  origemDados        String   // fotografia mínima da linha, não o arquivo inteiro
+  lancamentoCaixaId  String?
+  criadoEm           DateTime @default(now())
+  lote               ImportacaoPlanilhaLote @relation(fields: [loteId], references: [id], onDelete: Restrict)
+  lancamentoCaixa     LancamentoCaixa? @relation(fields: [lancamentoCaixaId], references: [id], onDelete: SetNull)
+
+  @@unique([loteId, aba, linha, faixa])
+  @@index([hashConteudo])
+  @@index([status, mesReferencia])
+  @@index([lancamentoCaixaId])
 }
 
 model CategoriaCentroCusto {

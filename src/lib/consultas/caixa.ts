@@ -1,7 +1,7 @@
 /**
- * Consultas do módulo Caixa (livro-caixa CONTA_AC).
+ * Consultas do módulo Caixa (livro-caixa operacional).
  *
- * Modelo: LancamentoCaixa — tipo SAIDA (centro AL|CH, com categoria),
+ * Modelo: LancamentoCaixa — tipo SAIDA (AL, CH e outros centros, com categoria),
  * ENTRADA (GERAL) e RECEB_DINHEIRO (GERAL; registro paralelo de espécie,
  * que NÃO entra no saldo do mês).
  *
@@ -35,6 +35,7 @@ export type BlocoLista = {
 export type LancamentosDoMes = {
   saidasAL: BlocoSaidas;
   saidasCH: BlocoSaidas;
+  saidasOutros: Array<BlocoSaidas & { centroCusto: string; caixaOrigem: string | null }>;
   entradas: BlocoLista;
   recebimentosDinheiro: BlocoLista;
 };
@@ -42,9 +43,10 @@ export type LancamentosDoMes = {
 export type ConsolidacaoMes = {
   despesaAL: number;
   despesaCH: number;
+  despesaOutros: number;
   receita: number;
   recebDinheiro: number; // informativo — não entra no saldo
-  saldo: number; // receita − despesaAL − despesaCH
+  saldo: number; // receita − saídas de todos os centros
 };
 
 export type LinhaAnual = {
@@ -52,6 +54,7 @@ export type LinhaAnual = {
   temLancamentos: boolean;
   despesaAL: number;
   despesaCH: number;
+  despesaOutros: number;
   receita: number;
   recebDinheiro: number;
   saldo: number;
@@ -102,9 +105,20 @@ function montarBlocos(todos: LancamentoCaixa[]): LancamentosDoMes {
   const saidasCH = todos.filter((l) => l.tipo === "SAIDA" && l.centroCusto === "CH");
   const entradas = todos.filter((l) => l.tipo === "ENTRADA");
   const recebDinheiro = todos.filter((l) => l.tipo === "RECEB_DINHEIRO");
+  const outros = new Map<string, { centroCusto: string; caixaOrigem: string | null; lancamentos: LancamentoCaixa[] }>();
+  for (const l of todos) {
+    if (l.tipo !== "SAIDA" || l.centroCusto === "AL" || l.centroCusto === "CH") continue;
+    const chave = JSON.stringify([l.centroCusto, l.caixaOrigem]);
+    const grupo = outros.get(chave) ?? { centroCusto: l.centroCusto, caixaOrigem: l.caixaOrigem, lancamentos: [] };
+    grupo.lancamentos.push(l);
+    outros.set(chave, grupo);
+  }
   return {
     saidasAL: agruparPorCategoria(saidasAL),
     saidasCH: agruparPorCategoria(saidasCH),
+    saidasOutros: [...outros.values()]
+      .sort((a, b) => a.centroCusto.localeCompare(b.centroCusto, "pt-BR") || (a.caixaOrigem ?? "").localeCompare(b.caixaOrigem ?? "", "pt-BR"))
+      .map(({ centroCusto, caixaOrigem, lancamentos }) => ({ centroCusto, caixaOrigem, ...agruparPorCategoria(lancamentos) })),
     entradas: { lancamentos: entradas, total: somar(entradas) },
     recebimentosDinheiro: { lancamentos: recebDinheiro, total: somar(recebDinheiro) },
   };
@@ -128,20 +142,23 @@ type SomaPorGrupo = {
 function consolidar(grupos: SomaPorGrupo[]): ConsolidacaoMes {
   let despesaAL = 0;
   let despesaCH = 0;
+  let despesaOutros = 0;
   let receita = 0;
   let recebDinheiro = 0;
   for (const g of grupos) {
     if (g.tipo === "SAIDA" && g.centroCusto === "AL") despesaAL += g.soma;
     else if (g.tipo === "SAIDA" && g.centroCusto === "CH") despesaCH += g.soma;
+    else if (g.tipo === "SAIDA") despesaOutros += g.soma;
     else if (g.tipo === "ENTRADA") receita += g.soma;
     else if (g.tipo === "RECEB_DINHEIRO") recebDinheiro += g.soma;
   }
   return {
     despesaAL,
     despesaCH,
+    despesaOutros,
     receita,
     recebDinheiro,
-    saldo: receita - despesaAL - despesaCH,
+    saldo: receita - despesaAL - despesaCH - despesaOutros,
   };
 }
 
@@ -204,11 +221,12 @@ function somarTotais(linhas: LinhaAnual[]): ConsolidacaoMes {
     (acc, l) => ({
       despesaAL: acc.despesaAL + l.despesaAL,
       despesaCH: acc.despesaCH + l.despesaCH,
+      despesaOutros: acc.despesaOutros + l.despesaOutros,
       receita: acc.receita + l.receita,
       recebDinheiro: acc.recebDinheiro + l.recebDinheiro,
       saldo: acc.saldo + l.saldo,
     }),
-    { despesaAL: 0, despesaCH: 0, receita: 0, recebDinheiro: 0, saldo: 0 },
+    { despesaAL: 0, despesaCH: 0, despesaOutros: 0, receita: 0, recebDinheiro: 0, saldo: 0 },
   );
 }
 
@@ -293,7 +311,7 @@ export async function consolidacaoMensalDoPeriodo(
  * centro (os dados migrados usam nomes que nem sempre constam na legenda —
  * a união garante que editar um lançamento antigo preserve a categoria).
  */
-export async function categoriasPorCentro(): Promise<{ AL: string[]; CH: string[] }> {
+export async function categoriasPorCentro(): Promise<{ AL: string[]; CH: string[]; BRISA: string[] }> {
   const [legenda, usadas] = await Promise.all([
     prisma.categoriaCentroCusto.findMany({
       select: { centroCusto: true, nome: true },
@@ -306,17 +324,20 @@ export async function categoriasPorCentro(): Promise<{ AL: string[]; CH: string[
   ]);
   const AL = new Set<string>();
   const CH = new Set<string>();
+  const BRISA = new Set<string>();
   for (const c of legenda) {
     if (c.centroCusto === "AL") AL.add(c.nome);
     else if (c.centroCusto === "CH") CH.add(c.nome);
+    else if (c.centroCusto === "BRISA") BRISA.add(c.nome);
   }
   for (const u of usadas) {
     if (!u.categoria) continue;
     if (u.centroCusto === "AL") AL.add(u.categoria);
     else if (u.centroCusto === "CH") CH.add(u.categoria);
+    else if (u.centroCusto === "BRISA") BRISA.add(u.categoria);
   }
   const ordenar = (s: Set<string>) => [...s].sort((a, b) => a.localeCompare(b, "pt-BR"));
-  return { AL: ordenar(AL), CH: ordenar(CH) };
+  return { AL: ordenar(AL), CH: ordenar(CH), BRISA: ordenar(BRISA) };
 }
 
 /** Busca um lançamento pelo id (para a tela de edição). */

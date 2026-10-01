@@ -24,6 +24,7 @@ export interface CaixaMensal {
   receita: number;
   despesaAL: number;
   despesaCH: number;
+  despesaOutros: number;
   dinheiro: number;
   saldo: number;
 }
@@ -236,6 +237,7 @@ export async function dadosExecutivos(mes: string): Promise<DadosExecutivo> {
       receita: 0,
       despesaAL: 0,
       despesaCH: 0,
+      despesaOutros: 0,
       dinheiro: 0,
       saldo: 0,
     });
@@ -247,12 +249,13 @@ export async function dadosExecutivos(mes: string): Promise<DadosExecutivo> {
     else if (l.tipo === "RECEB_DINHEIRO") c.dinheiro += l.valor;
     else if (l.tipo === "SAIDA" && l.centroCusto === "AL") c.despesaAL += l.valor;
     else if (l.tipo === "SAIDA" && l.centroCusto === "CH") c.despesaCH += l.valor;
+    else if (l.tipo === "SAIDA") c.despesaOutros += l.valor;
   }
-  for (const c of caixaPorMes) c.saldo = c.receita - c.despesaAL - c.despesaCH;
+  for (const c of caixaPorMes) c.saldo = c.receita - c.despesaAL - c.despesaCH - c.despesaOutros;
   const caixaMes = caixaPorMes[mesNum - 1] ?? null;
   const temCaixaMes =
     !!caixaMes &&
-    (caixaMes.receita > 0 || caixaMes.despesaAL > 0 || caixaMes.despesaCH > 0);
+    (caixaMes.receita > 0 || caixaMes.despesaAL > 0 || caixaMes.despesaCH > 0 || caixaMes.despesaOutros > 0);
 
   // ---------- temporada (módulo operacional) ----------
   const receitaTemporadaMes = recebT.reduce((a, r) => a + r.valor, 0);
@@ -335,7 +338,7 @@ export async function dadosExecutivos(mes: string): Promise<DadosExecutivo> {
 
 /**
  * Caixa mês a mês da janela — mesma regra do gráfico anual: ENTRADA soma na
- * receita, SAIDA soma no centro de custo (AL/CH) e RECEB_DINHEIRO é registro
+ * receita, SAIDA soma no respectivo centro e RECEB_DINHEIRO é registro
  * paralelo de espécie (fora do saldo). Saída alinhada a `meses`.
  */
 export async function caixaDoPeriodoPorMes(
@@ -343,7 +346,7 @@ export async function caixaDoPeriodoPorMes(
 ): Promise<CaixaMensal[]> {
   const idx = new Map(meses.map((m, i) => [m, i]));
   const lancamentos = await prisma.lancamentoCaixa.findMany({
-    where: { mesReferencia: { gte: meses[0], lte: meses[meses.length - 1] } },
+    where: { AND: [{ mesReferencia: { gte: meses[0], lte: meses[meses.length - 1] } }, await filtroCaixaUnificado()] },
     select: { mesReferencia: true, tipo: true, centroCusto: true, valor: true },
   });
 
@@ -352,6 +355,7 @@ export async function caixaDoPeriodoPorMes(
     receita: 0,
     despesaAL: 0,
     despesaCH: 0,
+    despesaOutros: 0,
     dinheiro: 0,
     saldo: 0,
   }));
@@ -363,8 +367,9 @@ export async function caixaDoPeriodoPorMes(
     else if (l.tipo === "RECEB_DINHEIRO") c.dinheiro += l.valor;
     else if (l.tipo === "SAIDA" && l.centroCusto === "AL") c.despesaAL += l.valor;
     else if (l.tipo === "SAIDA" && l.centroCusto === "CH") c.despesaCH += l.valor;
+    else if (l.tipo === "SAIDA") c.despesaOutros += l.valor;
   }
-  for (const c of saida) c.saldo = c.receita - c.despesaAL - c.despesaCH;
+  for (const c of saida) c.saldo = c.receita - c.despesaAL - c.despesaCH - c.despesaOutros;
   return saida;
 }
 

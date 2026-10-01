@@ -22,13 +22,14 @@ export default async function PaginaEditarLancamento({
     <>
       <PageHeader
         titulo="Editar lançamento"
-        descricao={`Livro-caixa CONTA_AC — ${formatarCompetencia(lancamento.mesReferencia)}`}
+        descricao={`Livro-caixa — ${formatarCompetencia(lancamento.mesReferencia)}`}
       />
       <Card className="max-w-2xl p-5">
         <FormLancamento
           acao={salvarLancamento}
           categoriasAL={categorias.AL}
           categoriasCH={categorias.CH}
+          categoriasBRISA={categorias.BRISA}
           mes={lancamento.mesReferencia}
           inicial={lancamento}
         />

@@ -13,6 +13,7 @@ export type FonteUnificacao = {
   motivos: string[]; campos: Record<string, CampoFonte>;
   nomeNorm: string; documento?: string | null; pessoaChave?: string | null; imovelChave?: string | null;
   contratoChave?: string | null; tituloChave?: string | null; vinculoExplicito?: string | null;
+  caixaChave?: string | null;
   competencia?: string | null; data?: string | null; vencimento?: string | null;
   valor?: number | null; pago?: number | null; aberto?: number | null; natureza?: string | null;
   cancelado?: boolean; informativo?: boolean; papeis?: string[];

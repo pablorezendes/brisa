@@ -76,6 +76,7 @@ const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
           },
           { tipo: "link", href: "/caixa", rotulo: "Movimentações de caixa", icone: "caixa" },
           { tipo: "link", href: "/unificacao", rotulo: "Resolver duplicidades", icone: "conciliacao", perfis: ["ADMINISTRADOR", "FINANCEIRO"] },
+          { tipo: "link", href: "/financeiro/importacoes", rotulo: "Importações de planilhas", icone: "historico", perfis: ["ADMINISTRADOR"] },
           { tipo: "link", href: "/financeiro/comissoes", rotulo: "Comissões", icone: "comissoes", perfis: PERFIS_COMISSOES },
         ],
       },

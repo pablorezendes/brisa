@@ -28,7 +28,7 @@ function fonte(dominio: DominioUnificacao, origem: "BRISA" | "WIDESYS", id: stri
  * navegação. Todos os insumos dos hashes e da proveniência são preservados.
  */
 export async function carregarDadosFontesUnificacao(db: BancoUnificacao) {
-  const [locatarios, pessoas, unidades, imoveis, contratos, contratosLegados, recebimentos, titulos, pagamentos, baixas, caixa, movimentos, parametros] = await Promise.all([
+  const [locatarios, pessoas, unidades, imoveis, contratos, contratosLegados, recebimentos, titulos, pagamentos, baixas, caixa, movimentos, parametros, importacoesPlanilha] = await Promise.all([
     db.locatario.findMany({ select: {
       id: true, nome: true, cpfCnpj: true, pessoaId: true, email: true,
       telefone: true, contato: true, endereco: true, numeroEndereco: true,
@@ -92,7 +92,7 @@ export async function carregarDadosFontesUnificacao(db: BancoUnificacao) {
     } }),
     db.lancamentoCaixa.findMany({ select: {
       id: true, mesReferencia: true, centroCusto: true, tipo: true, categoria: true,
-      data: true, valor: true, descricao: true, cliente: true, local: true,
+      data: true, valor: true, descricao: true, cliente: true, local: true, caixaOrigem: true,
     } }),
     db.movimentoFinanceiroLegado.findMany({ where: { origem: "WIDESYS" }, select: {
       id: true, legadoId: true, tituloEscopo: true, tituloLegadoId: true,
@@ -104,8 +104,25 @@ export async function carregarDadosFontesUnificacao(db: BancoUnificacao) {
       id: true, modulo: true, legadoId: true, titulo: true, label: true,
       status: true, quarentenaMotivo: true,
     } }),
+    // A relação reversa LancamentoCaixa.importacoesPlanilha dispara panic no
+    // engine Prisma/SQLite desta versão quando há linhas vinculadas. Uma leitura
+    // em lote pela FK evita a expansão reversa e mantém a mesma fotografia.
+    db.importacaoPlanilhaLinha.findMany({
+      where: { reservado: false, status: { in: ["IMPORTADO", "JA_EXISTENTE"] }, lancamentoCaixaId: { not: null } },
+      orderBy: [{ criadoEm: "asc" }, { id: "asc" }],
+      select: { lancamentoCaixaId: true, aba: true, linha: true, faixa: true, celulas: true, caixaOrigem: true,
+        hashConteudo: true, lote: { select: { arquivo: true, hashArquivo: true } } },
+    }),
   ]);
-  return { locatarios, pessoas, unidades, imoveis, contratos, contratosLegados, recebimentos, titulos, pagamentos, baixas, caixa, movimentos, parametros };
+  const primeiraProveniencia = new Map<string, (typeof importacoesPlanilha)[number]>();
+  for (const item of importacoesPlanilha) {
+    if (item.lancamentoCaixaId && !primeiraProveniencia.has(item.lancamentoCaixaId)) primeiraProveniencia.set(item.lancamentoCaixaId, item);
+  }
+  const caixaComProveniencia = caixa.map(lancamento => {
+    const item = primeiraProveniencia.get(lancamento.id);
+    return { ...lancamento, importacoesPlanilha: item ? [item] : [] };
+  });
+  return { locatarios, pessoas, unidades, imoveis, contratos, contratosLegados, recebimentos, titulos, pagamentos, baixas, caixa: caixaComProveniencia, movimentos, parametros };
 }
 
 export type DadosFontesUnificacao = Awaited<ReturnType<typeof carregarDadosFontesUnificacao>>;
@@ -195,6 +212,7 @@ export async function derivarFontesUnificacao(dados: DadosFontesUnificacao): Pro
     }));
   }
   for (const l of caixa) fontes.push(fonte("MOVIMENTO", "BRISA", l.id, {
+    ...(l.caixaOrigem ? { caixaChave: l.caixaOrigem } : {}),
     titulo: l.descricao ?? l.cliente ?? l.categoria ?? "Lançamento", descricao: `${l.centroCusto} · ${l.categoria ?? l.tipo}`, href: `/caixa/${l.id}/editar`, data: l.data, competencia: l.mesReferencia,
     natureza: l.tipo === "SAIDA" ? "SAIDA" : "ENTRADA", valor: l.valor, informativo: l.tipo === "RECEB_DINHEIRO",
     campos: { data: campo("Data", l.data), valor: dinheiro("Valor", l.valor), natureza: campo("Natureza", l.tipo), descricao: campo("Descrição", l.descricao), centro: campo("Centro de custo", l.centroCusto), categoria: campo("Categoria", l.categoria), tratamento: campo("Tratamento", l.tipo === "RECEB_DINHEIRO" ? "Registro paralelo, fora do saldo" : "Compõe o saldo") },
@@ -224,8 +242,22 @@ export async function derivarFontesUnificacao(dados: DadosFontesUnificacao): Pro
     for (const f of fontes) {
       if (f.origem !== "BRISA") continue;
       const p = f.dominio === "RECEBER" ? prova.recebimentos.get(f.origemId) : f.dominio === "MOVIMENTO" ? prova.lancamentosCaixa.get(f.origemId) : null;
-      if (p) f.proveniencia = { ...p };
+      if (p) {
+        f.proveniencia = { ...p };
+        if (f.dominio === "MOVIMENTO") f.caixaChave = "CONTA_ACAMARGO";
+      }
     }
+  }
+  const porCaixa = new Map(caixa.map(c => [c.id, c]));
+  for (const f of fontes) {
+    if (f.origem !== "BRISA" || f.dominio !== "MOVIMENTO") continue;
+    const original = porCaixa.get(f.origemId);
+    if (original?.caixaOrigem) {
+      f.caixaChave = original.caixaOrigem;
+      f.campos = { ...f.campos, caixa: campo("Caixa de origem", original.caixaOrigem) };
+    }
+    const i = original?.importacoesPlanilha?.[0];
+    if (i) f.proveniencia = { ...f.proveniencia, arquivo: i.lote.arquivo, hashArquivo: i.lote.hashArquivo, aba: i.aba, linha: i.linha, faixa: i.faixa, celulas: i.celulas, caixaOrigem: i.caixaOrigem, hash: i.hashConteudo };
   }
   return fontes;
 }

@@ -20,13 +20,14 @@ export default async function PaginaNovoLancamento({
     <>
       <PageHeader
         titulo="Novo lançamento"
-        descricao={`Livro-caixa CONTA_AC — mês em foco: ${formatarCompetencia(mes)}`}
+        descricao={`Livro-caixa — mês em foco: ${formatarCompetencia(mes)}`}
       />
       <Card className="max-w-2xl p-5">
         <FormLancamento
           acao={salvarLancamento}
           categoriasAL={categorias.AL}
           categoriasCH={categorias.CH}
+          categoriasBRISA={categorias.BRISA}
           mes={mes}
         />
       </Card>

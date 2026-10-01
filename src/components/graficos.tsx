@@ -32,6 +32,7 @@ export const COR_2 = "var(--g-s2)"; // o que era DEVIDO, ainda não é saída
  */
 export const COR_SAIDA = "var(--g-saida)"; // despesa
 export const COR_SAIDA_2 = "var(--g-saida-2)"; // segundo centro de custo
+export const COR_SAIDA_3 = "var(--g-saida-3, #b66c49)"; // demais centros de custo
 
 export const COR_3 = "var(--g-s3)"; // série neutra (não é entrada nem saída)
 
@@ -693,21 +694,23 @@ export function BarrasDuplas({
   );
 }
 
-/** Caixa: Receita × Despesa empilhada por centro (AL na base, CH acima). */
+/** Caixa: Receita × Despesa empilhada por centro (AL, CH e demais centros). */
 export function BarrasCaixa({
   receita,
   despesaAL,
   despesaCH,
+  despesaOutros = [],
   rotulos,
 }: {
   receita: number[];
   despesaAL: number[];
   despesaCH: number[];
+  despesaOutros?: number[];
   /** rótulos do eixo (default JAN..DEZ) */
   rotulos?: string[];
 }) {
   const { max, ticks } = escalaAgradavel(
-    Math.max(...receita, ...despesaAL.map((v, i) => v + (despesaCH[i] ?? 0)), 1)
+    Math.max(...receita, ...receita.map((_, i) => (despesaAL[i] ?? 0) + (despesaCH[i] ?? 0) + (despesaOutros[i] ?? 0)), 1)
   );
   const n = receita.length;
   const passo = PLOT_W / n;
@@ -721,17 +724,19 @@ export function BarrasCaixa({
       role="img"
       aria-label="Receita e despesas do caixa por mês"
     >
-      <DefsGradientes uid={uid} cores={[COR_1, COR_SAIDA, COR_SAIDA_2]} />
+      <DefsGradientes uid={uid} cores={[COR_1, COR_SAIDA, COR_SAIDA_2, COR_SAIDA_3]} />
       <EstiloTips uid={uid} n={n} />
       <Moldura ticks={ticks} max={max} />
       {receita.map((rec, i) => {
         const al = despesaAL[i] ?? 0;
         const ch = despesaCH[i] ?? 0;
+        const outros = despesaOutros[i] ?? 0;
         const centro = EIXO_W + i * passo + passo / 2;
         const xD = centro + 1.5;
         const hR = (rec / max) * ALT;
         const hAL = (al / max) * ALT;
         const hCH = (ch / max) * ALT;
+        const hOutros = (outros / max) * ALT;
         const mes = rotuloEixo(rotulos, i);
         return (
           <ColunaHover key={i} x={EIXO_W + i * passo + 2} w={passo - 4} indice={i}>
@@ -744,7 +749,7 @@ export function BarrasCaixa({
               fill={`url(#${uid}-g0)`}
               delayMs={i * 45}
             />
-            {/* pilha de despesas: AL na base, CH acima com 2px de respiro */}
+            {/* Alturas proporcionais, sem alterar a escala do total empilhado. */}
             {hAL > 0 ? (
               <g className="g-barra" style={{ animationDelay: `${i * 45 + 20}ms` }}>
                 <rect
@@ -759,13 +764,17 @@ export function BarrasCaixa({
             {hCH > 0 ? (
               <Barra
                 x={xD}
-                y={BASE - hAL - (hAL > 0 ? 2 : 0) - hCH}
+                y={BASE - hAL - hCH}
                 w={larguraBarra}
                 h={hCH}
                 cor={COR_SAIDA_2}
                 fill={`url(#${uid}-g2)`}
                 delayMs={i * 45 + 40}
               />
+            ) : null}
+            {hOutros > 0 ? (
+              <Barra x={xD} y={BASE - hAL - hCH - hOutros} w={larguraBarra} h={hOutros}
+                cor={COR_SAIDA_3} fill={`url(#${uid}-g3)`} delayMs={i * 45 + 60} />
             ) : null}
             {mostrarRotulo(n, i) ? (
               <text
@@ -789,7 +798,8 @@ export function BarrasCaixa({
       {receita.map((rec, i) => {
         const al = despesaAL[i] ?? 0;
         const ch = despesaCH[i] ?? 0;
-        const saldo = rec - al - ch;
+        const outros = despesaOutros[i] ?? 0;
+        const saldo = rec - al - ch - outros;
         // 3 linhas escaneáveis: o rateio A/L × chácara já está nas barras,
         // na legenda e na tabela — o tip responde "entrou, saiu, sobrou"
         return (
@@ -800,7 +810,7 @@ export function BarrasCaixa({
             titulo={rotuloEixo(rotulos, i)}
             linhas={[
               { cor: COR_1, nome: "receita", valor: formatarBRL(rec) },
-              { cor: COR_SAIDA, nome: "saídas", valor: formatarBRL(al + ch) },
+              { cor: COR_SAIDA, nome: "saídas", valor: formatarBRL(al + ch + outros) },
               { nome: "saldo", valor: formatarBRL(saldo) },
             ]}
           />

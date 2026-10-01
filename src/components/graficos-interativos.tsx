@@ -25,6 +25,7 @@ const CORES = {
   comissao: "var(--g-s3)",
   saidaAL: "var(--g-saida)",
   saidaCH: "var(--g-saida-2)",
+  saidaOutros: "var(--g-saida-3, #b66c49)",
   grade: "var(--g-grade)",
   texto: "var(--g-rotulo)",
 };
@@ -300,12 +301,14 @@ type LinhaCaixa = {
   receita: number;
   despesaAL: number;
   despesaCH: number;
+  despesaOutros?: number;
   saldo: number;
 };
 
 export function FluxoCaixaInterativo({ dados }: { dados: LinhaCaixa[] }) {
   const uid = useId().replaceAll(":", "");
   const gradienteEntrada = `${uid}-entrada`;
+  const temOutros = dados.some(linha => (linha.despesaOutros ?? 0) !== 0);
   return (
     <div>
       <div className="mb-2 flex flex-wrap gap-x-4 gap-y-2 text-[10px] font-bold uppercase tracking-[0.08em] text-[#65767a]">
@@ -313,6 +316,7 @@ export function FluxoCaixaInterativo({ dados }: { dados: LinhaCaixa[] }) {
           [CORES.recebido, "Entradas"],
           [CORES.saidaAL, "Saídas A/L"],
           [CORES.saidaCH, "Saídas Chácara"],
+          ...(temOutros ? [[CORES.saidaOutros, "Saídas Brisa / outros"]] : []),
           [CORES.comissao, "Saldo"],
         ].map(([cor, nome]) => (
           <span key={nome} className="inline-flex items-center gap-2">
@@ -378,6 +382,8 @@ export function FluxoCaixaInterativo({ dados }: { dados: LinhaCaixa[] }) {
               radius={[3, 3, 0, 0]}
               isAnimationActive={false}
             />
+            {temOutros ? <Bar dataKey="despesaOutros" name="Saídas Brisa / outros" stackId="saidas"
+              fill={CORES.saidaOutros} barSize={16} radius={[3, 3, 0, 0]} isAnimationActive={false} /> : null}
             <Line
               type="monotone"
               dataKey="saldo"

@@ -139,7 +139,7 @@ export default async function PaginaExecutivo({
           pendPorMes.set(p.mes, (pendPorMes.get(p.mes) ?? 0) + 1);
         const caixaReceita = caixaJanela.reduce((a, c) => a + c.receita, 0);
         const caixaDespesa = caixaJanela.reduce(
-          (a, c) => a + c.despesaAL + c.despesaCH,
+          (a, c) => a + c.despesaAL + c.despesaCH + c.despesaOutros,
           0
         );
         return {
@@ -207,7 +207,7 @@ export default async function PaginaExecutivo({
           temCaixa: !!dm.caixaMes,
           caixaReceita: dm.caixaMes?.receita ?? 0,
           caixaDespesa:
-            (dm.caixaMes?.despesaAL ?? 0) + (dm.caixaMes?.despesaCH ?? 0),
+            (dm.caixaMes?.despesaAL ?? 0) + (dm.caixaMes?.despesaCH ?? 0) + (dm.caixaMes?.despesaOutros ?? 0),
           lucroTemporada: dm.lucroTemporadaMes,
           temporadaDetalhe:
             dm.lucroTemporadaMes !== null
@@ -686,7 +686,7 @@ export default async function PaginaExecutivo({
                 </span>
               }
             />
-            {vm.caixaLinhas.some((linha) => linha.receita || linha.despesaAL || linha.despesaCH) ? (
+            {vm.caixaLinhas.some((linha) => linha.receita || linha.despesaAL || linha.despesaCH || linha.despesaOutros) ? (
               <>
                 <FluxoCaixaInterativo
                   dados={vm.caixaLinhas.map((linha) => ({
@@ -694,6 +694,7 @@ export default async function PaginaExecutivo({
                     receita: linha.receita,
                     despesaAL: linha.despesaAL,
                     despesaCH: linha.despesaCH,
+                    despesaOutros: linha.despesaOutros,
                     saldo: linha.saldo,
                   }))}
                 />
@@ -715,19 +716,21 @@ export default async function PaginaExecutivo({
                       <th className="text-right">Receita</th>
                       <th className="text-right">Despesa AL</th>
                       <th className="text-right">Despesa CH</th>
+                      {vm.caixaLinhas.some(linha => linha.despesaOutros !== 0) ? <th className="text-right">Brisa / outros</th> : null}
                       <th className="text-right">Saldo</th>
                       <th className="text-right">Receb. dinheiro*</th>
                     </tr>
                   </thead>
                   <tbody>
                     {vm.caixaLinhas
-                      .filter((linha) => linha.receita || linha.despesaAL || linha.despesaCH || linha.dinheiro)
+                      .filter((linha) => linha.receita || linha.despesaAL || linha.despesaCH || linha.despesaOutros || linha.dinheiro)
                       .map((linha) => (
                         <tr key={linha.mes}>
                           <td>{linha.rotulo}</td>
                           <td className="text-right"><Dinheiro centavos={linha.receita} /></td>
                           <td className="text-right"><Dinheiro centavos={linha.despesaAL} /></td>
                           <td className="text-right"><Dinheiro centavos={linha.despesaCH} /></td>
+                          {vm.caixaLinhas.some(linha => linha.despesaOutros !== 0) ? <td className="text-right"><Dinheiro centavos={linha.despesaOutros} /></td> : null}
                           <td className="text-right"><Dinheiro centavos={linha.saldo} destaque /></td>
                           <td className="text-right"><Dinheiro centavos={linha.dinheiro} /></td>
                         </tr>

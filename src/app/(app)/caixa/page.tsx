@@ -1,10 +1,10 @@
 /**
- * /caixa — livro-caixa CONTA_AC, visão mensal (?mes=YYYY-MM) ou por período
+ * /caixa — livro-caixa, visão mensal (?mes=YYYY-MM) ou por período
  * (?de=YYYY-MM-DD&ate=YYYY-MM-DD — quando presente, vence o ?mes).
  *
- * 4 blocos (grid 2×2 em telas grandes): saídas AL, saídas CH, entradas e
+ * Blocos por centro: saídas AL, CH e demais centros, entradas e
  * recebimentos em dinheiro (registro paralelo — fora do saldo).
- * Consolidação derivada nos KPIs: saldo = receita − despesa AL − despesa CH.
+ * Consolidação derivada nos KPIs: saldo = receita − saídas de todos os centros.
  *
  * No modo período a tela fica ANALÍTICA: KPIs agregados na janela e os 4
  * blocos listam a janela inteira com uma coluna "Mês" a mais. Lançar/editar
@@ -34,11 +34,13 @@ import {
 } from "@/lib/dominio/normalizacao";
 import { parsePeriodo } from "@/lib/dominio/periodo";
 import { nivelSaldo } from "@/lib/dominio/semaforo";
+import { rotuloCaixaOrigem } from "@/lib/dominio/caixa-origem";
 import {
   BarraComposicao,
   COR_1,
   COR_SAIDA,
   COR_SAIDA_2,
+  COR_SAIDA_3,
 } from "@/components/graficos";
 import {
   consolidacaoDoMes,
@@ -209,6 +211,7 @@ function TabelaEntradas({
               <td className="text-tinta-suave">{formatarData(l.data)}</td>
               <td className="max-w-64 whitespace-normal!">
                 {l.descricao ?? <span className="text-tinta-suave/60">—</span>}
+                {l.caixaOrigem ? <span className="mt-1 block text-[11px] text-tinta-suave">{rotuloCaixaOrigem(l.caixaOrigem)}</span> : null}
               </td>
               <td className="text-right!">
                 <Dinheiro centavos={l.valor} />
@@ -266,6 +269,7 @@ function TabelaRecebDinheiro({
               </td>
               <td className="max-w-40 whitespace-normal!">
                 {l.local ?? <span className="text-tinta-suave/60">—</span>}
+                {l.caixaOrigem ? <span className="mt-1 block text-[11px] text-tinta-suave">{rotuloCaixaOrigem(l.caixaOrigem)}</span> : null}
               </td>
               <td className="text-right!">
                 <Dinheiro centavos={l.valor} />
@@ -340,8 +344,8 @@ export default async function PaginaCaixa({
         titulo="Caixa"
         descricao={
           periodo
-            ? `Livro-caixa CONTA_AC no período ${periodo.rotulo} — totais e lançamentos da janela inteira`
-            : "Livro-caixa CONTA_AC — saídas por centro de custo, entradas e recebimentos em dinheiro"
+            ? `Livro-caixa no período ${periodo.rotulo} — totais e lançamentos da janela inteira`
+            : "Livro-caixa — saídas por centro de custo, entradas e recebimentos em dinheiro"
         }
         acoes={
           <>
@@ -377,7 +381,7 @@ export default async function PaginaCaixa({
           <div className="sm:w-72 sm:shrink-0">
             <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-tinta-suave">
               {periodo ? "Saldo do período" : "Saldo do mês"}
-              <Ajuda dica="Entradas menos as saídas dos dois centros, na janela em análise. Positivo: sobrou dinheiro; negativo: as saídas superaram as entradas. O registro de espécie não entra nesta conta." />
+              <Ajuda dica="Entradas menos as saídas de todos os centros, na janela em análise. Positivo: sobrou dinheiro; negativo: as saídas superaram as entradas. O registro de espécie não entra nesta conta." />
               <Selo nivel={nivelSaldo(consolidacao.saldo)}>
                 {consolidacao.saldo > 0
                   ? "sobrou"
@@ -392,7 +396,7 @@ export default async function PaginaCaixa({
               </Sigilo>
             </div>
             <div className="mt-1 text-xs text-tinta-suave">
-              receita − despesa AL − despesa CH
+              receita − saídas de todos os centros
               {periodo ? ` · ${periodo.rotulo}` : ""}
             </div>
             {consolidacao.saldo < 0 ? (
@@ -410,13 +414,14 @@ export default async function PaginaCaixa({
           <div className="min-w-0 flex-1">
             {consolidacao.receita > 0 ||
             consolidacao.despesaAL > 0 ||
-            consolidacao.despesaCH > 0 ? (
+            consolidacao.despesaCH > 0 || consolidacao.despesaOutros > 0 ? (
               <BarraComposicao
                 altura={16}
                 partes={[
                   { rotulo: "entradas", valor: consolidacao.receita, cor: COR_1 },
                   { rotulo: "saídas AL", valor: consolidacao.despesaAL, cor: COR_SAIDA },
                   { rotulo: "saídas CH", valor: consolidacao.despesaCH, cor: COR_SAIDA_2 },
+                  ...(consolidacao.despesaOutros ? [{ rotulo: "Brisa / outros", valor: consolidacao.despesaOutros, cor: COR_SAIDA_3 }] : []),
                 ]}
               />
             ) : (
@@ -447,6 +452,12 @@ export default async function PaginaCaixa({
           detalhe={periodo ? periodo.rotulo : undefined}
           ajuda="Soma das saídas do centro de custo CH (Chácara Brisa) na janela em análise. Gastos da chácara entram aqui; gastos pessoais de Antonio/Laura vão no centro AL."
         />
+        {blocos.saidasOutros.length > 0 ? <Kpi
+          rotulo="Despesa Brisa / outros"
+          valor={<Dinheiro centavos={consolidacao.despesaOutros} destaque />}
+          detalhe={[...new Set(blocos.saidasOutros.map(bloco => bloco.centroCusto))].join(" · ")}
+          ajuda="Saídas dos demais centros, incluindo Brisa. Compõem o saldo e permanecem separadas de Antonio/Laura e Chácara Brisa; os caixas de origem aparecem nos blocos abaixo."
+        /> : null}
       </div>
 
       <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
@@ -467,6 +478,11 @@ export default async function PaginaCaixa({
             vazio={`Sem saídas ${nomeJanela}.`}
           />
         </Card>
+
+        {blocos.saidasOutros.map(bloco => <Card key={JSON.stringify([bloco.centroCusto, bloco.caixaOrigem])}>
+          <CabecalhoBloco titulo={`Saídas — ${bloco.caixaOrigem ? rotuloCaixaOrigem(bloco.caixaOrigem) : bloco.centroCusto === "BRISA" ? "Brisa" : bloco.centroCusto}`} badge={bloco.centroCusto} cor="vermelho" />
+          <TabelaSaidas bloco={bloco} comMes={comMes} vazio={`Sem saídas ${nomeJanela}.`} />
+        </Card>)}
 
         <Card>
           <CabecalhoBloco titulo="Entradas" badge="GERAL" cor="verde" />
