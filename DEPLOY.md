@@ -67,14 +67,59 @@ Abra https://brisa.tescod.com — o app pede o login criado no primeiro acesso.
 
 ## 4) Atualizações futuras
 
+### Atualização 2026-10-07: usuários, carteiras e governança
+
+Esta versão adiciona **Configurações → Usuários e permissões**, a consulta
+**Minha carteira** e **Cadastros → Revisar e corrigir cadastros**. O administrador
+mantém acesso integral, inclusive às comissões. Demais usuários começam sem
+abrangência liberada; revise função, permissões e carteira após atualizar.
+Sócios, contabilidade e consulta usam exclusivamente a carteira de leitura,
+mesmo quando a abrangência inclui todos os cadastros. Financeiro/operador com
+carteira limitada também consultam por essa área; ações operacionais existentes
+exigem carteira global e capacidade explícita. As telas globais antigas não
+implementam edição financeira por carteira limitada.
+
+O boot executa `scripts/migrar-rbac.mjs --aplicar` antes de sincronizar o schema.
+A atualização versionada é `prisma/updates/20261007_rbac_governanca.sql`.
+Ela cria backup consistente em `dados/backups-rbac`, verifica os dados de todas
+as tabelas anteriores e desfaz a transação se houver divergência. Não use
+`prisma migrate deploy` nesta instalação histórica baseada em `db push`.
+
+```bash
+cd /srv/stack/acamargo
+set -e
+git pull --ff-only origin main
+docker compose build brisa
+docker compose stop brisa
+docker compose run --rm --no-deps brisa npm run db:migrar-rbac -- --aplicar
+# Só prossiga se a migração terminar sem erro.
+docker compose up -d brisa
+docker compose logs --tail 80 brisa
+curl -I https://brisa.tescod.com/login
+```
+
+Não execute seed nem `--accept-data-loss`. Se a migração falhar, preserve o
+backup e os logs e mantenha a aplicação parada para revisão. O rollback da
+transação preserva o banco anterior; não tente desfazer o schema manualmente.
+Mudanças de função, carteira, status e senha revogam sessões; os usuários
+afetados deverão entrar novamente. Bloqueios explícitos prevalecem. Mesclagens
+com regras de acesso envolvidas exigem revisão antes de executar.
+
+Referências funcionais: [Widesys — portais por relacionamento](https://www.widesys.com.br/software-para-imobiliaria),
+[Superlógica — permissões financeiras granulares](https://imobiliarias.superlogica.com/hc/pt-br/articles/41496210645015-Mais-seguran%C3%A7a-e-controle-chegaram-as-novas-permiss%C3%B5es-granulares-no-sistema),
+[OWASP — autorização por recurso e negação por padrão](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html).
+São referências de desenho, não cópia de uma matriz interna do Widesys.
+
+### Atualizações posteriores
+
 ```bash
 cd /srv/stack/acamargo
 git pull --ff-only origin main
 docker compose up -d --build
 ```
 
-O banco (`dados/brisa.db`) fica intacto entre deploys; o `prisma db push` do
-boot aplica alterações de schema sem apagar dados.
+O banco persiste no volume `dados/brisa.db`. Alterações de schema exigem
+backup e revisão; não autorize perda de dados para contornar um erro de deploy.
 
 ### Integração Sicoob (configuração inicial)
 

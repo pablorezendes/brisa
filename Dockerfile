@@ -23,5 +23,6 @@ ENV NODE_ENV=production
 ENV DATABASE_URL="file:/data/brisa.db"
 EXPOSE 3000
 
-# db push é idempotente: cria/migra o schema no primeiro boot sem tocar em dados
-CMD ["sh", "-c", "npx prisma db push --skip-generate && npm run db:contas-sicoob && npm run start"]
+# Atualização versionada verifica backup/paridade antes de sincronizar o schema.
+# Nunca adicionar --accept-data-loss: falhas devem impedir o início da aplicação.
+CMD ["sh", "-c", "npm run db:migrar-rbac -- --aplicar && npx prisma db push --skip-generate && npm run db:contas-sicoob && npm run start"]

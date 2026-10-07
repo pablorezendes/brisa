@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "db:push": "prisma db push",
+    "db:migrar-rbac": "node scripts/migrar-rbac.mjs",
     "db:seed": "tsx prisma/seed.ts",
     "db:contas-sicoob": "tsx scripts/cadastrar-contas-sicoob.ts",
     "importar:cadastros-widesys": "tsx scripts/importar-cadastros-widesys.ts",
