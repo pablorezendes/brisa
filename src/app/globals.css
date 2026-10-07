@@ -96,6 +96,28 @@ summary {
 .app-content > div {
   width: 100%;
   max-width: 100%;
+  min-width: 0;
+}
+
+/* A largura da tabela nunca participa do tamanho mínimo de um card/grid.
+   O conteúdo excedente continua acessível por rolagem, não pelo documento. */
+.app-content :is(.grid, .flex) > :is(div, section, article, form),
+.app-content :is(.overflow-x-auto, .tabela-scroll) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.app-content :is(.overflow-x-auto, .tabela-scroll):has(> .tabela) {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  overflow: auto;
+  overscroll-behavior-inline: contain;
+  scroll-padding-inline: 12px 176px;
+}
+
+.tabela-scroll:focus-visible {
+  outline-offset: -2px;
 }
 
 .login-grid {
@@ -653,6 +675,55 @@ svg.grafico-executivo {
   background: #fbfcfc;
 }
 
+/* Só tabelas explicitamente marcadas possuem ações fixas. Não prendemos
+   valores monetários nem células de total/estado vazio com colspan. */
+.tabela--acoes > :is(thead, tbody, tfoot) > tr > :is(th, td):last-child:not([colspan]) {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  min-width: 104px;
+  max-width: min(19rem, 56vw);
+  background: var(--carta);
+  box-shadow: -10px 0 12px -12px rgba(23, 40, 44, 0.6);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+.tabela--acoes > thead > tr > th:last-child {
+  z-index: 3;
+  background: #f8fafb;
+}
+.tabela--acoes > tbody > tr:hover > td:last-child:not([colspan]) {
+  background: #f6f9f9;
+}
+.tabela--acoes > tfoot > tr > td:last-child:not([colspan]) {
+  background: #fbfcfc;
+}
+.tabela--acoes > tbody > tr > td:last-child :is(a, button, summary) {
+  white-space: normal;
+}
+.tabela--acoes > tbody > tr > td:last-child:not([colspan]) > :is(div, span, details) {
+  max-width: min(19rem, 56vw);
+  flex-wrap: wrap;
+}
+.tabela-configuracao-conta {
+  width: 8.5rem;
+  max-width: 100%;
+}
+.tabela-configuracao-conta[open] {
+  width: min(19rem, calc(100vw - 5rem));
+}
+
+@media print {
+  .app-content :is(.overflow-x-auto, .tabela-scroll):has(> .tabela) {
+    overflow: visible;
+  }
+  .tabela--acoes > :is(thead, tbody, tfoot) > tr > :is(th, td):last-child:not([colspan]) {
+    position: static;
+    box-shadow: none;
+  }
+}
+
 /* "i" de informação — o mesmo botão em todo card, cabeçalho e coluna.
    CSS puro (hover/foco), sem JS. Neutro (tinta sobre papel), serifado e
    itálico para ler como "informação" mesmo em 16px; a cor fica reservada
@@ -736,6 +807,7 @@ svg.grafico-executivo {
   font-size: clamp(1.05rem, calc(0.9rem + 3.75cqi), 1.6875rem);
   line-height: 1.16;
   overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .kpi-valor--destaque {

@@ -20,8 +20,8 @@ export function PageHeader({
   acoes?: React.ReactNode;
 }) {
   return (
-    <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
-      <div className="min-w-0">
+    <div className="mb-5 flex min-w-0 flex-wrap items-end justify-between gap-x-6 gap-y-4">
+      <div className="min-w-0 flex-[1_1_22rem]">
         <div className="mb-1.5 flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.18em] text-oliva">
           <span className="h-1.5 w-1.5 rounded-sm bg-oliva" />
           Painel de gestão
@@ -31,7 +31,7 @@ export function PageHeader({
           <p className="mt-1.5 max-w-3xl text-[13px] leading-relaxed text-tinta-suave">{descricao}</p>
         ) : null}
       </div>
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
+      <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
         <BotaoSigilo />
         {acoes}
       </div>
@@ -238,7 +238,7 @@ export function Kpi({
   const est = nivel ? NIVEL[nivel] : null;
   const conteudo = (
     <>
-      <div className="flex min-w-0 items-start justify-between gap-2">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-2 gap-y-1.5">
         <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-bold leading-snug uppercase tracking-[0.095em] text-tinta-suave">
           {rotulo}
           {ajuda ? <Ajuda dica={ajuda} /> : null}
@@ -496,7 +496,7 @@ export function BuscaCard({
   placeholder?: string;
 }) {
   return (
-    <form method="get" action={base} className="flex items-center gap-1.5">
+    <form method="get" action={base} className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
       {Object.entries(ocultos ?? {}).map(([k, v]) =>
         v ? <input key={k} type="hidden" name={k} value={v} /> : null
       )}
@@ -506,7 +506,7 @@ export function BuscaCard({
         defaultValue={valor ?? ""}
         placeholder={placeholder}
         aria-label={placeholder}
-        className={`${inputBase} h-9 w-48 py-0 text-[12px]`}
+        className={`${inputBase} h-9 min-w-0 w-48 max-w-full py-0 text-[12px]`}
       />
       <button
         type="submit"
@@ -551,13 +551,13 @@ export function TituloCard({
 }) {
   return (
     <div className="mb-3.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-      <h2 className="flex items-center gap-1.5 text-[14px] font-bold tracking-[-0.015em] text-tinta">
+      <h2 className="flex min-w-0 items-center gap-1.5 text-[14px] font-bold tracking-[-0.015em] text-tinta">
         {nivel && nivel !== "neutro" ? <Ponto nivel={nivel} /> : null}
         {titulo}
         {ajuda ? <Ajuda dica={ajuda} /> : null}
       </h2>
       {direita ? (
-        <div className="flex items-center gap-3">{direita}</div>
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-3">{direita}</div>
       ) : null}
     </div>
   );
