@@ -3,6 +3,7 @@ import { STATUS_BOLETO_ATIVOS } from "../dominio/boletos";
 import { avaliarFonte, candidatosPara, projetarUnificados } from "./reconciliacao";
 import { carregarDadosFontesUnificacao, carregarFontesUnificacao, derivarFontesUnificacao } from "./fontes";
 import type { DecisaoUnificacao, DominioUnificacao, FonteUnificacao } from "./tipos";
+import { filtrarFontesGovernadas } from "../governanca/filtros";
 
 export class ErroUnificacao extends Error {
   constructor(public codigo: string, mensagem: string) { super(mensagem); this.name = "ErroUnificacao"; }
@@ -11,7 +12,7 @@ export class ErroUnificacao extends Error {
 /** Idempotente e transacional; preserva decisões e todas as tabelas de origem. */
 export async function analisarUnificacao(db: PrismaClient, usuarioId: string, dryRun = false) {
   return db.$transaction(async tx => {
-    const fontes = await carregarFontesUnificacao(tx);
+    const fontes = filtrarFontesGovernadas(await carregarFontesUnificacao(tx), await tx.recursoGovernado.findMany({ select: { tipo: true, origemId: true, status: true } }));
     const existentes = await tx.unificacaoRegistro.findMany();
     const porChave = new Map(fontes.map(f => [f.chave,f]));
     const anteriores = new Map(existentes.map(d => [d.chave,d]));
@@ -63,7 +64,7 @@ export async function decidirUnificacao(db: PrismaClient, entrada: ResolverUnifi
   return db.$transaction(async tx => {
     const registro = await tx.unificacaoRegistro.findUnique({ where: { chave: entrada.chave } });
     if (!registro || registro.versao !== entrada.versao) throw new ErroUnificacao("DECISAO_DESATUALIZADA", "Este registro foi alterado. Reabra a comparação.");
-    const fontes = await carregarFontesUnificacao(tx);
+    const fontes = filtrarFontesGovernadas(await carregarFontesUnificacao(tx), await tx.recursoGovernado.findMany({ select: { tipo: true, origemId: true, status: true } }));
     const fonte = fontes.find(f => f.chave === entrada.chave);
     if (!fonte || fonte.hash !== entrada.hashFonte || registro.hashFonte !== fonte.hash) throw new ErroUnificacao("FONTE_DESATUALIZADA", "A origem mudou. Atualize a análise e compare novamente.");
     if (fonte.qualidade !== "OK") throw new ErroUnificacao("FONTE_EM_QUARENTENA", "Resolva a inconsistência na origem e importe uma nova captura antes de incorporar este registro.");
@@ -105,9 +106,9 @@ export async function lerOperacaoUnificada(db: PrismaClient) {
   // Somente a fotografia relacional precisa manter a conexão reservada.
   // Hashes, leitura da planilha e reconciliação acontecem depois do commit,
   // sem prolongar a transação de leitura nem misturar versões das tabelas.
-  const [dados, decisoes] = await db.$transaction(tx => Promise.all([
-    carregarDadosFontesUnificacao(tx), tx.unificacaoRegistro.findMany(),
+  const [dados, decisoes, governados] = await db.$transaction(tx => Promise.all([
+    carregarDadosFontesUnificacao(tx), tx.unificacaoRegistro.findMany(), tx.recursoGovernado.findMany({ select: { tipo: true, origemId: true, status: true } }),
   ]), { maxWait: 2000, timeout: 60000 });
-  const fontes = await derivarFontesUnificacao(dados);
+  const fontes = filtrarFontesGovernadas(await derivarFontesUnificacao(dados), governados);
   return { fontes, decisoes, linhas: projetarUnificados(fontes,decisoes as DecisaoUnificacao[]) };
 }

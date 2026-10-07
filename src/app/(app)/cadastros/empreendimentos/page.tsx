@@ -1,4 +1,8 @@
+import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
+import { podeExibirAcao } from "@/components/acao-autorizada";
+import { filtroGovernanca } from "@/lib/governanca/filtros";
 import Link from "next/link";
+import { LinkGovernanca } from "@/components/link-governanca";
 import { Card, PageHeader, btnPrimario, btnSecundario, inputBase } from "@/components/ui";
 import { prisma } from "@/lib/db";
 import { normalizar } from "@/lib/dominio/normalizacao";
@@ -34,11 +38,14 @@ function urlLista({ q, status, editar }: { q?: string; status?: string; editar?:
 }
 
 export default async function PaginaEmpreendimentos({ searchParams }: { searchParams: SearchParams }) {
+  await exigirPaginaAcesso("/cadastros/empreendimentos");
+  const podeEditar = podeExibirAcao(await acessoAtual(), { permissao: "cadastros.editar" });
   const sp = await searchParams;
   const q = (sp.q ?? "").trim();
   const status = sp.status === "inativos" ? "inativos" : sp.status === "ativos" ? "ativos" : "todos";
 
   const where = {
+    ...await filtroGovernanca(prisma, "EMPREENDIMENTO"),
     ...(q ? { nome: { contains: normalizar(q) } } : {}),
     ...(status === "ativos" ? { ativo: true } : status === "inativos" ? { ativo: false } : {}),
   };
@@ -59,7 +66,7 @@ export default async function PaginaEmpreendimentos({ searchParams }: { searchPa
       },
       orderBy: { nome: "asc" },
     }),
-    sp.editar
+    podeEditar && sp.editar
       ? prisma.empreendimento.findUnique({ where: { id: sp.editar } })
       : Promise.resolve(null),
   ]);
@@ -78,8 +85,8 @@ export default async function PaginaEmpreendimentos({ searchParams }: { searchPa
       <NavegacaoCadastros atual="empreendimentos" />
       <AvisosCadastro ok={sp.ok} erro={sp.erro} />
 
-      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(250px,0.34fr)_minmax(0,1fr)]">
-        <Card className="p-5 xl:sticky xl:top-20">
+      <div className={`grid grid-cols-1 items-start gap-4 ${podeEditar ? "xl:grid-cols-[minmax(250px,0.34fr)_minmax(0,1fr)]" : ""}`}>
+        {podeEditar && <Card className="p-5 xl:sticky xl:top-20">
           <div className="mb-4">
             <h2 className="text-base font-bold tracking-tight text-tinta">
               {editando ? "Editar empreendimento" : "Novo empreendimento"}
@@ -114,7 +121,7 @@ export default async function PaginaEmpreendimentos({ searchParams }: { searchPa
               ) : null}
             </div>
           </form>
-        </Card>
+        </Card>}
 
         <Card>
           <div className="flex flex-col gap-3 border-b border-contorno px-4 py-4 sm:flex-row sm:items-end sm:justify-between">
@@ -155,11 +162,11 @@ export default async function PaginaEmpreendimentos({ searchParams }: { searchPa
           {empreendimentos.length === 0 ? (
             <EstadoVazio
               titulo="Nenhum empreendimento encontrado"
-              texto="Revise a busca e os filtros ou cadastre um novo empreendimento ao lado."
+              texto={podeEditar ? "Revise a busca e os filtros ou cadastre um novo empreendimento ao lado." : "Revise a busca e os filtros."}
             />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="tabela min-w-[720px]">
+            <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
+              <table className="tabela tabela--acoes min-w-[720px]">
                 <caption className="sr-only">Empreendimentos cadastrados</caption>
                 <thead>
                   <tr>
@@ -190,13 +197,14 @@ export default async function PaginaEmpreendimentos({ searchParams }: { searchPa
                         <td className="text-right font-mono tabular-nums">{contratosAbertos}</td>
                         <td>
                           <div className="flex justify-end gap-1.5">
-                            <Link
+                            {podeEditar && <Link
                               href={urlLista({ q, status, editar: empreendimento.id })}
                               className={`${btnSecundario} min-h-8 px-2.5 py-1 text-[11px]`}
                             >
                               Editar
-                            </Link>
-                            {empreendimento.ativo && unidadesAtivas > 0 ? (
+                            </Link>}
+                            <LinkGovernanca tipo="EMPREENDIMENTO" id={empreendimento.id} />
+                            {podeEditar && (empreendimento.ativo && unidadesAtivas > 0 ? (
                               <button
                                 type="button"
                                 disabled
@@ -218,7 +226,7 @@ export default async function PaginaEmpreendimentos({ searchParams }: { searchPa
                                   {empreendimento.ativo ? "Desativar" : "Reativar"}
                                 </button>
                               </form>
-                            )}
+                            ))}
                           </div>
                         </td>
                       </tr>

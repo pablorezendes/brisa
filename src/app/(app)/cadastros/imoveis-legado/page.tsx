@@ -1,4 +1,6 @@
+import { exigirPaginaAcesso, exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
+import { LinkGovernanca } from "@/components/link-governanca";
 import { Badge, Card, Dinheiro, Kpi, PageHeader, Sigilo, btnSecundario, inputBase } from "@/components/ui";
 import { IconeMenu } from "@/components/icones-menu";
 import { listarImoveisLegado } from "@/lib/consultas/cadastros-widesys";
@@ -96,6 +98,8 @@ export default async function PaginaImoveisLegado({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await exigirPaginaAcesso("/cadastros/imoveis-legado");
+  await exigirPermissaoAcesso("cadastros.sensiveis", { global: true });
   const sp = await searchParams;
   const q = (primeiro(sp.q) ?? "").trim().slice(0, 120);
   const estado = estadoValido(primeiro(sp.estado));
@@ -279,8 +283,8 @@ export default async function PaginaImoveisLegado({
               })}
             </div>
 
-            <div className="hidden overflow-x-auto md:block">
-              <table className="tabela">
+            <div className="hidden tabela-scroll overflow-x-auto md:block" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
+              <table className="tabela tabela--acoes">
                 <caption className="sr-only">Imóveis importados do sistema anterior</caption>
                 <thead>
                   <tr>
@@ -321,6 +325,7 @@ export default async function PaginaImoveisLegado({
                         <td><Badge cor="azul">Widesys</Badge></td>
                         <td className="text-right">
                           <Link href={`/cadastros/imoveis-legado/${item.id}`} className="text-[11px] font-bold text-oliva-escura hover:underline">Detalhes →</Link>
+                          <LinkGovernanca tipo="IMOVEL_LEGADO" id={item.id} />
                         </td>
                       </tr>
                     );

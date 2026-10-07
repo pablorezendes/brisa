@@ -1,4 +1,6 @@
+import { exigirPaginaAcesso, exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
+import { LinkGovernanca } from "@/components/link-governanca";
 import { notFound } from "next/navigation";
 import { Badge, Card, PageHeader, Sigilo, btnSecundario } from "@/components/ui";
 import { IconeMenu } from "@/components/icones-menu";
@@ -75,6 +77,8 @@ export default async function PaginaDetalhePessoa({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await exigirPaginaAcesso("/cadastros/pessoas/[id]");
+  await exigirPermissaoAcesso("cadastros.sensiveis", { global: true });
   const { id } = await params;
   const pessoa = await obterPessoaWidesys(id);
   if (!pessoa) notFound();
@@ -96,9 +100,12 @@ export default async function PaginaDetalhePessoa({
         titulo={pessoa.nome}
         descricao="Detalhes cadastrais preservados da origem, organizados para consulta e conferência."
         acoes={
+          <>
           <Link href="/cadastros/pessoas" className={btnSecundario}>
             ← Voltar às pessoas
           </Link>
+          <LinkGovernanca tipo="PESSOA" id={id} />
+          </>
         }
       />
 

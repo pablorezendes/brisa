@@ -7,6 +7,7 @@
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
 import { filtroRecebimentosUnificados } from "./filtro-unificacao-nativa";
+import { filtroGovernanca } from "../governanca/filtros";
 
 // ---------- validação de formatos ----------
 
@@ -209,7 +210,7 @@ export async function contratoDetalhe(
 
 export async function empreendimentosAtivos() {
   return prisma.empreendimento.findMany({
-    where: { ativo: true },
+    where: { ativo: true, ...await filtroGovernanca(prisma, "EMPREENDIMENTO") },
     orderBy: { nome: "asc" },
   });
 }
@@ -220,12 +221,12 @@ export type UnidadeComEmpreendimento = Prisma.UnidadeGetPayload<{
 
 export async function unidadesParaSelecao(): Promise<UnidadeComEmpreendimento[]> {
   return prisma.unidade.findMany({
-    where: { ativo: true },
+    where: { ativo: true, ...await filtroGovernanca(prisma, "UNIDADE") },
     include: { empreendimento: true },
     orderBy: [{ empreendimento: { nome: "asc" } }, { identificacao: "asc" }],
   });
 }
 
 export async function locatariosParaSelecao() {
-  return prisma.locatario.findMany({ orderBy: { nomeNorm: "asc" } });
+  return prisma.locatario.findMany({ where: await filtroGovernanca(prisma, "LOCATARIO"), orderBy: { nomeNorm: "asc" } });
 }

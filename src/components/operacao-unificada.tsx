@@ -1,7 +1,10 @@
 import Link from "next/link";
+import { AcaoAutorizada } from "@/components/acao-autorizada";
 import { BotaoUnificacao } from "@/components/botao-unificacao";
 import { notFound } from "next/navigation";
 import { perfilAtual } from "@/lib/autorizacao";
+import { acessoAtual } from "@/lib/acesso/servidor";
+import { carteiraIrrestrita, pode } from "@/lib/acesso/politica";
 import { listarUnificados } from "@/lib/consultas/unificacao";
 import { ROTULOS_DOMINIO, type DominioUnificacao, type EstadoUnificacao, type LinhaUnificada } from "@/lib/unificacao/tipos";
 import { MOTIVOS_UNIFICACAO } from "@/lib/unificacao/reconciliacao";
@@ -32,7 +35,9 @@ export async function exigirPerfilUnificacao() {
 }
 export async function podeAcessarUnificacao() {
   const perfil = await perfilAtual();
-  return perfil === "ADMINISTRADOR" || perfil === "FINANCEIRO";
+  const acesso = await acessoAtual();
+  return (perfil === "ADMINISTRADOR" || perfil === "FINANCEIRO")
+    && carteiraIrrestrita(acesso) && pode(acesso, "cadastros.sensiveis");
 }
 export function EstadoUnificado({ item }: { item: Pick<LinhaUnificada, "estado"> }) {
   return <Badge nivel={item.estado === "ATIVO" ? "otimo" : item.estado === "VINCULADO" ? "info" : item.estado === "QUARENTENA" ? "critico" : "atencao"}>{ESTADOS_UNIFICACAO[item.estado]}</Badge>;
@@ -78,7 +83,7 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
   return <div>
     <PageHeader titulo={titulo} descricao={central ? "Revise coincidências entre Widesys, planilhas e operação atual. Cada decisão preserva a origem e define o que entra uma única vez no consolidado." : "Widesys, planilhas e operação atual reunidos em uma consulta. A origem acompanha cada registro e as possíveis duplicidades ficam sinalizadas para revisão."} acoes={<>
       {nativo ? <Link href={nativo.href} className={btnSecundario}>{nativo.rotulo}</Link> : null}
-      <form action={sincronizarUnificacao}><BotaoUnificacao className={btnPrimario}>Atualizar conciliação</BotaoUnificacao></form>
+      <AcaoAutorizada permissao={["unificacao.editar", "pagamentos.conciliar"]} perfis={["ADMINISTRADOR", "FINANCEIRO"]}><form action={sincronizarUnificacao}><BotaoUnificacao className={btnPrimario}>Atualizar conciliação</BotaoUnificacao></form></AcaoAutorizada>
     </>} />
     <nav aria-label="Operação unificada" className="mb-5 flex flex-wrap gap-1.5 rounded-xl border border-contorno bg-carta p-2">{ABAS.map((aba) => <Link key={aba.dominio} href={aba.href} aria-current={(central ? aba.dominio === "CENTRAL" : aba.dominio === dominio) ? "page" : undefined} className={`rounded-lg px-3 py-2 text-xs font-semibold ${(central ? aba.dominio === "CENTRAL" : aba.dominio === dominio) ? "bg-oliva/10 text-oliva-escura" : "text-tinta-suave hover:bg-slate-50"}`}>{aba.titulo}</Link>)}</nav>
     {primeiroParametro(parametros.erro) ? <Card nivel="critico" className="mb-4 p-4 text-sm">{primeiroParametro(parametros.erro)}</Card> : null}
@@ -103,7 +108,7 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
       </form>
       {financeiro || movimento || baixa ? <p className="border-b border-contorno px-4 py-2 text-[10px] leading-relaxed text-tinta-suave">{financeiro ? "Mês e intervalo usam a competência do título; no intervalo, ela corresponde ao primeiro dia do mês. Sem competência, usam o vencimento e, na falta dele, a data do registro." : "Mês e intervalo usam a data do movimento ou da baixa. Quando ausente, usam o vencimento e depois a competência, considerada no primeiro dia do mês."}</p> : null}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-contorno bg-slate-50/60 px-4 py-3 text-xs text-tinta-suave"><span>{dados.total} registro(s) · página {dados.pagina} de {dados.paginas || 1}</span><span>Possíveis duplicidades e inconsistências ficam fora dos totais.</span></div>
-      <div className="overflow-x-auto"><table className="tabela"><thead><tr><th>Registro e origem</th>{!dominioFixo ? <th>Tipo</th> : null}<th>Situação</th><th>Data / competência</th>{financeiro ? <><th className="text-right!">Devido</th><th className="text-right!">Pago</th><th className="text-right!">Aberto</th></> : movimento || baixa ? <th className="text-right!">Valor</th> : null}<th className="text-right!">Ações</th></tr></thead><tbody>
+      <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}><table className="tabela tabela--acoes"><thead><tr><th>Registro e origem</th>{!dominioFixo ? <th>Tipo</th> : null}<th>Situação</th><th>Data / competência</th>{financeiro ? <><th className="text-right!">Devido</th><th className="text-right!">Pago</th><th className="text-right!">Aberto</th></> : movimento || baixa ? <th className="text-right!">Valor</th> : null}<th className="text-right!">Ações</th></tr></thead><tbody>
         {dados.itens.map((item) => <tr key={item.chave}><td className="max-w-[360px] whitespace-normal!"><Link href={hrefUnificacao(item.chave)} className="font-semibold text-oliva-escura hover:underline">{item.titulo}</Link><p className="my-1 text-[11px] text-tinta-suave">{item.descricao}</p><OrigensUnificadas origens={item.origens} />{item.papeis?.length ? <p className="mt-1 text-[10px] text-tinta-suave">{item.papeis.join(" · ")}</p> : null}</td>{!dominioFixo ? <td>{ROTULOS_DOMINIO[item.dominio]}</td> : null}<td className="max-w-[250px] whitespace-normal!"><EstadoUnificado item={item} />{item.candidatos.length ? <p className="mt-1 text-[11px] text-amber-800">{item.candidatos.length} correspondência(s) para comparar</p> : null}{item.avisos.length ? <p className="mt-1 text-[11px] text-tinta-suave">{motivoUnificacao(item.avisos[0])}</p> : null}{!item.contabiliza ? <p className="mt-1 text-[10px] text-tinta-suave">Fora dos totais</p> : null}</td><td className="text-xs text-tinta-suave">{dataUnificada(item.vencimento ?? item.data)}{item.competencia ? <p className="mt-1 font-mono text-[10px]">{item.competencia}</p> : null}</td>{financeiro ? [item.valor, item.pago, item.aberto].map((valor, indice) => <td key={indice} className="text-right!"><Sigilo><Dinheiro centavos={valor} /></Sigilo></td>) : movimento || baixa ? <td className="text-right!"><span className="block text-[10px] text-tinta-suave">{item.natureza}</span><Sigilo><Dinheiro centavos={item.valor} /></Sigilo></td> : null}<td className="text-right!"><div className="flex flex-col items-end gap-2"><Link href={hrefUnificacao(item.chave)} className="text-xs font-semibold text-oliva-escura hover:underline">{["PENDENTE", "REVISAR", "QUARENTENA"].includes(item.estado) ? "Revisar e resolver" : "Ver detalhes"}</Link>{item.href ? <Link href={item.href} className="text-[11px] text-tinta-suave hover:underline">Abrir cadastro / lançamento</Link> : null}</div></td></tr>)}
         {!dados.itens.length ? <tr><td colSpan={financeiro ? 8 : 6} className="py-12! text-center! text-tinta-suave">Nenhum registro encontrado para estes filtros.</td></tr> : null}
       </tbody></table></div>

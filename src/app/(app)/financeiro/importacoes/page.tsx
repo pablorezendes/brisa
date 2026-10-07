@@ -1,3 +1,4 @@
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
 import { Badge, Card, Dinheiro, PageHeader, Sigilo, btnSecundario, inputBase } from "@/components/ui";
 import { listarImportacoesPlanilha } from "@/lib/consultas/importacoes-planilha";
@@ -23,6 +24,7 @@ function dataHora(data: Date) {
 export default async function PaginaImportacoes({ searchParams }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await exigirPaginaAcesso("/financeiro/importacoes");
   const dados = await listarImportacoesPlanilha(await searchParams);
   const lote = dados.lotes.find(item => item.id === dados.filtros.lote);
   return <div>
@@ -51,7 +53,7 @@ export default async function PaginaImportacoes({ searchParams }: {
 
     {dados.lotes.length > 0 ? <Card className="mb-4 overflow-hidden">
       <div className="border-b border-contorno p-4"><h2 className="text-sm font-bold">Lotes e controles de conferência</h2><p className="mt-1 text-xs text-tinta-suave">Contagens de verificações, sem publicar valores ou fórmulas da origem. Uma mesma célula pode ter mais de uma limitação.</p></div>
-      <div className="overflow-x-auto"><table className="tabela">
+      <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}><table className="tabela">
         <thead><tr><th>Arquivo e carga</th><th>Linhas</th><th>Controles</th><th>Limitações encontradas</th></tr></thead>
         <tbody>{dados.lotes.map(item => <tr key={item.id}>
           <td><Link href={`/financeiro/importacoes?lote=${encodeURIComponent(item.id)}`} className="text-xs font-semibold text-oliva-escura hover:underline">{item.arquivo}</Link><p className="mt-1 text-[10px] text-tinta-suave">{dataHora(item.criadoEm)}</p></td>
@@ -99,7 +101,7 @@ export default async function PaginaImportacoes({ searchParams }: {
         <h2 className="text-sm font-bold">Trilha da carga</h2>
         <span className="text-xs text-tinta-suave">{dados.quantidade} linha(s) nesta consulta · somente leitura</span>
       </div>
-      <div className="overflow-x-auto"><table className="tabela">
+      <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}><table className="tabela tabela--acoes">
         <thead><tr><th>Origem</th><th>Descrição</th><th>Referência</th><th>Situação</th><th className="text-right">Valor</th><th><span className="sr-only">Conferência</span></th></tr></thead>
         <tbody>{dados.linhas.map(linha => <tr key={linha.id}>
           <td><div className="max-w-64 break-words text-xs font-semibold">{linha.arquivo}</div><div className="mt-1 text-[11px] text-tinta-suave">{linha.reservado ? `Linha ${linha.linha}` : `${linha.aba} · linha ${linha.linha} · ${linha.faixa}`}</div></td>

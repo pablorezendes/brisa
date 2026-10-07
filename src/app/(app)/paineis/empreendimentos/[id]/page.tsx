@@ -1,3 +1,4 @@
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -58,6 +59,7 @@ export default async function PaginaDetalheEmpreendimento({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ ano?: string; de?: string; ate?: string }>;
 }) {
+  await exigirPaginaAcesso("/paineis/empreendimentos/[id]");
   const { id } = await params;
   const sp = await searchParams;
   const periodo = parsePeriodo(sp.de, sp.ate);

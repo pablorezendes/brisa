@@ -1,3 +1,6 @@
+import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
+import { AcaoAutorizada, podeExibirAcao } from "@/components/acao-autorizada";
+import { podeAbrirRota, type PermissaoAcesso } from "@/lib/acesso/politica";
 import Link from "next/link";
 import { IconeMenu, type IconeMenuNome } from "@/components/icones-menu";
 import {
@@ -16,7 +19,6 @@ import {
 import { dadosExecutivos, mesPadrao } from "@/lib/consultas/executivo";
 import { resumoAtalhoMigracaoWidesys } from "@/lib/consultas/operacao-widesys";
 import { listarUnificados } from "@/lib/consultas/unificacao";
-import { perfilAtual } from "@/lib/autorizacao";
 import { formatarBRL } from "@/lib/dominio/dinheiro";
 import { prisma } from "@/lib/db";
 import {
@@ -98,7 +100,7 @@ function MiniValor({
   );
 }
 
-function ModuloFinanceiro({
+async function ModuloFinanceiro({
   icone,
   titulo,
   descricao,
@@ -108,6 +110,7 @@ function ModuloFinanceiro({
   acao,
   hrefSecundario,
   acaoSecundaria,
+  permissaoSecundaria,
   className = "",
   children,
 }: {
@@ -120,9 +123,14 @@ function ModuloFinanceiro({
   acao: string;
   hrefSecundario?: string;
   acaoSecundaria?: string;
+  permissaoSecundaria?: PermissaoAcesso;
   className?: string;
   children: React.ReactNode;
 }) {
+  const acesso = await acessoAtual();
+  const podeAbrir = podeAbrirRota(acesso, href.split("?")[0]);
+  const podeAbrirSecundario = hrefSecundario && podeAbrirRota(acesso, hrefSecundario.split("?")[0])
+    && (!permissaoSecundaria || podeExibirAcao(acesso, { permissao: permissaoSecundaria }));
   return (
     <Card className={`flex h-full flex-col p-5 ${className}`} nivel={nivel}>
       <div className="flex items-start justify-between gap-4">
@@ -145,11 +153,11 @@ function ModuloFinanceiro({
       <div className="mt-5 flex-1">{children}</div>
 
       <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-contorno pt-4">
-        <Link href={href} className={btnPrimario}>
+        {podeAbrir && <Link href={href} className={btnPrimario}>
           {acao}
           <span aria-hidden="true">→</span>
-        </Link>
-        {hrefSecundario && acaoSecundaria ? (
+        </Link>}
+        {podeAbrirSecundario && hrefSecundario && acaoSecundaria ? (
           <Link href={hrefSecundario} className={btnSecundario}>
             {acaoSecundaria}
           </Link>
@@ -164,8 +172,10 @@ export default async function PaginaFinanceiro({
 }: {
   searchParams: Promise<{ mes?: string }>;
 }) {
-  const [sp, perfil] = await Promise.all([searchParams, perfilAtual()]);
-  const podeAuditarMigracao = perfil === "ADMINISTRADOR" || perfil === "FINANCEIRO";
+  await exigirPaginaAcesso("/financeiro");
+  const [sp, acesso] = await Promise.all([searchParams, acessoAtual()]);
+  const podeConsolidar = podeExibirAcao(acesso, { permissao: "cadastros.sensiveis", perfis: ["ADMINISTRADOR", "FINANCEIRO"] });
+  const podeAuditarMigracao = podeConsolidar && podeAbrirRota(acesso, "/financeiro/migracao-widesys");
   const mes = sp.mes && RE_MES.test(sp.mes) ? sp.mes : await mesPadrao();
   const [
     dados,
@@ -192,9 +202,9 @@ export default async function PaginaFinanceiro({
     prisma.contaBancaria.count({ where: { ativa: true } }),
     prisma.pagamentoRecebimento.count({ where: { conciliadoEm: null } }),
     podeAuditarMigracao ? resumoAtalhoMigracaoWidesys() : Promise.resolve(null),
-    podeAuditarMigracao ? listarUnificados({ dominio: "RECEBER", mes, porPagina: 1 }) : Promise.resolve(null),
-    podeAuditarMigracao ? listarUnificados({ dominio: "PAGAR", mes, porPagina: 1 }) : Promise.resolve(null),
-    podeAuditarMigracao ? listarUnificados({ dominio: "MOVIMENTO", mes, porPagina: 1 }) : Promise.resolve(null),
+    podeConsolidar ? listarUnificados({ dominio: "RECEBER", mes, porPagina: 1 }) : Promise.resolve(null),
+    podeConsolidar ? listarUnificados({ dominio: "PAGAR", mes, porPagina: 1 }) : Promise.resolve(null),
+    podeConsolidar ? listarUnificados({ dominio: "MOVIMENTO", mes, porPagina: 1 }) : Promise.resolve(null),
   ]);
   const { mes: mesNumero } = parseCompetencia(mes);
   const linhaAnterior = mesNumero > 1 ? dados.porMes[mesNumero - 2] : null;
@@ -307,7 +317,7 @@ export default async function PaginaFinanceiro({
       />
 
       {unificadoReceber && unificadoPagar && unificadoMovimento ? <section className="mb-7" aria-label="Financeiro unificado">
-        <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-bold tracking-tight">Financeiro unificado</h2><p className="mt-1 text-xs text-tinta-suave">Widesys, planilhas e operação · {formatarCompetencia(mes)} · cada ocorrência contabilizada uma vez</p></div><Link href="/unificacao?estado=PENDENTE" className={btnSecundario}>Resolver duplicidades</Link></div>
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-bold tracking-tight">Financeiro unificado</h2><p className="mt-1 text-xs text-tinta-suave">Widesys, planilhas e operação · {formatarCompetencia(mes)} · cada ocorrência contabilizada uma vez</p></div><AcaoAutorizada permissao={["unificacao.editar", "pagamentos.conciliar"]} perfis={["ADMINISTRADOR", "FINANCEIRO"]}><Link href="/unificacao?estado=PENDENTE" className={btnSecundario}>Resolver duplicidades</Link></AcaoAutorizada></div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Kpi rotulo="A receber · em aberto" valor={<Dinheiro centavos={unificadoReceber.resumo.aberto} />} detalhe={`${unificadoReceber.resumo.ativos} registros consolidados`} href={`/recebimentos?mes=${mes}`} ajuda="Saldo devido menos recebido dos registros aceitos das fontes unificadas. Correspondências pendentes ficam fora do total." />
           <Kpi rotulo="A pagar · em aberto" valor={<Dinheiro centavos={unificadoPagar.resumo.aberto} />} detalhe={`${unificadoPagar.resumo.ativos} registros consolidados`} href={`/financeiro/contas-a-pagar?mes=${mes}`} ajuda="Saldo das obrigações trazidas para a operação e aceitas na conciliação." />
@@ -592,6 +602,7 @@ export default async function PaginaFinanceiro({
           acao="Abrir caixa"
           hrefSecundario={`/caixa/novo?mes=${mes}`}
           acaoSecundaria="Novo lançamento"
+          permissaoSecundaria="caixa.editar"
           className="xl:col-span-6"
         >
           {dados.caixaMes ? (

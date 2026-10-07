@@ -1,3 +1,4 @@
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
 import { Card, PageHeader } from "@/components/ui";
 import { exigirAcessoFiscal } from "@/lib/fiscal/acesso";
@@ -9,6 +10,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Novo rascunho fiscal — Brisa" };
 
 export default async function NovoFiscal({ searchParams }: { searchParams: Promise<{ erro?: string; ok?: string }> }) {
+  await exigirPaginaAcesso("/financeiro/notas-fiscais/novo");
   await exigirAcessoFiscal();
   const config = await obterConfiguracaoFiscal();
   const params = await searchParams;

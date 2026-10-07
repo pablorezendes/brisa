@@ -1,5 +1,6 @@
 "use server";
 
+import { exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { exigirAcessoFiscal } from "@/lib/fiscal/acesso";
@@ -15,6 +16,7 @@ function idFiscal(form: FormData) {
 }
 
 export async function salvarConfiguracao(form: FormData) {
+  await exigirPermissaoAcesso("fiscal.editar", { global: true });
   await exigirAcessoFiscal();
   let erro = "";
   try {
@@ -26,6 +28,7 @@ export async function salvarConfiguracao(form: FormData) {
 }
 
 export async function salvarRascunho(form: FormData) {
+  await exigirPermissaoAcesso("fiscal.editar", { global: true });
   await exigirAcessoFiscal();
   let erro = "";
   let id = "";
@@ -42,6 +45,7 @@ export async function salvarRascunho(form: FormData) {
 }
 
 export async function executarAcaoFiscal(form: FormData) {
+  await exigirPermissaoAcesso("fiscal.editar", { global: true });
   await exigirAcessoFiscal();
   let erro = "";
   let id = "";

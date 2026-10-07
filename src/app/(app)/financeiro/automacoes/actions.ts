@@ -1,5 +1,6 @@
 "use server";
 
+import { exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import { revalidatePath } from "next/cache";
 import { notFound } from "next/navigation";
 import { exigirSessao } from "@/lib/auth";
@@ -39,6 +40,7 @@ function erroSeguro(erro?: unknown): EstadoAcao {
 }
 
 export async function salvarConfiguracao(_anterior: EstadoAcao, form: FormData): Promise<EstadoAcao> {
+  await exigirPermissaoAcesso("comunicacoes.editar", { global: true });
   const usuarioId = await administrador();
   try {
     const versao = Number(campo(form, "versao"));
@@ -87,6 +89,7 @@ export async function salvarConfiguracao(_anterior: EstadoAcao, form: FormData):
 }
 
 export async function salvarContato(_anterior: EstadoAcao, form: FormData): Promise<EstadoAcao> {
+  await exigirPermissaoAcesso("comunicacoes.editar", { global: true });
   const usuarioId = await administrador();
   const canal = campo(form, "canal");
   if (canal !== "EMAIL" && canal !== "WHATSAPP") return erroSeguro();
@@ -110,6 +113,7 @@ export async function salvarContato(_anterior: EstadoAcao, form: FormData): Prom
 }
 
 export async function prepararMensagem(_anterior: EstadoAcao, form: FormData): Promise<EstadoAcao> {
+  await exigirPermissaoAcesso("comunicacoes.editar", { global: true });
   const usuarioId = await administrador();
   const canal = campo(form, "canal");
   if (canal !== "EMAIL" && canal !== "WHATSAPP") return erroSeguro();
@@ -125,6 +129,7 @@ export async function prepararMensagem(_anterior: EstadoAcao, form: FormData): P
 }
 
 export async function cancelarMensagem(_anterior: EstadoAcao, form: FormData): Promise<EstadoAcao> {
+  await exigirPermissaoAcesso("comunicacoes.editar", { global: true });
   const usuarioId = await administrador();
   try {
     const resultado = await cancelarMensagemCobranca(prisma, campo(form, "id"), usuarioId);
@@ -137,6 +142,7 @@ export async function cancelarMensagem(_anterior: EstadoAcao, form: FormData): P
 }
 
 export async function revogarContato(_anterior: EstadoAcao, form: FormData): Promise<EstadoAcao> {
+  await exigirPermissaoAcesso("comunicacoes.editar", { global: true });
   const usuarioId = await administrador();
   try {
     await revogarContatoCobranca(prisma, campo(form, "id"), usuarioId);

@@ -1,3 +1,4 @@
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import "server-only";
 
 import Link from "next/link";
@@ -13,6 +14,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Automações de cobrança — Financeiro — Brisa" };
 
 export default async function PaginaAutomacoes() {
+  await exigirPaginaAcesso("/financeiro/automacoes");
   // Autoriza antes de consultar títulos, destinatários ou configurações.
   if ((await perfilAtual()) !== "ADMINISTRADOR") notFound();
   const dados = await lerPainelComunicacoes(prisma);

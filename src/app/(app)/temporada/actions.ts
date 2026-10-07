@@ -10,6 +10,7 @@
  * O tipo de despesa LIMPEZA não é aceito aqui: ele é derivado do bloco de
  * limpezas (ver src/lib/consultas/temporada.ts).
  */
+import { exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { parseBRL } from "@/lib/dominio/dinheiro";
@@ -26,6 +27,7 @@ function texto(fd: FormData, campo: string): string {
 
 /** Cadastra (ou reativa) uma unidade de temporada pelo código ("208", "304"...). */
 export async function criarUnidadeTemporada(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("temporada.editar", { global: true });
   const codigo = normalizar(texto(formData, "codigo"));
   if (!codigo || codigo.length > 30) return;
   await prisma.unidadeTemporada.upsert({
@@ -41,6 +43,7 @@ export async function criarUnidadeTemporada(formData: FormData): Promise<void> {
  * unidade+competência — o schema não tem chave composta).
  */
 export async function salvarLimpeza(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("temporada.editar", { global: true });
   const unidadeTemporadaId = texto(formData, "unidadeTemporadaId");
   const competencia = texto(formData, "competencia");
   if (!unidadeTemporadaId || !RE_MES.test(competencia)) return;
@@ -75,6 +78,7 @@ export async function salvarLimpeza(formData: FormData): Promise<void> {
 
 /** Lança despesa do mês (com ou sem unidade). LIMPEZA é derivada — não aceita. */
 export async function lancarDespesa(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("temporada.editar", { global: true });
   const competencia = texto(formData, "competencia");
   if (!RE_MES.test(competencia)) return;
 
@@ -102,6 +106,7 @@ export async function lancarDespesa(formData: FormData): Promise<void> {
 
 /** Exclui uma despesa (deleteMany é idempotente — não lança se já excluída). */
 export async function excluirDespesa(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("temporada.editar", { global: true });
   const id = texto(formData, "id");
   if (!id) return;
   await prisma.despesaTemporada.deleteMany({ where: { id } });
@@ -110,6 +115,7 @@ export async function excluirDespesa(formData: FormData): Promise<void> {
 
 /** Lança recebimento de temporada (valor obrigatório; plataforma/hóspede opcionais). */
 export async function lancarRecebimentoTemporada(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("temporada.editar", { global: true });
   const competencia = texto(formData, "competencia");
   if (!RE_MES.test(competencia)) return;
 
@@ -137,6 +143,7 @@ export async function lancarRecebimentoTemporada(formData: FormData): Promise<vo
 
 /** Exclui um recebimento de temporada. */
 export async function excluirRecebimentoTemporada(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("temporada.editar", { global: true });
   const id = texto(formData, "id");
   if (!id) return;
   await prisma.recebimentoTemporada.deleteMany({ where: { id } });

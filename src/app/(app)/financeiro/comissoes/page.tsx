@@ -1,3 +1,4 @@
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import { exigirAcessoComissoes } from "@/lib/autorizacao";
 import ComissaoConteudo from "./_conteudo";
 
@@ -9,6 +10,7 @@ export default async function ComissoesPage({
 }: {
   searchParams: Promise<{ ano?: string; de?: string; ate?: string }>;
 }) {
+  await exigirPaginaAcesso("/financeiro/comissoes");
   await exigirAcessoComissoes();
   return <ComissaoConteudo searchParams={searchParams} />;
 }

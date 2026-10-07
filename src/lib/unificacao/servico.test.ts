@@ -31,6 +31,7 @@ function fonte(origem: "BRISA" | "WIDESYS", id: string): FonteUnificacao {
 beforeEach(async () => {
   diretorio = mkdtempSync(join(tmpdir(), "brisa-unificacao-servico-"));
   prisma = new PrismaClient({ datasourceUrl: `file:${join(diretorio, "fixture.db").replaceAll("\\", "/")}` });
+  await prisma.$executeRaw`CREATE TABLE "RecursoGovernado" (id TEXT PRIMARY KEY, tipo TEXT NOT NULL, origemId TEXT NOT NULL, status TEXT NOT NULL)`;
   await prisma.$executeRaw`CREATE TABLE "UnificacaoRegistro" (
     chave TEXT PRIMARY KEY, dominio TEXT NOT NULL, origem TEXT NOT NULL, origemId TEXT NOT NULL,
     status TEXT NOT NULL, destinoChave TEXT, hashFonte TEXT NOT NULL, hashDestino TEXT,

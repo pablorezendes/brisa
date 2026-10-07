@@ -1500,6 +1500,8 @@ export async function importarPlanoCadastrosWidesys(
           tx.pessoaEmail.findMany({ where: { origem: plano.origem }, select: { legadoId: true, emailNorm: true, snapshotHash: true } }),
           tx.pessoaTelefone.findMany({ where: { origem: plano.origem }, select: { legadoId: true, telefoneNorm: true, snapshotHash: true } }),
         ]);
+      const governados = await tx.recursoGovernado.findMany({ where: { status: { not: "ATIVO" }, tipo: { in: ["PESSOA", "IMOVEL_LEGADO", "LOCATARIO"] } }, select: { tipo: true, origemId: true } });
+      const bloqueados = new Set(governados.map(g => `${g.tipo}:${g.origemId}`));
       const pessoasPorLegado = new Map(pessoasExistentes.map((item) => [item.legadoId, item]));
       const papeisPorChave = new Map(papeisExistentes.map((item) => [`${item.legadoId}|${item.papel}`, item]));
       const emailsPorChave = new Map(emailsExistentes.map((item) => [`${item.legadoId}|${item.emailNorm}`, item]));
@@ -1542,6 +1544,11 @@ export async function importarPlanoCadastrosWidesys(
 
       for (const pessoa of plano.pessoas) {
         const existente = pessoasPorLegado.get(pessoa.legadoId);
+        if (existente && bloqueados.has(`PESSOA:${existente.id}`)) {
+          idsPessoa.set(pessoa.legadoId, existente.id);
+          registrarAviso(avisos, "pessoa_preservada_por_governanca");
+          continue;
+        }
         const acao = classificar(alteracoes.pessoas, existente, pessoa.snapshotHash);
         let pessoaId = existente?.id;
         if (acao === "CRIAR") {
@@ -1631,6 +1638,10 @@ export async function importarPlanoCadastrosWidesys(
       }
       for (const imovel of plano.imoveis) {
         const existente = imoveisPorLegado.get(imovel.legadoId);
+        if (existente && bloqueados.has(`IMOVEL_LEGADO:${existente.id}`)) {
+          registrarAviso(avisos, "imovel_preservado_por_governanca");
+          continue;
+        }
         const acao = classificar(alteracoes.imoveis, existente, imovel.snapshotHash);
         let imovelId = existente?.id;
         if (acao === "CRIAR") imovelId = (await tx.imovelLegado.create({ data: dadosImovel(imovel) })).id;
@@ -1651,6 +1662,10 @@ export async function importarPlanoCadastrosWidesys(
           const pessoaId = proprietario.pessoaLegadoId
             ? idsPessoa.get(proprietario.pessoaLegadoId) ?? null
             : null;
+          if (pessoaId && bloqueados.has(`PESSOA:${pessoaId}`)) {
+            registrarAviso(avisos, "vinculo_proprietario_bloqueado_por_governanca");
+            continue;
+          }
           const acaoProprietario = classificar(
             alteracoes.proprietarios,
             existenteProprietario,
@@ -1681,7 +1696,7 @@ export async function importarPlanoCadastrosWidesys(
       }
 
       const inquilinos = plano.pessoas.filter((pessoa) =>
-        pessoa.papeis.some((papel) => papel.papel === "INQUILINO"),
+        pessoa.papeis.some((papel) => papel.papel === "INQUILINO") && !bloqueados.has(`PESSOA:${idsPessoa.get(pessoa.legadoId)}`),
       );
       const idsInternos = inquilinos
         .map((pessoa) => idsPessoa.get(pessoa.legadoId))
@@ -1691,6 +1706,7 @@ export async function importarPlanoCadastrosWidesys(
         .filter((documento): documento is string => Boolean(documento));
       const locatarios = await tx.locatario.findMany({
         where: {
+          id: { notIn: governados.filter(g => g.tipo === "LOCATARIO").map(g => g.origemId) },
           OR: [
             ...(idsInternos.length ? [{ pessoaId: { in: idsInternos } }] : []),
             ...(documentos.length ? [{ cpfCnpj: { in: documentos } }] : []),

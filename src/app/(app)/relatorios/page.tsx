@@ -1,3 +1,4 @@
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
 import { Card, PageHeader, SeletorPeriodo } from "@/components/ui";
 import { mesMaisRecenteComLancamentos } from "@/lib/consultas/relatorios";
@@ -31,6 +32,7 @@ export default async function RelatoriosPage({
 }: {
   searchParams: Promise<{ ano?: string; de?: string; ate?: string }>;
 }) {
+  await exigirPaginaAcesso("/relatorios");
   const sp = await searchParams;
   const periodo = parsePeriodo(sp.de, sp.ate);
   const mesRecente = await mesMaisRecenteComLancamentos();

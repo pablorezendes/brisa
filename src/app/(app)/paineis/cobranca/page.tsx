@@ -1,3 +1,4 @@
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
 import { podeAcessarUnificacao } from "@/components/operacao-unificada";
 import {
@@ -92,6 +93,7 @@ export default async function PainelCobranca({
 }: {
   searchParams: Promise<{ mes?: string; de?: string; ate?: string }>;
 }) {
+  await exigirPaginaAcesso("/paineis/cobranca");
   const sp = await searchParams;
   const podeUnificar = await podeAcessarUnificacao();
   const periodo = parsePeriodo(sp.de, sp.ate);

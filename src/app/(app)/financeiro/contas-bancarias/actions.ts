@@ -1,5 +1,6 @@
 "use server";
 
+import { exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { exigirPermissaoFinanceira } from "@/lib/autorizacao";
@@ -81,6 +82,7 @@ function voltar(aviso: { ok?: string; erro?: string }): never {
  * deste formulário e não podem ser alterados por esta action.
  */
 export async function atualizarContaBancaria(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("contas.editar", { global: true });
   const sessao = await exigirPermissaoFinanceira("GERENCIAR_CONTAS");
 
   const id = campo(formData, "id");
@@ -219,6 +221,8 @@ export async function atualizarContaBancaria(formData: FormData): Promise<void> 
         erroPerfilCredencial: false,
       };
     }
+
+    if (ativa !== atual.ativa) return { encontrado: true, erroGovernanca: true, erroPadrao: false, erroAmbiente: false, erroProducao: false, erroPerfilCredencial: false };
 
     if (
       ambiente === "PRODUCAO" &&
@@ -370,6 +374,7 @@ export async function atualizarContaBancaria(formData: FormData): Promise<void> 
     };
   });
 
+  if ("erroGovernanca" in resultado && resultado.erroGovernanca) voltar({ erro: "Para inativar ou restaurar a conta, use Revisar e resolver. Essa ação exige conferir os títulos e registra auditoria." });
   if (!resultado.encontrado) {
     voltar({ erro: "Conta bancária não encontrada." });
   }
@@ -406,6 +411,7 @@ export async function atualizarContaBancaria(formData: FormData): Promise<void> 
 export async function atualizarPoliticaCobrancaSicoob(
   formData: FormData,
 ): Promise<void> {
+  await exigirPermissaoAcesso("contas.editar", { global: true });
   const sessao = await exigirPermissaoFinanceira("GERENCIAR_CONTAS");
   const contaBancariaId = campo(formData, "contaBancariaId");
   if (contaBancariaId.length > 64 || !RE_UUID.test(contaBancariaId)) {

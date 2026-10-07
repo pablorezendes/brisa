@@ -1,5 +1,6 @@
 "use server";
 
+import { exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { exigirPermissaoFinanceira } from "@/lib/autorizacao";
@@ -9,6 +10,7 @@ import { analisarUnificacao, decidirUnificacao, ErroUnificacao } from "@/lib/uni
 function atualizarTelas() { revalidatePath("/", "layout"); }
 
 export async function sincronizarUnificacao(): Promise<void> {
+  await exigirPermissaoAcesso("unificacao.editar", { global: true });
   const usuario = await exigirPermissaoFinanceira("CONCILIAR_PAGAMENTOS");
   await analisarUnificacao(prisma,usuario.sub);
   atualizarTelas();
@@ -16,6 +18,7 @@ export async function sincronizarUnificacao(): Promise<void> {
 }
 
 export async function resolverUnificacao(form: FormData): Promise<void> {
+  await exigirPermissaoAcesso("unificacao.editar", { global: true });
   const usuario = await exigirPermissaoFinanceira("CONCILIAR_PAGAMENTOS");
   const chave = String(form.get("chave") ?? "");
   let erro: string | null = null;

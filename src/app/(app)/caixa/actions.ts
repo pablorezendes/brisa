@@ -8,10 +8,12 @@
  * { erro } para exibição no formulário; sucesso revalida e redireciona
  * para o mês do lançamento.
  */
+import { exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { parseBRL } from "@/lib/dominio/dinheiro";
+import { recursoEstaAtivo } from "@/lib/governanca/filtros";
 
 export type EstadoFormLancamento = { erro: string | null };
 
@@ -32,6 +34,7 @@ export async function salvarLancamento(
   _prev: EstadoFormLancamento,
   formData: FormData,
 ): Promise<EstadoFormLancamento> {
+  await exigirPermissaoAcesso("caixa.editar", { global: true });
   const id = texto(formData, "id");
 
   const tipo = texto(formData, "tipo") ?? "";
@@ -82,6 +85,7 @@ export async function salvarLancamento(
   };
 
   if (id) {
+    if (!await recursoEstaAtivo(prisma, "CAIXA", id)) return { erro: "Este lançamento foi excluído logicamente. Restaure-o na governança antes de editar." };
     const existente = await prisma.lancamentoCaixa.findUnique({ where: { id } });
     if (!existente) return { erro: "Lançamento não encontrado — pode ter sido excluído." };
     await prisma.lancamentoCaixa.update({ where: { id }, data: dados });
@@ -94,12 +98,10 @@ export async function salvarLancamento(
   redirect(`/caixa?mes=${mesReferencia}`);
 }
 
-/** Exclui um lançamento (a confirmação acontece no cliente — BotaoExcluir). */
+/** Abre a conferência auditada; nunca exclui diretamente a partir da lista. */
 export async function excluirLancamento(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("governanca.editar", { global: true });
   const id = texto(formData, "id");
   if (!id) return;
-  // deleteMany é idempotente: não lança erro se o registro já foi excluído.
-  await prisma.lancamentoCaixa.deleteMany({ where: { id } });
-  revalidatePath("/caixa");
-  revalidatePath("/caixa/ano");
+  redirect(`/cadastros/governanca?${new URLSearchParams({ tipo: "CAIXA", origemId: id })}`);
 }

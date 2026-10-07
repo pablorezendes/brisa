@@ -2,6 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { notFound } from "next/navigation";
 import { perfilAtual, perfilPodeVerComissoes } from "../autorizacao";
+import { exigirPermissaoAcesso } from "../acesso/servidor";
 import { prisma } from "../db";
 import { normalizar } from "../dominio/normalizacao";
 import { operacaoNaRequisicao } from "./operacao-na-requisicao";
@@ -9,6 +10,7 @@ import { dataOperacionalUnificada, mesOperacionalUnificado } from "../unificacao
 import { DOMINIOS_UNIFICACAO, type FiltrosUnificacao, type LinhaUnificada, type ListaUnificada } from "../unificacao/tipos";
 
 const ler = cache(async () => {
+  await exigirPermissaoAcesso("cadastros.sensiveis", { global: true });
   const perfil = await perfilAtual();
   if (!["ADMINISTRADOR", "FINANCEIRO"].includes(perfil)) notFound();
   return { ...(await operacaoNaRequisicao()), perfil };

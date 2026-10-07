@@ -1,3 +1,4 @@
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
 import {
   Ajuda,
@@ -111,6 +112,7 @@ export default async function PaginaExecutivo({
 }: {
   searchParams: Promise<{ mes?: string; de?: string; ate?: string }>;
 }) {
+  await exigirPaginaAcesso("/executivo");
   const sp = await searchParams;
   const periodo = parsePeriodo(sp.de, sp.ate);
   const mes = sp.mes && /^\d{4}-\d{2}$/.test(sp.mes) ? sp.mes : await mesPadrao();

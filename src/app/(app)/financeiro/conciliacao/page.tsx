@@ -1,3 +1,4 @@
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
 import {
   Card,
@@ -40,6 +41,7 @@ export default async function PaginaConciliacao({
 }: {
   searchParams: SearchParams;
 }) {
+  await exigirPaginaAcesso("/financeiro/conciliacao");
   const sp = await searchParams;
   const dados = await dadosPaginaConciliacao();
 
@@ -107,8 +109,8 @@ export default async function PaginaConciliacao({
         {dados.pagamentos.length === 0 ? (
           <div className="px-5 py-10 text-center text-[12px] text-tinta-suave">Nenhuma liquidação bancária importada até agora.</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="tabela min-w-[1120px]">
+          <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
+            <table className="tabela tabela--acoes min-w-[1120px]">
               <thead><tr><th>Pagador e imóvel</th><th>Data</th><th className="text-right">Banco</th><th className="text-right">Devido</th><th>Conta</th><th>Resultado</th><th>Origem</th><th className="text-right">Ação</th></tr></thead>
               <tbody>
                 {dados.pagamentos.map((pagamento) => {

@@ -1,3 +1,5 @@
+import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
+import { podeExibirAcao } from "@/components/acao-autorizada";
 import Link from "next/link";
 import {
   Card,
@@ -97,6 +99,14 @@ export default async function PaginaBoletos({
 }: {
   searchParams: SearchParams;
 }) {
+  await exigirPaginaAcesso("/financeiro/boletos");
+  const acesso = await acessoAtual();
+  const perfisBanco = ["ADMINISTRADOR", "FINANCEIRO", "OPERADOR"];
+  const permiteEmitir = podeExibirAcao(acesso, { permissao: "boletos.emitir", perfis: perfisBanco });
+  const permiteSincronizar = podeExibirAcao(acesso, { permissao: "boletos.sincronizar", perfis: perfisBanco });
+  const permiteConciliar = podeExibirAcao(acesso, { permissao: "pagamentos.conciliar", perfis: ["ADMINISTRADOR", "FINANCEIRO"] });
+  const permiteEditarCadastro = podeExibirAcao(acesso, { permissao: ["cadastros.editar", "cadastros.sensiveis"] });
+  const permiteConfigurar = podeExibirAcao(acesso, { permissao: "contas.editar", perfis: ["ADMINISTRADOR"] });
   const sp = await searchParams;
   const mes = sp.mes && RE_MES.test(sp.mes)
     ? sp.mes
@@ -179,12 +189,12 @@ export default async function PaginaBoletos({
             <Selo nivel={configuracao.configurado ? "otimo" : "atencao"}>
               {configuracao.configurado ? "API preparada" : "API pendente"}
             </Selo>
-            <form action={sincronizarTodosBoletos}>
+            {permiteSincronizar && <form action={sincronizarTodosBoletos}>
               <input type="hidden" name="mes" value={mes} />
               <button type="submit" className="inline-flex min-h-9 items-center rounded-lg border border-white/20 bg-white/[0.08] px-3.5 py-2 text-[12px] font-semibold text-white transition hover:bg-white/[0.14]">
                 Atualizar e buscar LIQUI
               </button>
-            </form>
+            </form>}
           </div>
         </div>
       </Card>
@@ -201,7 +211,7 @@ export default async function PaginaBoletos({
                 Falta habilitar ao menos uma conta com cliente Sisbr, conta do convênio, modalidade e espécie documental confirmados.
               </p>
             </div>
-            <Link href="/financeiro/contas-bancarias" className={btnPrimario}>Concluir configuração</Link>
+            {permiteConfigurar && <Link href="/financeiro/contas-bancarias" className={btnPrimario}>Concluir configuração</Link>}
           </div>
         </Card>
       ) : null}
@@ -228,8 +238,8 @@ export default async function PaginaBoletos({
           {dados.aEmitir.length === 0 ? (
             <div className="px-5 py-9 text-center text-[12px] text-tinta-suave">Nenhum lançamento elegível aguardando boleto neste mês.</div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="tabela min-w-[1050px]">
+            <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
+              <table className="tabela tabela--acoes min-w-[1050px]">
                 <thead>
                   <tr>
                     <th>Pagador e imóvel</th>
@@ -245,7 +255,7 @@ export default async function PaginaBoletos({
                     const locatario = recebimento.contrato.locatario;
                     const faltantes = locatario ? camposPagadorPendentes(locatario) : [];
                     const podeEmitir = Boolean(
-                      locatario && faltantes.length === 0 && emissaoPronta && !dados.fechado,
+                      permiteEmitir && locatario && faltantes.length === 0 && emissaoPronta && !dados.fechado,
                     );
                     return (
                       <tr key={recebimento.id}>
@@ -260,35 +270,42 @@ export default async function PaginaBoletos({
                             <div>
                               <Selo nivel="atencao">{faltantes.length} pendência(s)</Selo>
                               <div className="mt-1 text-[9px] text-tinta-suave">{faltantes.map((item) => item.rotulo).join(", ")}</div>
-                              <Link href={`/cadastros/locatarios?editar=${locatario.id}`} className="mt-1 inline-block text-[10px] font-semibold text-oliva-escura hover:underline">Completar cadastro</Link>
+                              {permiteEditarCadastro && <Link href={`/cadastros/locatarios?editar=${locatario.id}`} className="mt-1 inline-block text-[10px] font-semibold text-oliva-escura hover:underline">Completar cadastro</Link>}
                             </div>
                           ) : (
                             <Selo nivel="otimo">validado</Selo>
                           )}
                         </td>
                         <td className="text-right"><Sigilo><Dinheiro centavos={totalDevido(recebimento)} destaque /></Sigilo></td>
-                        <td colSpan={podeEmitir ? 3 : 1}>
+                        <td>
                           {podeEmitir ? (
-                            <form action={emitirBoleto} className="grid grid-cols-[140px_minmax(190px,1fr)_auto] items-end gap-2">
-                              <input type="hidden" name="recebimentoId" value={recebimento.id} />
-                              <input type="hidden" name="mes" value={mes} />
-                              <label className="text-[9px] font-bold uppercase tracking-[0.08em] text-tinta-suave">
+                              <label className="block min-w-36 text-[9px] font-bold uppercase tracking-[0.08em] text-tinta-suave">
                                 Vencimento
-                                <input type="date" name="dataVencimento" min={hojeNoBrasil()} required defaultValue={vencimentoInicial(recebimento.competencia, recebimento.contrato.diaVencimento)} className={`${inputBase} mt-1 block w-full py-1.5`} />
+                                <input form={`emitir-${recebimento.id}`} type="date" name="dataVencimento" min={hojeNoBrasil()} required defaultValue={vencimentoInicial(recebimento.competencia, recebimento.contrato.diaVencimento)} className={`${inputBase} mt-1 block w-full py-1.5`} />
                               </label>
-                              <label className="text-[9px] font-bold uppercase tracking-[0.08em] text-tinta-suave">
+                          ) : (
+                            <span className="text-[10px] text-tinta-suave">{permiteEmitir ? "Corrija as pendências para liberar a emissão." : "Somente consulta"}</span>
+                          )}
+                        </td>
+                        <td>
+                          {podeEmitir ? (
+                              <label className="block min-w-48 text-[9px] font-bold uppercase tracking-[0.08em] text-tinta-suave">
                                 Conta
-                                <select name="contaBancariaId" required defaultValue={contaPadrao?.id} className={`${inputBase} mt-1 block w-full py-1.5`}>
+                                <select form={`emitir-${recebimento.id}`} name="contaBancariaId" required defaultValue={contaPadrao?.id} className={`${inputBase} mt-1 block w-full py-1.5`}>
                                   {contasDisponiveis.map((conta) => <option key={conta.id} value={conta.id}>{conta.apelido} · {conta.numero}{conta.padrao ? " (padrão)" : ""}</option>)}
                                 </select>
                               </label>
+                          ) : "—"}
+                        </td>
+                        <td className="text-right">
+                          {podeEmitir ? (
+                            <form id={`emitir-${recebimento.id}`} action={emitirBoleto}>
+                              <input type="hidden" name="recebimentoId" value={recebimento.id} />
+                              <input type="hidden" name="mes" value={mes} />
                               <button type="submit" className={btnPrimario}>Emitir boleto</button>
                             </form>
-                          ) : (
-                            <span className="text-[10px] text-tinta-suave">Corrija as pendências para liberar a emissão.</span>
-                          )}
+                          ) : "—"}
                         </td>
-                        {!podeEmitir ? <><td>—</td><td className="text-right">—</td></> : null}
                       </tr>
                     );
                   })}
@@ -326,8 +343,8 @@ export default async function PaginaBoletos({
         {boletos.length === 0 ? (
           <div className="px-5 py-10 text-center text-[12px] text-tinta-suave">Nenhum boleto neste filtro.</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="tabela min-w-[1120px]">
+          <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
+            <table className="tabela tabela--acoes min-w-[1120px]">
               <thead>
                 <tr>
                   <th>Pagador e imóvel</th>
@@ -367,7 +384,7 @@ export default async function PaginaBoletos({
                       <td className="text-right">
                         <span className="inline-flex gap-2">
                           <Link href={`/financeiro/boletos?mes=${mes}&filtro=${filtro}&boleto=${boleto.id}`} className={`${btnSecundario} min-h-8 px-2.5 py-1 text-[10px]`}>Detalhes</Link>
-                          {boleto.nossoNumero && !["BAIXADO_SEM_PAGAMENTO", "ESTORNADO"].includes(boleto.status) ? (
+                          {permiteSincronizar && boleto.nossoNumero && !["BAIXADO_SEM_PAGAMENTO", "ESTORNADO"].includes(boleto.status) ? (
                             <form action={sincronizarBoleto}>
                               <input type="hidden" name="boletoId" value={boleto.id} />
                               <input type="hidden" name="mes" value={mes} />
@@ -409,7 +426,7 @@ export default async function PaginaBoletos({
               <li className="rounded-lg border border-contorno px-3 py-2 text-[10px]"><Selo nivel={selecionado.conciliacaoStatus === "CONCILIADO" ? "otimo" : "atencao"}>{selecionado.conciliacaoStatus === "CONCILIADO" ? "baixa conciliada" : "aguardando liquidação"}</Selo><div className="mt-1 text-tinta-suave">{dataHora(selecionado.liquidadoEm)}</div></li>
             </ol>
           </div>
-          {selecionadoLiberavel ? (
+          {permiteConciliar && selecionadoLiberavel ? (
             <div className="mt-4 grid gap-3 rounded-lg border border-ambar/30 bg-ambar/5 p-4 lg:grid-cols-2">
               <form action={vincularEmissaoInconclusiva} className="rounded-lg border border-contorno bg-white p-3">
                 <input type="hidden" name="boletoId" value={selecionado.id} />

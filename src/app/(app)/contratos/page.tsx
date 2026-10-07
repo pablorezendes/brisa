@@ -1,3 +1,5 @@
+import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
+import { pode } from "@/lib/acesso/politica";
 import Link from "next/link";
 import { OperacaoUnificada, podeAcessarUnificacao, type ParametrosUnificacao } from "@/components/operacao-unificada";
 import {
@@ -25,6 +27,9 @@ export default async function PaginaContratos({
 }: {
   searchParams: SearchParams;
 }) {
+  await exigirPaginaAcesso("/contratos");
+  const acesso = await acessoAtual();
+  const podeCriar = pode(acesso, "contratos.editar") && pode(acesso, "cadastros.sensiveis");
   const sp = await searchParams;
   if (sp.visao !== "locacao" && !sp.todos && !sp.erro && await podeAcessarUnificacao()) {
     return <OperacaoUnificada dominio="CONTRATO" titulo="Contratos" base="/contratos" parametros={sp} nativo={{ href: "/contratos?visao=locacao", rotulo: "Administrar locações" }} />;
@@ -68,9 +73,9 @@ export default async function PaginaContratos({
             >
               {incluirEncerrados ? "Ocultar encerrados" : "Mostrar encerrados"}
             </Link>
-            <Link href="/contratos/novo" className={btnPrimario}>
+            {podeCriar ? <Link href="/contratos/novo" className={btnPrimario}>
               Novo contrato
-            </Link>
+            </Link> : null}
           </>
         }
       />
@@ -151,8 +156,8 @@ export default async function PaginaContratos({
                 {lista.length} contrato(s)
               </span>
             </div>
-            <div className="overflow-x-auto">
-              <table className="tabela">
+            <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
+              <table className="tabela tabela--acoes">
                 <thead>
                   <tr>
                     <th>Localização</th>
@@ -185,7 +190,7 @@ export default async function PaginaContratos({
                       Status{" "}
                       <Ajuda dica="Ativo = gera cobrança todo mês; Acordo = renegociação em curso (lançamentos manuais); Encerrado = não gera mais nada." />
                     </th>
-                    <th></th>
+                    <th>Ações</th>
                   </tr>
                 </thead>
                 <tbody>

@@ -1,3 +1,4 @@
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import { redirect } from "next/navigation";
 import { exigirAcessoComissoes } from "@/lib/autorizacao";
 
@@ -7,6 +8,7 @@ export default async function ComissaoAntigaPage({
 }: {
   searchParams: Promise<{ ano?: string; de?: string; ate?: string }>;
 }) {
+  await exigirPaginaAcesso("/relatorios/comissao");
   await exigirAcessoComissoes();
   const sp = await searchParams;
   const params = new URLSearchParams();

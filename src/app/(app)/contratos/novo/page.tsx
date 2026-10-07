@@ -1,3 +1,4 @@
+import { exigirPaginaAcesso, exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import { PageHeader } from "@/components/ui";
 import {
   empreendimentosAtivos,
@@ -14,6 +15,9 @@ export default async function PaginaNovoContrato({
 }: {
   searchParams: SearchParams;
 }) {
+  await exigirPaginaAcesso("/contratos/novo");
+  await exigirPermissaoAcesso("contratos.editar", { global: true });
+  await exigirPermissaoAcesso("cadastros.sensiveis", { global: true });
   const sp = await searchParams;
   const [unidades, empreendimentos, locatarios] = await Promise.all([
     unidadesParaSelecao(),

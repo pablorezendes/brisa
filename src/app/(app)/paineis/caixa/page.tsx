@@ -4,6 +4,7 @@
  * Camada de análise sobre o livro-caixa: KPIs da janela, evolução mensal,
  * despesas por categoria, comparativo entre centros e maiores saídas.
  */
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
 import {
   Ajuda,
@@ -142,6 +143,7 @@ export default async function PaginaPainelCaixa({
 }: {
   searchParams: Promise<{ ano?: string; de?: string; ate?: string }>;
 }) {
+  await exigirPaginaAcesso("/paineis/caixa");
   const sp = await searchParams;
   const periodo = parsePeriodo(sp.de, sp.ate);
 

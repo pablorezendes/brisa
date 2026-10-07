@@ -13,6 +13,8 @@ import {
 } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
+import { prisma } from "./db";
 
 export const COOKIE_SESSAO = "brisa_sessao";
 
@@ -50,6 +52,7 @@ export interface SessaoPayload {
   sub: string; // id do usuário
   nome: string;
   exp: number; // epoch ms
+  sv?: number; // versão de revogação, 0 para sessões anteriores ao RBAC
 }
 
 function b64url(buf: Buffer): string {
@@ -64,7 +67,9 @@ export function criarToken(payload: SessaoPayload): string {
 
 export function verificarToken(token: string | undefined): SessaoPayload | null {
   if (!token) return null;
-  const [corpo, assinatura] = token.split(".");
+  const partes = token.split(".");
+  if (partes.length !== 2) return null;
+  const [corpo, assinatura] = partes;
   if (!corpo || !assinatura) return null;
   const esperada = createHmac("sha256", segredo()).update(corpo).digest();
   const recebida = Buffer.from(assinatura, "base64url");
@@ -78,7 +83,7 @@ export function verificarToken(token: string | undefined): SessaoPayload | null 
     const payload = JSON.parse(
       Buffer.from(corpo, "base64url").toString("utf-8")
     ) as SessaoPayload;
-    if (typeof payload.exp !== "number" || payload.exp < Date.now()) return null;
+    if (typeof payload.exp !== "number" || !Number.isFinite(payload.exp) || payload.exp <= Date.now() || typeof payload.sub !== "string" || !payload.sub || (payload.sv !== undefined && (!Number.isSafeInteger(payload.sv) || payload.sv < 0))) return null;
     return payload;
   } catch {
     return null;
@@ -87,10 +92,14 @@ export function verificarToken(token: string | undefined): SessaoPayload | null 
 
 // ---------- helpers de sessão (server components / actions) ----------
 
-export async function sessaoAtual(): Promise<SessaoPayload | null> {
+export const sessaoAtual = cache(async (): Promise<SessaoPayload | null> => {
   const jar = await cookies();
-  return verificarToken(jar.get(COOKIE_SESSAO)?.value);
-}
+  const sessao = verificarToken(jar.get(COOKIE_SESSAO)?.value);
+  if (!sessao) return null;
+  const usuario = await prisma.usuario.findUnique({ where: { id: sessao.sub }, select: { ativo: true, sessaoVersao: true, nome: true } });
+  if (!usuario?.ativo || (sessao.sv ?? 0) !== usuario.sessaoVersao) return null;
+  return { ...sessao, nome: usuario.nome };
+});
 
 /** Guarda de página/layout: redireciona para /login sem sessão válida. */
 export async function exigirSessao(): Promise<SessaoPayload> {
@@ -100,12 +109,16 @@ export async function exigirSessao(): Promise<SessaoPayload> {
 }
 
 export async function abrirSessao(
-  usuario: { id: string; nome: string },
+  usuario: { id: string; nome: string; sessaoVersao: number },
   lembrar: boolean
 ): Promise<void> {
   const dias = lembrar ? 30 : 1;
   const exp = Date.now() + dias * 24 * 60 * 60 * 1000;
-  const token = criarToken({ sub: usuario.id, nome: usuario.nome, exp });
+  const atual = await prisma.usuario.findUnique({ where: { id: usuario.id }, select: { ativo: true, sessaoVersao: true } });
+  // A versão vem do mesmo registro cuja senha foi validada. Não elevar uma
+  // autenticação antiga para a nova versão após um reset concorrente.
+  if (!atual?.ativo || atual.sessaoVersao !== usuario.sessaoVersao) redirect("/login?erro=credenciais");
+  const token = criarToken({ sub: usuario.id, nome: usuario.nome, exp, sv: atual.sessaoVersao });
   const jar = await cookies();
   jar.set(COOKIE_SESSAO, token, {
     httpOnly: true,

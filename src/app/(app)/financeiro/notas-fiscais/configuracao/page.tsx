@@ -1,3 +1,4 @@
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import { Badge, Card, PageHeader } from "@/components/ui";
 import { exigirAcessoFiscal } from "@/lib/fiscal/acesso";
 import { obterConfiguracaoFiscal } from "@/lib/fiscal/servico";
@@ -10,6 +11,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Configuração fiscal — Brisa" };
 
 export default async function ConfiguracaoFiscalPage({ searchParams }: { searchParams: Promise<{ erro?: string; ok?: string }> }) {
+  await exigirPaginaAcesso("/financeiro/notas-fiscais/configuracao");
   await exigirAcessoFiscal();
   const config = await obterConfiguracaoFiscal();
   const params = await searchParams;

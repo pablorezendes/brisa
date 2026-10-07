@@ -1,3 +1,4 @@
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge, Card, Dinheiro, PageHeader, Sigilo } from "@/components/ui";
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Revisão fiscal — Brisa" };
 
 export default async function DetalheNotaFiscal({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ erro?: string; ok?: string }> }) {
+  await exigirPaginaAcesso("/financeiro/notas-fiscais/[id]");
   await exigirAcessoFiscal();
   const { id } = await params;
   const avisos = await searchParams;

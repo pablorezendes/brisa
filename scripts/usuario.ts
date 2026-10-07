@@ -18,10 +18,11 @@ async function main() {
     process.exit(1);
   }
   const login = usuario.trim().toLowerCase();
+  const primeiro = (await prisma.usuario.count()) === 0;
   await prisma.usuario.upsert({
     where: { usuario: login },
-    create: { nome, usuario: login, senhaHash: gerarHashSenha(senha) },
-    update: { nome, senhaHash: gerarHashSenha(senha) },
+    create: { nome, usuario: login, senhaHash: gerarHashSenha(senha), perfil: primeiro ? "ADMINISTRADOR" : "CONSULTA", acessoGlobal: primeiro },
+    update: { nome, senhaHash: gerarHashSenha(senha), sessaoVersao: { increment: 1 } },
   });
   console.log(`OK — usuário "${login}" pronto (senha definida).`);
 }

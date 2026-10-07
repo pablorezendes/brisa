@@ -419,6 +419,28 @@ describe("planejamento de cadastros Widesys", () => {
 });
 
 describe("aplicação idempotente", () => {
+  it("nova captura não recria, reativa nem vincula pessoas excluídas pela governança", async () => {
+    const base = construirPlanoCadastrosWidesys(artefatosSinteticos());
+    const pessoa = base.pessoas.find(p => p.legadoId === "p-2")!;
+    let gravacoes = 0;
+    const gravar = async () => { gravacoes++; throw new Error("Escrita indevida em pessoa excluída"); };
+    const modelos = {
+      recursoGovernado: { findMany: async () => [{ tipo: "PESSOA", origemId: "excluida" }, { tipo: "LOCATARIO", origemId: "loc-excluido" }] },
+      pessoa: { findMany: async () => [{ id: "excluida", legadoId: pessoa.legadoId, snapshotHash: "captura-antiga" }], create: gravar, update: gravar },
+      pessoaPapel: { findMany: async () => [], create: gravar, update: gravar },
+      pessoaEmail: { findMany: async () => [], create: gravar, update: gravar },
+      pessoaTelefone: { findMany: async () => [], create: gravar, update: gravar },
+      imovelLegado: { findMany: async () => [] },
+      imovelProprietarioLegado: { findMany: async () => [] },
+      locatario: { findMany: async ({ where }: { where: { OR: unknown[]; id: { notIn: string[] } } }) => { expect(where.OR).toEqual([]); expect(where.id.notIn).toContain("loc-excluido"); return []; }, update: gravar },
+    };
+    const banco = { ...modelos, $transaction: async (fn: (tx: typeof modelos) => Promise<unknown>) => fn(modelos) } as unknown as PrismaClient;
+    const plano = { ...base, pessoas: [pessoa], imoveis: [] };
+    const primeira = await importarPlanoCadastrosWidesys(banco, plano);
+    const segunda = await importarPlanoCadastrosWidesys(banco, plano);
+    expect(gravacoes).toBe(0);
+    for (const resultado of [primeira, segunda]) expect(resultado.avisos).toContainEqual({ codigo: "pessoa_preservada_por_governanca", quantidade: 1 });
+  });
   it("classifica a segunda execução como inalterada e nunca remove ausentes", async () => {
     const base = construirPlanoCadastrosWidesys(artefatosSinteticos());
     const pessoaBase = base.pessoas.find((pessoa) => pessoa.legadoId === "p-2")!;
@@ -442,6 +464,7 @@ describe("aplicação idempotente", () => {
       snapshotHash: string;
     }> = [];
     const modelos = {
+      recursoGovernado: { findMany: async () => [] },
       pessoa: {
         findMany: async () => pessoas,
         create: async ({ data }: { data: { legadoId: string; snapshotHash: string } }) => {
@@ -510,6 +533,7 @@ describe("aplicação idempotente", () => {
     let imovelAtualizado: Record<string, unknown> | null = null;
     let vinculoAtualizado: Record<string, unknown> | null = null;
     const modelos = {
+      recursoGovernado: { findMany: async () => [] },
       pessoa: {
         findMany: async () => [
           {

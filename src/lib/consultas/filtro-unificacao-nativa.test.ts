@@ -6,6 +6,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("../db", () => ({ prisma: {
   unificacaoRegistro: { findFirst: mocks.candidato },
   fechamentoMensal: { findMany: mocks.fechamentos },
+  recursoGovernado: { findMany: async () => [] },
 } }));
 vi.mock("../unificacao/servico", () => ({ lerOperacaoUnificada: mocks.operacao }));
 

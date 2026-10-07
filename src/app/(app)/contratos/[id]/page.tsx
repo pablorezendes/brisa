@@ -1,3 +1,5 @@
+import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
+import { pode } from "@/lib/acesso/politica";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -53,6 +55,10 @@ export default async function PaginaDetalheContrato({
   params: Params;
   searchParams: SearchParams;
 }) {
+  await exigirPaginaAcesso("/contratos/[id]");
+  const acesso = await acessoAtual();
+  const podeVerPii = pode(acesso, "cadastros.sensiveis");
+  const podeEditar = pode(acesso, "contratos.editar");
   const { id } = await params;
   const sp = await searchParams;
   const contrato = await contratoDetalhe(id);
@@ -73,7 +79,7 @@ export default async function PaginaDetalheContrato({
   const totalContratado =
     contrato.valorBase + contrato.iptu + contrato.condominio;
   const confirmarEncerrar =
-    sp.encerrar === "1" && contrato.status !== "encerrado";
+    podeEditar && sp.encerrar === "1" && contrato.status !== "encerrado";
 
   return (
     <div>
@@ -85,10 +91,10 @@ export default async function PaginaDetalheContrato({
             <Link href="/contratos" className={btnSecundario}>
               Voltar
             </Link>
-            <Link href={`/contratos/${contrato.id}/editar`} className={btnSecundario}>
+            {podeEditar && podeVerPii ? <Link href={`/contratos/${contrato.id}/editar`} className={btnSecundario}>
               Editar
-            </Link>
-            {contrato.status !== "encerrado" ? (
+            </Link> : null}
+            {podeEditar && contrato.status !== "encerrado" ? (
               <Link
                 href={`/contratos/${contrato.id}?encerrar=1`}
                 className={btnPrimario}
@@ -173,8 +179,8 @@ export default async function PaginaDetalheContrato({
           <Item rotulo="Locatário">
             {contrato.locatario?.nome ?? <Badge cor="slate">Desocupado</Badge>}
           </Item>
-          <Item rotulo="CPF/CNPJ">{contrato.locatario?.cpfCnpj ?? "—"}</Item>
-          <Item rotulo="Contato">{contrato.locatario?.contato ?? "—"}</Item>
+          <Item rotulo="CPF/CNPJ">{podeVerPii ? contrato.locatario?.cpfCnpj ?? "—" : "Acesso restrito"}</Item>
+          <Item rotulo="Contato">{podeVerPii ? contrato.locatario?.contato ?? "—" : "Acesso restrito"}</Item>
           <Item rotulo="Valor (aluguel)">
             <Dinheiro centavos={contrato.valorBase} />
           </Item>
@@ -198,7 +204,7 @@ export default async function PaginaDetalheContrato({
           <Item rotulo="Início">{formatarDataBR(contrato.inicio)}</Item>
           <Item rotulo="Fim">{formatarDataBR(contrato.fim)}</Item>
         </div>
-        {contrato.observacao ? (
+        {podeVerPii && contrato.observacao ? (
           <div className="mt-4 border-t border-contorno/60 pt-3 text-sm text-tinta-suave">
             <span className="font-semibold">Observação:</span>{" "}
             {contrato.observacao}
@@ -267,8 +273,8 @@ export default async function PaginaDetalheContrato({
                     <td className="text-right"><Dinheiro centavos={saldoAberto} destaque={saldoAberto > 0} /></td>
                     <td>{formatarDataBR(r.dataPagamento)}</td>
                     <td>{r.via ?? "—"}</td>
-                    <td className="max-w-48 truncate" title={r.observacao ?? undefined}>
-                      {r.observacao ?? "—"}
+                    <td className="max-w-48 truncate" title={podeVerPii ? r.observacao ?? undefined : undefined}>
+                      {podeVerPii ? r.observacao ?? "—" : "Acesso restrito"}
                     </td>
                   </tr>
                 ))

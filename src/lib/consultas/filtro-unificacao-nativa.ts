@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { cache } from "react";
 import { prisma } from "../db";
 import { operacaoNaRequisicao } from "./operacao-na-requisicao";
+import { idsGovernadosInativos } from "../governanca/filtros";
 
 /**
  * As apurações de aluguel preservam seus insumos e a fórmula de comissão.
@@ -9,6 +10,8 @@ import { operacaoNaRequisicao } from "./operacao-na-requisicao";
  * Widesys e decisões pendentes nunca retiram uma linha da apuração nativa.
  */
 const idsSuprimidos = cache(async (): Promise<{ recebimentos: string[]; caixa: string[] }> => {
+  const [titulosInativos, caixaInativo] = await Promise.all([idsGovernadosInativos(prisma, "TITULO"), idsGovernadosInativos(prisma, "CAIXA")]);
+  const recebimentosGovernados = titulosInativos.filter(id => id.startsWith("BRISA:RECEBER:")).map(id => id.slice("BRISA:RECEBER:".length));
   const candidato = await prisma.unificacaoRegistro.findFirst({
     where: {
       origem: "BRISA", status: "VINCULADO", dominio: { in: ["RECEBER", "MOVIMENTO"] },
@@ -16,12 +19,12 @@ const idsSuprimidos = cache(async (): Promise<{ recebimentos: string[]; caixa: s
     },
     select: { chave: true },
   });
-  if (!candidato) return { recebimentos: [], caixa: [] };
+  if (!candidato) return { recebimentos: recebimentosGovernados, caixa: caixaInativo };
 
   const { linhas, decisoes } = await operacaoNaRequisicao();
   const porChave = new Map(linhas.map(linha => [linha.chave, linha]));
-  const recebimentos = new Set<string>();
-  const caixa = new Set<string>();
+  const recebimentos = new Set<string>(recebimentosGovernados);
+  const caixa = new Set<string>(caixaInativo);
   for (const decisao of decisoes) {
     const fonte = porChave.get(decisao.chave);
     const principal = decisao.destinoChave ? porChave.get(decisao.destinoChave) : null;

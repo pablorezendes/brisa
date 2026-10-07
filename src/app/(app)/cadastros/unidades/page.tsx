@@ -1,4 +1,8 @@
+import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
+import { podeExibirAcao } from "@/components/acao-autorizada";
+import { filtroGovernanca } from "@/lib/governanca/filtros";
 import Link from "next/link";
+import { LinkGovernanca } from "@/components/link-governanca";
 import type { Prisma } from "@prisma/client";
 import { Badge, Card, PageHeader, btnPrimario, btnSecundario, inputBase } from "@/components/ui";
 import { prisma } from "@/lib/db";
@@ -49,6 +53,10 @@ function urlLista(filtros: {
 }
 
 export default async function PaginaUnidades({ searchParams }: { searchParams: SearchParams }) {
+  await exigirPaginaAcesso("/cadastros/unidades");
+  const acesso = await acessoAtual();
+  const podeEditar = podeExibirAcao(acesso, { permissao: "cadastros.editar" });
+  const podeCriarContrato = podeExibirAcao(acesso, { permissao: ["contratos.editar", "cadastros.sensiveis"] });
   const porPagina = 40;
   const sp = await searchParams;
   const q = (sp.q ?? "").trim();
@@ -58,7 +66,7 @@ export default async function PaginaUnidades({ searchParams }: { searchParams: S
     : "todos";
   const status = sp.status === "inativos" ? "inativos" : sp.status === "ativos" ? "ativos" : "todos";
 
-  const where: Prisma.UnidadeWhereInput = {};
+  const where: Prisma.UnidadeWhereInput = await filtroGovernanca(prisma, "UNIDADE");
   if (q) {
     const termo = normalizar(q);
     where.OR = [
@@ -103,8 +111,8 @@ export default async function PaginaUnidades({ searchParams }: { searchParams: S
         { identificacao: "asc" },
       ],
     }),
-    prisma.empreendimento.findMany({ orderBy: { nome: "asc" } }),
-    sp.editar
+    prisma.empreendimento.findMany({ where: await filtroGovernanca(prisma, "EMPREENDIMENTO"), orderBy: { nome: "asc" } }),
+    podeEditar && sp.editar
       ? prisma.unidade.findUnique({ where: { id: sp.editar }, include: { empreendimento: true } })
       : Promise.resolve(null),
   ]);
@@ -126,7 +134,7 @@ export default async function PaginaUnidades({ searchParams }: { searchParams: S
         titulo="Imóveis"
         descricao="Unidades físicas usadas nos contratos de locação e na operação de temporada."
         acoes={
-          <Link href="/contratos/novo" className={btnSecundario}>
+          podeCriarContrato && <Link href="/contratos/novo" className={btnSecundario}>
             Novo contrato
           </Link>
         }
@@ -134,8 +142,8 @@ export default async function PaginaUnidades({ searchParams }: { searchParams: S
       <NavegacaoCadastros atual="unidades" />
       <AvisosCadastro ok={sp.ok} erro={sp.erro} />
 
-      <div className="grid grid-cols-1 items-start gap-4 2xl:grid-cols-[minmax(270px,0.36fr)_minmax(0,1fr)]">
-        <Card className="p-5 2xl:sticky 2xl:top-20">
+      <div className={`grid grid-cols-1 items-start gap-4 ${podeEditar ? "2xl:grid-cols-[minmax(270px,0.36fr)_minmax(0,1fr)]" : ""}`}>
+        {podeEditar && <Card className="p-5 2xl:sticky 2xl:top-20">
           <div className="mb-4">
             <h2 className="text-base font-bold tracking-tight text-tinta">
               {editando ? "Editar imóvel" : "Novo imóvel"}
@@ -211,7 +219,7 @@ export default async function PaginaUnidades({ searchParams }: { searchParams: S
               ) : null}
             </div>
           </form>
-        </Card>
+        </Card>}
 
         <Card>
           <div className="border-b border-contorno px-4 py-4">
@@ -270,11 +278,11 @@ export default async function PaginaUnidades({ searchParams }: { searchParams: S
           {unidades.length === 0 ? (
             <EstadoVazio
               titulo="Nenhum imóvel encontrado"
-              texto="Revise os filtros ou cadastre uma nova unidade no formulário ao lado."
+              texto={podeEditar ? "Revise os filtros ou cadastre uma nova unidade no formulário ao lado." : "Revise a busca e os filtros."}
             />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="tabela min-w-[900px]">
+            <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
+              <table className="tabela tabela--acoes min-w-[900px]">
                 <caption className="sr-only">Imóveis cadastrados</caption>
                 <thead>
                   <tr>
@@ -314,13 +322,14 @@ export default async function PaginaUnidades({ searchParams }: { searchParams: S
                         <td className="text-right font-mono tabular-nums">{unidade._count.contratos}</td>
                         <td>
                           <div className="flex justify-end gap-1.5">
-                            <Link
+                            {podeEditar && <Link
                               href={urlLista({ ...filtros, editar: unidade.id })}
                               className={`${btnSecundario} min-h-8 px-2.5 py-1 text-[11px]`}
                             >
                               Editar
-                            </Link>
-                            {unidade.ativo && unidade._count.contratos > 0 ? (
+                            </Link>}
+                            <LinkGovernanca tipo="UNIDADE" id={unidade.id} />
+                            {podeEditar && (unidade.ativo && unidade._count.contratos > 0 ? (
                               <button
                                 type="button"
                                 disabled
@@ -342,7 +351,7 @@ export default async function PaginaUnidades({ searchParams }: { searchParams: S
                                   {unidade.ativo ? "Desativar" : "Reativar"}
                                 </button>
                               </form>
-                            )}
+                            ))}
                           </div>
                         </td>
                       </tr>

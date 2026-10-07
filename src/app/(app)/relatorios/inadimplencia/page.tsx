@@ -1,3 +1,4 @@
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
 import { podeAcessarUnificacao } from "@/components/operacao-unificada";
 import {
@@ -44,6 +45,7 @@ export default async function InadimplenciaPage({
 }: {
   searchParams: Promise<{ mes?: string; de?: string; ate?: string }>;
 }) {
+  await exigirPaginaAcesso("/relatorios/inadimplencia");
   const sp = await searchParams;
   const podeUnificar = await podeAcessarUnificacao();
   const periodo = parsePeriodo(sp.de, sp.ate);
@@ -93,7 +95,7 @@ export default async function InadimplenciaPage({
       {podeUnificar ? <Card nivel="info" className="mb-4 p-4 text-xs leading-relaxed text-tinta-suave">Para acompanhar os títulos vencidos de todas as origens, abra a <Link href="/recebimentos?vencidos=1" className="font-semibold text-oliva-escura hover:underline">lista unificada de cobranças</Link>. As correspondências pendentes aparecem sinalizadas e ficam fora do saldo consolidado até a decisão.</Card> : null}
 
       <Card>
-        <div className="overflow-x-auto">
+        <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
           <table className="tabela">
             <thead>
               <tr>

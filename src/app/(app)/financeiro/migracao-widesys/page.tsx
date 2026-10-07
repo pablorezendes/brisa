@@ -1,3 +1,4 @@
+import { exigirPaginaAcesso, exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -137,6 +138,8 @@ export default async function PaginaAuditoriaWidesys({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await exigirPaginaAcesso("/financeiro/migracao-widesys");
+  await exigirPermissaoAcesso("cadastros.sensiveis", { global: true });
   const perfil = await perfilAtual();
   if (perfil !== "ADMINISTRADOR" && perfil !== "FINANCEIRO") notFound();
 

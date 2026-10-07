@@ -1,3 +1,6 @@
+import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
+import { podeExibirAcao } from "@/components/acao-autorizada";
+import { LinkGovernanca } from "@/components/link-governanca";
 import Link from "next/link";
 import { OperacaoUnificada, podeAcessarUnificacao, type ParametrosUnificacao } from "@/components/operacao-unificada";
 import {
@@ -39,7 +42,6 @@ import {
   gerarDevidosDoMes,
   registrarRecebimento,
   limparRecebimento,
-  excluirRecebimento,
   criarLancamentoAvulso,
   fecharMes,
   reabrirMes,
@@ -72,6 +74,11 @@ export default async function PaginaRecebimentos({
 }: {
   searchParams: SearchParams;
 }) {
+  await exigirPaginaAcesso("/recebimentos");
+  const podeEditar = podeExibirAcao(await acessoAtual(), {
+    permissao: ["recebimentos.editar", "pagamentos.conciliar"],
+    perfis: ["ADMINISTRADOR", "FINANCEIRO"],
+  });
   const sp = await searchParams;
   if (sp.visao !== "locacao" && !sp.editar && !sp.excluir && !sp.avulso && !sp.reabrir && !sp.erro && !sp.ok && !sp.emp && await podeAcessarUnificacao()) {
     return <OperacaoUnificada dominio="RECEBER" titulo="Contas a receber" base="/recebimentos" parametros={sp} nativo={{ href: `/recebimentos?visao=locacao${sp.mes ? `&mes=${encodeURIComponent(sp.mes)}` : ""}`, rotulo: "Lançamentos de locação" }} />;
@@ -142,14 +149,11 @@ export default async function PaginaRecebimentos({
   const taxaJanela = totais.total > 0 ? totais.recebido / totais.total : null;
   const nivelTaxaJanela = nivelTaxaRecebimento(taxaJanela);
 
-  const editando = sp.editar
+  const editando = podeEditar && sp.editar
     ? (recebimentos.find((r) => r.id === sp.editar && !linhaTravada(r)) ?? null)
     : null;
-  const excluindo = sp.excluir
-    ? (recebimentos.find((r) => r.id === sp.excluir && !linhaTravada(r)) ?? null)
-    : null;
-  const mostrarAvulso = !periodo && !fechado && sp.avulso === "1";
-  const confirmarReabrir = !periodo && fechado && sp.reabrir === "1";
+  const mostrarAvulso = podeEditar && !periodo && !fechado && sp.avulso === "1";
+  const confirmarReabrir = podeEditar && !periodo && fechado && sp.reabrir === "1";
   const contratosSelecao = mostrarAvulso ? await contratosParaSelecao() : [];
 
   const urlBase = (extras?: Record<string, string>) => {
@@ -255,11 +259,11 @@ export default async function PaginaRecebimentos({
               <span className="text-sm text-tinta-suave">
                 Fechado em {fechamento.fechadoEm.toLocaleDateString("pt-BR")}
               </span>
-              <Link href={urlBase({ reabrir: "1" })} className={btnSecundario}>
+              {podeEditar && <Link href={urlBase({ reabrir: "1" })} className={btnSecundario}>
                 Reabrir
-              </Link>
+              </Link>}
             </>
-          ) : (
+          ) : podeEditar ? (
             <>
               <form action={gerarDevidosDoMes}>
                 <input type="hidden" name="mes" value={mes} />
@@ -277,7 +281,7 @@ export default async function PaginaRecebimentos({
                 </button>
               </form>
             </>
-          )}
+          ) : <Badge cor="azul">Somente consulta</Badge>}
         </div>
       ) : null}
 
@@ -369,36 +373,6 @@ export default async function PaginaRecebimentos({
         </Card>
       ) : null}
 
-      {excluindo ? (
-        <Card className="mb-4 border-erro/30 bg-erro/5 p-4">
-          <p className="text-sm">
-            Excluir o lançamento de{" "}
-            <strong>{excluindo.empreendimento.nome}</strong> —{" "}
-            {excluindo.contrato.unidade.identificacao} (
-            {excluindo.contrato.locatario?.nome ?? "Desocupado"}), competência{" "}
-            {formatarCompetencia(excluindo.competencia)}, valor{" "}
-            <Dinheiro centavos={excluindo.valor} />? Esta ação não pode ser
-            desfeita.
-          </p>
-          <div className="mt-3 flex gap-2">
-            <form action={excluirRecebimento}>
-              <input type="hidden" name="id" value={excluindo.id} />
-              <input
-                type="hidden"
-                name="retorno"
-                value={urlBase({ excluir: excluindo.id })}
-              />
-              <button type="submit" className={btnPerigo}>
-                Confirmar exclusão
-              </button>
-            </form>
-            <Link href={urlBase()} className={btnSecundario}>
-              Cancelar
-            </Link>
-          </div>
-        </Card>
-      ) : null}
-
       {editando ? (
         <FormRegistrar
           lancamento={editando}
@@ -412,8 +386,8 @@ export default async function PaginaRecebimentos({
       ) : null}
 
       <Card>
-        <div className="overflow-x-auto">
-          <table className="tabela">
+        <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
+          <table className="tabela tabela--acoes">
             <thead>
               <tr>
                 {comMes ? (
@@ -463,7 +437,7 @@ export default async function PaginaRecebimentos({
                   <Ajuda dica="Como o dinheiro entrou: BOLETO, PIX, DINHEIRO ou SERVICO (permuta). Sempre preencha ao registrar — pagamentos em dinheiro também vão no registro de espécie do Caixa." />
                 </th>
                 <th>Observação</th>
-                <th></th>
+                <th>Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -542,7 +516,7 @@ export default async function PaginaRecebimentos({
                       {r.observacao ?? "—"}
                     </td>
                     <td>
-                      {!linhaTravada(r) ? (
+                      {podeEditar && !linhaTravada(r) ? (
                         <span className="flex gap-2 text-xs">
                           <Link
                             href={urlBase({ editar: r.id })}
@@ -550,14 +524,9 @@ export default async function PaginaRecebimentos({
                           >
                             {r.recebido === null ? "Registrar" : "Editar"}
                           </Link>
-                          <Link
-                            href={urlBase({ excluir: r.id })}
-                            className="text-erro hover:underline"
-                          >
-                            Excluir
-                          </Link>
                         </span>
                       ) : null}
+                      {!linhaTravada(r) && <LinkGovernanca tipo="TITULO" id={`BRISA:RECEBER:${r.id}`}>Descartar duplicata</LinkGovernanca>}
                     </td>
                   </tr>
                   );

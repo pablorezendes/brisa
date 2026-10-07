@@ -1,3 +1,4 @@
+import { AcaoAutorizada } from "@/components/acao-autorizada";
 import {
   Card,
   Dinheiro,
@@ -93,9 +94,9 @@ export default async function ComissaoPage({
               <SeletorAno base="/financeiro/comissoes" ano={ano} />
             ) : null}
             <SeletorPeriodo base="/financeiro/comissoes" periodo={periodo} />
-            <a href={exportarHref} className={btnSecundario}>
+            <AcaoAutorizada permissao="relatorios.exportar"><a href={exportarHref} className={btnSecundario}>
               Exportar Excel
-            </a>
+            </a></AcaoAutorizada>
           </div>
         }
       />

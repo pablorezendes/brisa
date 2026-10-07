@@ -1,3 +1,4 @@
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import {
   Ajuda,
   BuscaCard,
@@ -65,6 +66,7 @@ export default async function Home({
     qr?: string;
   }>;
 }) {
+  await exigirPaginaAcesso("/");
   const sp = await searchParams;
   const periodo = parsePeriodo(sp.de, sp.ate);
   const mes = /^\d{4}-\d{2}$/.test(sp.mes ?? "")
@@ -410,7 +412,7 @@ export default async function Home({
             </span>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
             <table className="tabela">
               <thead>
                 <tr>
@@ -534,7 +536,7 @@ export default async function Home({
             “{buscaReajuste}”.
           </p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
             <table className="tabela">
               <thead>
                 <tr>

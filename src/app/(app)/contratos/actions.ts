@@ -5,6 +5,8 @@
  * Contratos não são travados por fechamento — o travamento vale para
  * lançamentos de recebimento (módulo /recebimentos).
  */
+import { exigirPermissaoAcesso } from "@/lib/acesso/servidor";
+import { recursoEstaAtivo } from "@/lib/governanca/filtros";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
@@ -41,6 +43,7 @@ async function resolverUnidade(fd: FormData): Promise<string | null> {
   if (novaIdentificacao) {
     const empreendimentoId = campo(fd, "novaUnidadeEmpreendimentoId");
     if (!empreendimentoId) return null;
+    if (!await recursoEstaAtivo(prisma, "EMPREENDIMENTO", empreendimentoId)) return null;
     const tipoInformado = campo(fd, "novaUnidadeTipo");
     const tipo = (TIPOS_UNIDADE as readonly string[]).includes(tipoInformado)
       ? tipoInformado
@@ -53,7 +56,7 @@ async function resolverUnidade(fd: FormData): Promise<string | null> {
         },
       },
     });
-    if (existente) return existente.id;
+    if (existente) return await recursoEstaAtivo(prisma, "UNIDADE", existente.id) ? existente.id : null;
     const criada = await prisma.unidade.create({
       data: { empreendimentoId, identificacao: novaIdentificacao, tipo },
     });
@@ -61,6 +64,7 @@ async function resolverUnidade(fd: FormData): Promise<string | null> {
   }
   const unidadeId = campo(fd, "unidadeId");
   if (!unidadeId) return null;
+  if (!await recursoEstaAtivo(prisma, "UNIDADE", unidadeId)) return null;
   const unidade = await prisma.unidade.findUnique({ where: { id: unidadeId } });
   return unidade?.id ?? null;
 }
@@ -82,7 +86,9 @@ async function resolverLocatario(fd: FormData): Promise<string | null> {
     });
     return criado.id;
   }
-  return campo(fd, "locatarioId") || null;
+  const id = campo(fd, "locatarioId");
+  if (id && !await recursoEstaAtivo(prisma, "LOCATARIO", id)) throw new Error("Inquilino excluído ou mesclado. Escolha um cadastro ativo.");
+  return id || null;
 }
 
 function dadosComunsDoContrato(fd: FormData) {
@@ -104,6 +110,7 @@ function dadosComunsDoContrato(fd: FormData) {
 }
 
 export async function criarContrato(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("contratos.editar", { global: true });
   const unidadeId = await resolverUnidade(formData);
   if (!unidadeId) {
     redirect(
@@ -122,6 +129,7 @@ export async function criarContrato(formData: FormData): Promise<void> {
 }
 
 export async function atualizarContrato(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("contratos.editar", { global: true });
   const id = campo(formData, "id");
   const existente = id
     ? await prisma.contrato.findUnique({ where: { id } })
@@ -146,6 +154,7 @@ export async function atualizarContrato(formData: FormData): Promise<void> {
 }
 
 export async function encerrarContrato(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("contratos.editar", { global: true });
   const id = campo(formData, "id");
   const existente = id
     ? await prisma.contrato.findUnique({ where: { id } })

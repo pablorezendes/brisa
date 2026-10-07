@@ -7,6 +7,7 @@
  * No modo período, cada competência da janela usa a melhor fonte disponível
  * (planilha ou núcleo) e a origem fica visível na tabela e no "i".
  */
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
 import {
   Ajuda,
@@ -332,6 +333,7 @@ export default async function PaginaPainelTemporada({
 }: {
   searchParams: Promise<{ de?: string; ate?: string }>;
 }) {
+  await exigirPaginaAcesso("/paineis/temporada");
   const sp = await searchParams;
   const periodo = parsePeriodo(sp.de, sp.ate);
   if (periodo) return <TemporadaDoPeriodo periodo={periodo} />;

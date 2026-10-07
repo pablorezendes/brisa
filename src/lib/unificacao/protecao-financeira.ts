@@ -1,6 +1,7 @@
 import { carregarFontesUnificacao, chaveFonte, type BancoUnificacao } from "./fontes";
 import { projetarUnificados } from "./reconciliacao";
 import type { DecisaoUnificacao, FonteUnificacao } from "./tipos";
+import { filtrarFontesGovernadas } from "../governanca/filtros";
 
 export class ErroProtecaoUnificacao extends Error {
   constructor(mensagem: string) { super(mensagem); this.name = "ErroProtecaoUnificacao"; }
@@ -27,12 +28,13 @@ type ProtecaoFinanceira = ReturnType<typeof montarProtecaoFinanceira>;
 
 /** Usa a fotografia atual, incluindo decisões que ficaram desatualizadas. */
 export async function carregarProtecaoFinanceira(db: BancoUnificacao): Promise<ProtecaoFinanceira> {
-  const [fontes, decisoes, historico] = await Promise.all([
+  const [fontes, decisoes, historico, governados] = await Promise.all([
     carregarFontesUnificacao(db),
     db.unificacaoRegistro.findMany(),
     db.unificacaoDecisao.findMany({ where: { acao: "VINCULAR" }, select: { registroChave: true, destinoChave: true } }),
+    db.recursoGovernado.findMany({ select: { tipo: true, origemId: true, status: true } }),
   ]);
-  return montarProtecaoFinanceira(fontes, decisoes, historico);
+  return montarProtecaoFinanceira(filtrarFontesGovernadas(fontes, governados), decisoes, historico);
 }
 
 function possuiVinculo(contexto: ProtecaoFinanceira, chave: string): boolean {

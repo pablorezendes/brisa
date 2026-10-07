@@ -2,9 +2,10 @@ import "server-only";
 
 import { prisma } from "@/lib/db";
 import { exigirSessao, type SessaoPayload } from "@/lib/auth";
-import { perfilPodeVerPiiCadastros } from "@/lib/privacidade-cadastros";
 import { perfilPodeVerComissoes } from "@/lib/permissoes-comissoes";
 import { notFound } from "next/navigation";
+import { acessoAtual, exigirPermissaoAcesso } from "./acesso/servidor";
+import { pode } from "./acesso/politica";
 
 export { perfilPodeVerComissoes } from "@/lib/permissoes-comissoes";
 
@@ -45,6 +46,8 @@ export class ErroPermissao extends Error {
 export async function exigirPermissaoFinanceira(
   permissao: PermissaoFinanceira,
 ): Promise<SessaoPayload & { perfil: string }> {
+  const mapa: Record<PermissaoFinanceira, string> = { GERENCIAR_CONTAS: "contas.editar", EMITIR_BOLETOS: "boletos.emitir", SINCRONIZAR_BOLETOS: "boletos.sincronizar", CONCILIAR_PAGAMENTOS: "pagamentos.conciliar" };
+  await exigirPermissaoAcesso(mapa[permissao], { global: true });
   const sessao = await exigirSessao();
   const usuario = await prisma.usuario.findUnique({
     where: { id: sessao.sub },
@@ -70,9 +73,10 @@ export async function exigirAcessoComissoes(): Promise<void> {
 }
 
 /**
- * Resolve a autorização com o perfil fresco do banco. Nunca confia em perfil
- * enviado pelo cliente nem deixa a decisão para ocultação visual no React.
+ * Usa a permissão efetiva da requisição: uma concessão por função pode ser
+ * revogada explicitamente, mesmo para quem mantém o perfil FINANCEIRO.
+ * A consulta chamadora continua responsável pelo escopo do registro.
  */
 export async function podeVerPiiCadastrosAtual(): Promise<boolean> {
-  return perfilPodeVerPiiCadastros(await perfilAtual());
+  return pode(await acessoAtual(), "cadastros.sensiveis");
 }

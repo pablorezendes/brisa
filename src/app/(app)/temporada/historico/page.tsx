@@ -1,3 +1,4 @@
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
 import { PageHeader, Card, Dinheiro, btnSecundario } from "@/components/ui";
 import { NOME_MES_COMPLETO } from "@/lib/dominio/normalizacao";
@@ -7,6 +8,7 @@ import { historicoTemporada } from "@/lib/consultas/temporada";
 export const dynamic = "force-dynamic";
 
 export default async function PaginaHistoricoTemporada() {
+  await exigirPaginaAcesso("/temporada/historico");
   const anos = await historicoTemporada();
 
   return (

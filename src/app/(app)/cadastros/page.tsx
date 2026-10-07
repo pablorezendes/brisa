@@ -1,7 +1,10 @@
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
+import { AcaoAutorizada } from "@/components/acao-autorizada";
 import Link from "next/link";
 import { Card, Kpi, PageHeader, btnSecundario } from "@/components/ui";
 import { prisma } from "@/lib/db";
 import { perfilAtual } from "@/lib/autorizacao";
+import { filtroGovernanca } from "@/lib/governanca/filtros";
 import {
   CartaoModulo,
   NavegacaoCadastros,
@@ -10,8 +13,10 @@ import {
 export const metadata = { title: "Cadastros — Brisa" };
 
 export default async function PaginaCadastros() {
+  await exigirPaginaAcesso("/cadastros");
   const perfil = await perfilAtual();
   const podeUnificar = perfil === "ADMINISTRADOR" || perfil === "FINANCEIRO";
+  const [pessoasVisiveis, imoveisVisiveis, empreendimentosVisiveis, unidadesVisiveis, locatariosVisiveis] = await Promise.all([filtroGovernanca(prisma, "PESSOA"), filtroGovernanca(prisma, "IMOVEL_LEGADO"), filtroGovernanca(prisma, "EMPREENDIMENTO"), filtroGovernanca(prisma, "UNIDADE"), filtroGovernanca(prisma, "LOCATARIO")]);
   const [
     pessoasLegado,
     papeisLegado,
@@ -26,18 +31,18 @@ export default async function PaginaCadastros() {
     contratosAtivos,
     unidadesSemContrato,
   ] = await Promise.all([
-    prisma.pessoa.count(),
-    prisma.pessoaPapel.count(),
-    prisma.imovelLegado.count(),
-    prisma.imovelLegado.count({ where: { disponivel: true } }),
-    prisma.empreendimento.count(),
-    prisma.empreendimento.count({ where: { ativo: true } }),
-    prisma.unidade.count(),
-    prisma.unidade.count({ where: { ativo: true } }),
-    prisma.locatario.count(),
-    prisma.locatario.count({ where: { contato: null } }),
+    prisma.pessoa.count({ where: pessoasVisiveis }),
+    prisma.pessoaPapel.count({ where: { pessoa: pessoasVisiveis } }),
+    prisma.imovelLegado.count({ where: imoveisVisiveis }),
+    prisma.imovelLegado.count({ where: { ...imoveisVisiveis, disponivel: true } }),
+    prisma.empreendimento.count({ where: empreendimentosVisiveis }),
+    prisma.empreendimento.count({ where: { ...empreendimentosVisiveis, ativo: true } }),
+    prisma.unidade.count({ where: unidadesVisiveis }),
+    prisma.unidade.count({ where: { ...unidadesVisiveis, ativo: true } }),
+    prisma.locatario.count({ where: locatariosVisiveis }),
+    prisma.locatario.count({ where: { ...locatariosVisiveis, contato: null } }),
     prisma.contrato.count({ where: { status: "ativo" } }),
-    prisma.unidade.count({ where: { contratos: { none: { status: { not: "encerrado" } } } } }),
+    prisma.unidade.count({ where: { ...unidadesVisiveis, contratos: { none: { status: { not: "encerrado" } } } } }),
   ]);
 
   return (
@@ -146,9 +151,9 @@ export default async function PaginaCadastros() {
               separada até cada vínculo ser conferido, preservando a rastreabilidade.
             </p>
           </div>
-          <Link href="/contratos/novo" className="shrink-0 text-[12px] font-bold text-oliva-escura hover:underline">
+          <AcaoAutorizada permissao={["contratos.editar", "cadastros.sensiveis"]}><Link href="/contratos/novo" className="shrink-0 text-[12px] font-bold text-oliva-escura hover:underline">
             Criar contrato →
-          </Link>
+          </Link></AcaoAutorizada>
         </div>
       </Card>
     </div>

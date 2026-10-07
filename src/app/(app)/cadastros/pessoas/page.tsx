@@ -1,4 +1,6 @@
+import { exigirPaginaAcesso, exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
+import { LinkGovernanca } from "@/components/link-governanca";
 import { OperacaoUnificada, podeAcessarUnificacao } from "@/components/operacao-unificada";
 import { Badge, Card, Kpi, PageHeader, Sigilo, btnSecundario, inputBase } from "@/components/ui";
 import { IconeMenu } from "@/components/icones-menu";
@@ -104,6 +106,8 @@ export default async function PaginaPessoas({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await exigirPaginaAcesso("/cadastros/pessoas");
+  await exigirPermissaoAcesso("cadastros.sensiveis", { global: true });
   const sp = await searchParams;
   if (primeiro(sp.visao) !== "origem" && await podeAcessarUnificacao()) return <OperacaoUnificada dominio="PESSOA" titulo="Pessoas e empresas" base="/cadastros/pessoas" parametros={sp} nativo={{ href: "/cadastros/pessoas?visao=origem", rotulo: "Conferir cadastro de origem" }} />;
   const q = (primeiro(sp.q) ?? "").trim().slice(0, 120);
@@ -274,8 +278,8 @@ export default async function PaginaPessoas({
               })}
             </div>
 
-            <div className="hidden overflow-x-auto md:block">
-              <table className="tabela">
+            <div className="hidden tabela-scroll overflow-x-auto md:block" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
+              <table className="tabela tabela--acoes">
                 <caption className="sr-only">Pessoas e empresas importadas do sistema anterior</caption>
                 <thead>
                   <tr>
@@ -315,6 +319,7 @@ export default async function PaginaPessoas({
                         <td><Badge cor="azul">Widesys</Badge></td>
                         <td className="text-right">
                           <Link href={`/cadastros/pessoas/${item.id}`} className="text-[11px] font-bold text-oliva-escura hover:underline">Detalhes →</Link>
+                          <LinkGovernanca tipo="PESSOA" id={item.id} />
                         </td>
                       </tr>
                     );

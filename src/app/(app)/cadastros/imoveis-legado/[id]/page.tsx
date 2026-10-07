@@ -1,4 +1,6 @@
+import { exigirPaginaAcesso, exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
+import { LinkGovernanca } from "@/components/link-governanca";
 import { notFound } from "next/navigation";
 import { Badge, Card, Dinheiro, PageHeader, Sigilo, btnSecundario } from "@/components/ui";
 import { IconeMenu } from "@/components/icones-menu";
@@ -59,6 +61,8 @@ export default async function PaginaDetalheImovelLegado({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await exigirPaginaAcesso("/cadastros/imoveis-legado/[id]");
+  await exigirPermissaoAcesso("cadastros.sensiveis", { global: true });
   const { id } = await params;
   const imovel = await obterImovelLegado(id);
   if (!imovel) notFound();
@@ -80,9 +84,12 @@ export default async function PaginaDetalheImovelLegado({
         titulo={nome}
         descricao="Retrato cadastral do imóvel no sistema anterior, separado da base operacional do Brisa."
         acoes={
+          <>
           <Link href="/cadastros/imoveis-legado" className={btnSecundario}>
             ← Voltar à carteira
           </Link>
+          <LinkGovernanca tipo="IMOVEL_LEGADO" id={id} />
+          </>
         }
       />
 

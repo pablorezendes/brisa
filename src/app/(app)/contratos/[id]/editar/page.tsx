@@ -1,3 +1,4 @@
+import { exigirPaginaAcesso, exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui";
 import {
@@ -19,6 +20,9 @@ export default async function PaginaEditarContrato({
   params: Params;
   searchParams: SearchParams;
 }) {
+  await exigirPaginaAcesso("/contratos/[id]/editar");
+  await exigirPermissaoAcesso("contratos.editar", { global: true });
+  await exigirPermissaoAcesso("cadastros.sensiveis", { global: true });
   const { id } = await params;
   const sp = await searchParams;
   const contrato = await contratoDetalhe(id);

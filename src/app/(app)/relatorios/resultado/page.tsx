@@ -1,3 +1,5 @@
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
+import { AcaoAutorizada } from "@/components/acao-autorizada";
 import {
   Card,
   Dinheiro,
@@ -21,6 +23,7 @@ export default async function ResultadoPage({
 }: {
   searchParams: Promise<{ ano?: string; de?: string; ate?: string }>;
 }) {
+  await exigirPaginaAcesso("/relatorios/resultado");
   const sp = await searchParams;
   const periodo = parsePeriodo(sp.de, sp.ate);
   const mesRecente = await mesMaisRecenteComLancamentos();
@@ -51,9 +54,9 @@ export default async function ResultadoPage({
               <SeletorAno base="/relatorios/resultado" ano={ano} />
             ) : null}
             <SeletorPeriodo base="/relatorios/resultado" periodo={periodo} />
-            <a href={exportarHref} className={btnSecundario}>
+            <AcaoAutorizada permissao="relatorios.exportar"><a href={exportarHref} className={btnSecundario}>
               Exportar Excel
-            </a>
+            </a></AcaoAutorizada>
           </div>
         }
       />

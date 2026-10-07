@@ -1,5 +1,6 @@
 "use server";
 
+import { exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { exigirPermissaoFinanceira } from "@/lib/autorizacao";
@@ -53,6 +54,7 @@ function revalidarFinanceiro() {
 }
 
 export async function emitirBoleto(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("boletos.emitir", { global: true });
   const sessao = await exigirPermissaoFinanceira("EMITIR_BOLETOS");
   const recebimentoId = campo(formData, "recebimentoId");
   const contaBancariaId = campo(formData, "contaBancariaId");
@@ -86,6 +88,7 @@ export async function emitirBoleto(formData: FormData): Promise<void> {
 }
 
 export async function sincronizarBoleto(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("boletos.sincronizar", { global: true });
   await exigirPermissaoFinanceira("SINCRONIZAR_BOLETOS");
   const boletoId = campo(formData, "boletoId");
   const mes = campo(formData, "mes");
@@ -108,6 +111,7 @@ export async function sincronizarBoleto(formData: FormData): Promise<void> {
 }
 
 export async function sincronizarTodosBoletos(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("boletos.sincronizar", { global: true });
   const sessao = await exigirPermissaoFinanceira("SINCRONIZAR_BOLETOS");
   const mes = campo(formData, "mes");
   let resultado;
@@ -127,6 +131,7 @@ export async function sincronizarTodosBoletos(formData: FormData): Promise<void>
 }
 
 export async function liberarEmissaoInconclusiva(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("pagamentos.conciliar", { global: true });
   const sessao = await exigirPermissaoFinanceira("CONCILIAR_PAGAMENTOS");
   const boletoId = campo(formData, "boletoId");
   const mes = campo(formData, "mes");
@@ -151,6 +156,7 @@ export async function liberarEmissaoInconclusiva(formData: FormData): Promise<vo
 }
 
 export async function vincularEmissaoInconclusiva(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("pagamentos.conciliar", { global: true });
   const sessao = await exigirPermissaoFinanceira("CONCILIAR_PAGAMENTOS");
   const boletoId = campo(formData, "boletoId");
   const nossoNumero = campo(formData, "nossoNumero");
@@ -177,6 +183,7 @@ export async function vincularEmissaoInconclusiva(formData: FormData): Promise<v
 }
 
 export async function registrarWebhook(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("boletos.configurar", { global: true });
   const sessao = await exigirPermissaoFinanceira("GERENCIAR_CONTAS");
   const contaId = campo(formData, "contaBancariaId");
   if (!RE_ID.test(contaId)) voltar("", { erro: "Conta bancária inválida." });

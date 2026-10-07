@@ -1,4 +1,5 @@
 /** /caixa/[id]/editar — mesmo formulário do novo lançamento, pré-preenchido. */
+import { exigirPaginaAcesso, exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import { notFound } from "next/navigation";
 import { Card, PageHeader } from "@/components/ui";
 import { formatarCompetencia } from "@/lib/dominio/normalizacao";
@@ -11,6 +12,8 @@ export default async function PaginaEditarLancamento({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await exigirPaginaAcesso("/caixa/[id]/editar");
+  await exigirPermissaoAcesso("caixa.editar", { global: true });
   const { id } = await params;
   const [lancamento, categorias] = await Promise.all([
     buscarLancamento(id),

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { IconeMenu, type IconeMenuNome } from "@/components/icones-menu";
 import { PERFIS_COMISSOES } from "@/lib/permissoes-comissoes";
+import { podeNavegar, type NavegacaoAcesso } from "@/lib/acesso/politica";
 
 type ItemMenu = {
   tipo: "link";
@@ -29,6 +30,7 @@ const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
   {
     titulo: "Visão",
     itens: [
+      { tipo: "link", href: "/carteira", rotulo: "Minha carteira", icone: "empreendimentos" },
       { tipo: "link", href: "/", rotulo: "Visão geral", icone: "inicio", correspondencia: "exata" },
       { tipo: "link", href: "/executivo", rotulo: "Executivo", icone: "executivo" },
     ],
@@ -50,6 +52,7 @@ const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
           { tipo: "link", href: "/cadastros/unidades", rotulo: "Imóveis e unidades", icone: "unidades" },
           { tipo: "link", href: "/cadastros/locatarios", rotulo: "Inquilinos", icone: "locatarios" },
           { tipo: "link", href: "/contratos", rotulo: "Contratos", icone: "contratos" },
+          { tipo: "link", href: "/cadastros/governanca", rotulo: "Revisar e corrigir cadastros", icone: "conciliacao" },
         ],
       },
       {
@@ -109,6 +112,7 @@ const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
   {
     titulo: "Suporte",
     itens: [
+      { tipo: "link", href: "/configuracoes/acessos", rotulo: "Usuários e permissões", icone: "pessoas" },
       { tipo: "link", href: "/ajuda", rotulo: "Como funciona", icone: "ajuda" },
     ],
   },
@@ -268,11 +272,13 @@ function ModuloNav({
 export default function AppShell({
   nome,
   perfil,
+  acesso,
   sair,
   children,
 }: {
   nome: string;
   perfil: string;
+  acesso: NavegacaoAcesso;
   sair: () => Promise<void>;
   children: React.ReactNode;
 }) {
@@ -296,12 +302,12 @@ export default function AppShell({
         ? {
             ...entrada,
             itens: entrada.itens.filter(
-              (item) => !item.perfis || item.perfis.includes(perfil),
+              (item) => (!item.perfis || item.perfis.includes(perfil)) && podeNavegar(acesso, item.href),
             ),
           }
         : entrada,
-    ),
-  }));
+    ).filter(entrada => entrada.tipo === "modulo" ? entrada.itens.length > 0 : podeNavegar(acesso, entrada.href) && (!entrada.perfis || entrada.perfis.includes(perfil))),
+  })).filter(grupo => grupo.itens.length > 0);
 
   useEffect(() => {
     if (!aberto) return;

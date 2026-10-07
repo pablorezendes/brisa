@@ -1,6 +1,8 @@
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import "server-only";
 
 import Link from "next/link";
+import { LinkGovernanca } from "@/components/link-governanca";
 import {
   Badge,
   Card,
@@ -282,7 +284,7 @@ function FormularioConta({
   }
 
   return (
-    <details className="group min-w-[310px]">
+    <details className="tabela-configuracao-conta group">
       <summary
         className={`${btnSecundario} min-h-8 cursor-pointer list-none justify-center px-2.5 py-1 text-[11px] [&::-webkit-details-marker]:hidden`}
       >
@@ -421,12 +423,8 @@ function FormularioConta({
         </div>
 
         <div className="grid gap-2 sm:grid-cols-2">
-          <CheckboxConfiguracao
-            name="ativa"
-            titulo="Conta ativa"
-            texto="Disponível na operação financeira."
-            defaultChecked={conta.ativa}
-          />
+          <input type="hidden" name="ativa" value={conta.ativa ? "on" : ""} />
+          <p className="rounded-lg border border-linha p-3 text-xs text-tinta-suave">Conta {conta.ativa ? "ativa" : "inativa"}. Para alterar a situação, use Revisar e resolver na lista de contas.</p>
           <CheckboxConfiguracao
             name="padrao"
             titulo="Conta padrão"
@@ -828,6 +826,7 @@ export default async function PaginaContasBancarias({
 }: {
   searchParams: SearchParams;
 }) {
+  await exigirPaginaAcesso("/financeiro/contas-bancarias");
   const sp = await searchParams;
   const [contasConsulta, perfil] = await Promise.all([
     prisma.contaBancaria.findMany({
@@ -1049,8 +1048,8 @@ export default async function PaginaContasBancarias({
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="tabela min-w-[1180px]">
+          <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Contas bancárias — tabela com rolagem horizontal" tabIndex={0}>
+            <table className="tabela tabela--acoes min-w-[1180px]">
               <caption className="sr-only">
                 Contas bancárias, situação cadastral, integração e boletos
               </caption>
@@ -1064,7 +1063,7 @@ export default async function PaginaContasBancarias({
                   <th>Ambiente</th>
                   <th>Última comunicação</th>
                   <th className="text-right">Títulos</th>
-                  <th className="w-[330px] text-right">Ação</th>
+                  <th className="w-40 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -1127,6 +1126,7 @@ export default async function PaginaContasBancarias({
                     <td className="text-right">
                       <div className="flex flex-col items-end gap-2">
                         <FormularioConta conta={conta} podeGerenciar={podeGerenciar} />
+                        <LinkGovernanca tipo="CONTA" id={conta.id} />
                         {podeGerenciar &&
                         conta.integracaoHabilitada &&
                         infraestrutura.webhook &&

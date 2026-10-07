@@ -10,6 +10,9 @@
  * blocos listam a janela inteira com uma coluna "Mês" a mais. Lançar/editar
  * continua mensal — o botão "Novo lançamento" leva à competência corrente.
  */
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
+import { AcaoAutorizada } from "@/components/acao-autorizada";
+import { LinkGovernanca } from "@/components/link-governanca";
 import Link from "next/link";
 import { OperacaoUnificada, podeAcessarUnificacao, type ParametrosUnificacao } from "@/components/operacao-unificada";
 import type { LancamentoCaixa } from "@prisma/client";
@@ -51,7 +54,6 @@ import {
   type BlocoLista,
   type BlocoSaidas,
 } from "@/lib/consultas/caixa";
-import { BotaoExcluir } from "./BotaoExcluir";
 
 const RE_MES = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -62,21 +64,17 @@ function formatarData(d: string | null): string {
   return `${dia}/${mes}/${ano}`;
 }
 
-function resumoDoLancamento(l: LancamentoCaixa): string {
-  return l.descricao ?? l.cliente ?? l.categoria ?? "sem descrição";
-}
-
 function CelulaAcoes({ l }: { l: LancamentoCaixa }) {
   return (
     <td className="text-right!">
       <span className="inline-flex items-center gap-2">
-        <Link
+        <AcaoAutorizada permissao="caixa.editar"><Link
           href={`/caixa/${l.id}/editar`}
           className="text-xs font-medium text-tinta-suave hover:underline"
         >
           Editar
-        </Link>
-        <BotaoExcluir id={l.id} resumo={resumoDoLancamento(l)} />
+        </Link></AcaoAutorizada>
+        <LinkGovernanca tipo="CAIXA" id={l.id}>Excluir com revisão</LinkGovernanca>
       </span>
     </td>
   );
@@ -104,8 +102,8 @@ function TabelaSaidas({
     return <p className="px-5 pb-5 text-sm text-tinta-suave">{vazio}</p>;
   }
   return (
-    <div className="overflow-x-auto">
-      <table className="tabela">
+    <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
+      <table className="tabela tabela--acoes">
         <thead>
           <tr>
             {comMes ? <th>Mês</th> : null}
@@ -193,8 +191,8 @@ function TabelaEntradas({
     return <p className="px-5 pb-5 text-sm text-tinta-suave">{vazio}</p>;
   }
   return (
-    <div className="overflow-x-auto">
-      <table className="tabela">
+    <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
+      <table className="tabela tabela--acoes">
         <thead>
           <tr>
             {comMes ? <th>Mês</th> : null}
@@ -247,8 +245,8 @@ function TabelaRecebDinheiro({
     return <p className="px-5 pb-5 text-sm text-tinta-suave">{vazio}</p>;
   }
   return (
-    <div className="overflow-x-auto">
-      <table className="tabela">
+    <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
+      <table className="tabela tabela--acoes">
         <thead>
           <tr>
             {comMes ? <th>Mês</th> : null}
@@ -319,6 +317,7 @@ export default async function PaginaCaixa({
 }: {
   searchParams: Promise<ParametrosUnificacao & { mes?: string; de?: string; ate?: string; visao?: string }>;
 }) {
+  await exigirPaginaAcesso("/caixa");
   const sp = await searchParams;
   if (sp.visao !== "livro" && await podeAcessarUnificacao()) {
     return <OperacaoUnificada dominio="MOVIMENTO" titulo="Movimentações financeiras" base="/caixa" parametros={sp} nativo={{ href: `/caixa?visao=livro${sp.mes ? `&mes=${encodeURIComponent(sp.mes)}` : ""}`, rotulo: "Lançamentos do livro-caixa" }} />;
@@ -362,9 +361,9 @@ export default async function PaginaCaixa({
                 Resumo anual
               </Link>
             )}
-            <Link href={`/caixa/novo?mes=${mes}`} className={btnPrimario}>
+            <AcaoAutorizada permissao="caixa.editar"><Link href={`/caixa/novo?mes=${mes}`} className={btnPrimario}>
               Novo lançamento
-            </Link>
+            </Link></AcaoAutorizada>
             {!periodo ? <SeletorMes base="/caixa" mes={mes} extras={{ visao: "livro" }} /> : null}
             <SeletorPeriodo base="/caixa" periodo={periodo} extras={{ visao: "livro" }} />
           </>

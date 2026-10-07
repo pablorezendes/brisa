@@ -1,3 +1,5 @@
+import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
+import { AcaoAutorizada, podeExibirAcao } from "@/components/acao-autorizada";
 import Link from "next/link";
 import {
   Ajuda,
@@ -94,6 +96,8 @@ export default async function PaginaTemporada({
 }: {
   searchParams: Promise<{ mes?: string; de?: string; ate?: string }>;
 }) {
+  await exigirPaginaAcesso("/temporada");
+  const podeEditar = podeExibirAcao(await acessoAtual(), { permissao: "temporada.editar" });
   const sp = await searchParams;
   const periodo = parsePeriodo(sp.de, sp.ate);
   const mes = sp.mes && RE_MES.test(sp.mes) ? sp.mes : mesCorrente();
@@ -255,7 +259,7 @@ export default async function PaginaTemporada({
             {limpezasJanela.length === 0 ? (
               <p className="px-5 py-4 text-sm text-tinta-suave">Nenhuma limpeza no período.</p>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
                 <table className="tabela">
                   <thead>
                     <tr>
@@ -317,7 +321,7 @@ export default async function PaginaTemporada({
             {dadosJanela.despesas.length === 0 && limpezasDerivadasJanela.length === 0 ? (
               <p className="px-5 py-4 text-sm text-tinta-suave">Nenhuma despesa no período.</p>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
                 <table className="tabela">
                   <thead>
                     <tr>
@@ -399,7 +403,7 @@ export default async function PaginaTemporada({
                 Nenhum recebimento no período.
               </p>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
                 <table className="tabela">
                   <thead>
                     <tr>
@@ -453,7 +457,7 @@ export default async function PaginaTemporada({
                 Cadastre as unidades (pelo código do apartamento, ex.: 208, 304) para lançar
                 limpezas, despesas e recebimentos por unidade.
               </p>
-              <form action={criarUnidadeTemporada} className="mt-4 flex items-center gap-2">
+              <AcaoAutorizada permissao="temporada.editar"><form action={criarUnidadeTemporada} className="mt-4 flex items-center gap-2">
                 <input
                   name="codigo"
                   placeholder="Código (ex.: 208)"
@@ -463,7 +467,7 @@ export default async function PaginaTemporada({
                 <button type="submit" className={btnPrimario}>
                   Cadastrar unidade
                 </button>
-              </form>
+              </form></AcaoAutorizada>
             </Card>
           ) : null}
 
@@ -481,8 +485,8 @@ export default async function PaginaTemporada({
                 Cadastre unidades de temporada para lançar limpezas.
               </p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="tabela">
+              <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
+                <table className="tabela tabela--acoes">
                   <thead>
                     <tr>
                       <th>Unidade</th>
@@ -502,7 +506,7 @@ export default async function PaginaTemporada({
                         Total{" "}
                         <Ajuda dica="Quantidade × valor unitário + extra/PDL. Calculado pelo sistema e somado ao pagamento do mês da diarista." />
                       </th>
-                      <th></th>
+                      <th>Ações</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -513,7 +517,7 @@ export default async function PaginaTemporada({
                         <tr key={u.id}>
                           <td className="font-medium">{u.codigo}</td>
                           <td className="text-right">
-                            <input
+                            {podeEditar ? <input
                               name="quantidade"
                               form={formId}
                               type="number"
@@ -521,33 +525,33 @@ export default async function PaginaTemporada({
                               step={1}
                               defaultValue={l?.quantidade ?? 0}
                               className={`${inputBase} w-20 text-right`}
-                            />
+                            /> : (l?.quantidade ?? 0)}
                           </td>
                           <td className="text-right">
-                            <input
+                            {podeEditar ? <input
                               name="valorUnitario"
                               form={formId}
                               inputMode="decimal"
                               defaultValue={centavosParaInput(l?.valorUnitario ?? 5000)}
                               className={`${inputBase} w-24 text-right`}
-                            />
+                            /> : <Dinheiro centavos={l?.valorUnitario ?? 5000} />}
                           </td>
                           <td className="text-right">
-                            <input
+                            {podeEditar ? <input
                               name="extraPdl"
                               form={formId}
                               inputMode="decimal"
                               defaultValue={centavosParaInput(l?.extraPdl ?? 0)}
                               className={`${inputBase} w-24 text-right`}
-                            />
+                            /> : <Dinheiro centavos={l?.extraPdl ?? 0} />}
                           </td>
                           <td className="text-right">
                             <Dinheiro centavos={l ? totalLimpeza(l) : 0} />
                           </td>
                           <td className="text-right">
-                            <button type="submit" form={formId} className={btnSecundario}>
+                            {podeEditar && <button type="submit" form={formId} className={btnSecundario}>
                               Salvar
-                            </button>
+                            </button>}
                           </td>
                         </tr>
                       );
@@ -566,7 +570,7 @@ export default async function PaginaTemporada({
               </div>
             )}
             {/* Formulários das linhas (inputs associados via atributo form) */}
-            {unidades.map((u) => (
+            {podeEditar && unidades.map((u) => (
               <form key={u.id} id={`limpeza-${u.id}`} action={salvarLimpeza}>
                 <input type="hidden" name="unidadeTemporadaId" value={u.id} />
                 <input type="hidden" name="competencia" value={mes} />
@@ -586,8 +590,8 @@ export default async function PaginaTemporada({
             {despesas.length === 0 && limpezasDerivadas.length === 0 ? (
               <p className="px-5 py-4 text-sm text-tinta-suave">Nenhuma despesa no mês.</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="tabela">
+              <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
+                <table className="tabela tabela--acoes">
                   <thead>
                     <tr>
                       <th>
@@ -599,7 +603,7 @@ export default async function PaginaTemporada({
                         <Ajuda dica="ENERGIA, CONDO, IPTU ou EXTRA — lançados por você. LIMPEZA é derivada automaticamente do bloco de limpezas; não a lance de novo." />
                       </th>
                       <th className="text-right">Valor</th>
-                      <th></th>
+                      <th>Ações</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -613,7 +617,7 @@ export default async function PaginaTemporada({
                           <Dinheiro centavos={d.valor} />
                         </td>
                         <td className="text-right">
-                          <form action={excluirDespesa}>
+                          <AcaoAutorizada permissao="temporada.editar"><form action={excluirDespesa}>
                             <input type="hidden" name="id" value={d.id} />
                             <button
                               type="submit"
@@ -621,7 +625,7 @@ export default async function PaginaTemporada({
                             >
                               Excluir
                             </button>
-                          </form>
+                          </form></AcaoAutorizada>
                         </td>
                       </tr>
                     ))}
@@ -651,7 +655,7 @@ export default async function PaginaTemporada({
                 </table>
               </div>
             )}
-            <form
+            <AcaoAutorizada permissao="temporada.editar"><form
               action={lancarDespesa}
               className="flex flex-wrap items-center gap-2 border-t border-contorno px-5 py-3"
             >
@@ -680,7 +684,7 @@ export default async function PaginaTemporada({
               <button type="submit" className={btnPrimario}>
                 Lançar despesa
               </button>
-            </form>
+            </form></AcaoAutorizada>
           </Card>
 
           {/* 3. RECEBIMENTOS */}
@@ -694,15 +698,15 @@ export default async function PaginaTemporada({
             {recebimentos.length === 0 ? (
               <p className="px-5 py-4 text-sm text-tinta-suave">Nenhum recebimento no mês.</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="tabela">
+              <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
+                <table className="tabela tabela--acoes">
                   <thead>
                     <tr>
                       <th>Unidade</th>
                       <th>Plataforma</th>
                       <th>Hóspede</th>
                       <th className="text-right">Valor</th>
-                      <th></th>
+                      <th>Ações</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -715,7 +719,7 @@ export default async function PaginaTemporada({
                           <Dinheiro centavos={r.valor} />
                         </td>
                         <td className="text-right">
-                          <form action={excluirRecebimentoTemporada}>
+                          <AcaoAutorizada permissao="temporada.editar"><form action={excluirRecebimentoTemporada}>
                             <input type="hidden" name="id" value={r.id} />
                             <button
                               type="submit"
@@ -723,7 +727,7 @@ export default async function PaginaTemporada({
                             >
                               Excluir
                             </button>
-                          </form>
+                          </form></AcaoAutorizada>
                         </td>
                       </tr>
                     ))}
@@ -740,7 +744,7 @@ export default async function PaginaTemporada({
                 </table>
               </div>
             )}
-            <form
+            <AcaoAutorizada permissao="temporada.editar"><form
               action={lancarRecebimentoTemporada}
               className="flex flex-wrap items-center gap-2 border-t border-contorno px-5 py-3"
             >
@@ -769,7 +773,7 @@ export default async function PaginaTemporada({
               <button type="submit" className={btnPrimario}>
                 Lançar recebimento
               </button>
-            </form>
+            </form></AcaoAutorizada>
           </Card>
 
           {/* Cadastro de unidades (compacto, quando já existem unidades) */}
@@ -782,7 +786,7 @@ export default async function PaginaTemporada({
                     {u.codigo}
                   </Badge>
                 ))}
-                <form action={criarUnidadeTemporada} className="flex items-center gap-2">
+                <AcaoAutorizada permissao="temporada.editar"><form action={criarUnidadeTemporada} className="flex items-center gap-2">
                   <input
                     name="codigo"
                     placeholder="Novo código (ex.: 208)"
@@ -792,7 +796,7 @@ export default async function PaginaTemporada({
                   <button type="submit" className={btnSecundario}>
                     Cadastrar
                   </button>
-                </form>
+                </form></AcaoAutorizada>
               </div>
             </Card>
           ) : null}

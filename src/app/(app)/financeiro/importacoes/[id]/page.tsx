@@ -1,3 +1,4 @@
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
 import { Badge, Card, Dinheiro, PageHeader, Sigilo, btnSecundario } from "@/components/ui";
 import { detalheImportacaoPlanilha } from "@/lib/consultas/importacoes-planilha";
@@ -6,6 +7,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Origem da linha importada — Brisa" };
 
 export default async function PaginaOrigemImportacao({ params }: { params: Promise<{ id: string }> }) {
+  await exigirPaginaAcesso("/financeiro/importacoes/[id]");
   const registro = await detalheImportacaoPlanilha((await params).id);
   const dados = registro.detalhe;
   const volta = `/financeiro/importacoes?lote=${encodeURIComponent(registro.loteId)}`;

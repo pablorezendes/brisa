@@ -1,4 +1,8 @@
+import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
+import { pode } from "@/lib/acesso/politica";
+import { filtroGovernanca } from "@/lib/governanca/filtros";
 import Link from "next/link";
+import { LinkGovernanca } from "@/components/link-governanca";
 import type { Prisma } from "@prisma/client";
 import { Badge, Card, PageHeader, Sigilo, btnPrimario, btnSecundario, inputBase } from "@/components/ui";
 import { prisma } from "@/lib/db";
@@ -54,6 +58,11 @@ function urlLista({
 }
 
 export default async function PaginaLocatarios({ searchParams }: { searchParams: SearchParams }) {
+  await exigirPaginaAcesso("/cadastros/locatarios");
+  const acesso = await acessoAtual();
+  const podeVerPii = pode(acesso, "cadastros.sensiveis");
+  const podeEditar = pode(acesso, "cadastros.editar") && podeVerPii;
+  const podeCriarContrato = pode(acesso, "contratos.editar") && podeVerPii;
   const porPagina = 40;
   const sp = await searchParams;
   const q = (sp.q ?? "").trim();
@@ -63,16 +72,18 @@ export default async function PaginaLocatarios({ searchParams }: { searchParams:
       ? "sem-contrato"
       : "todos";
 
-  const where: Prisma.LocatarioWhereInput = {};
+  const where: Prisma.LocatarioWhereInput = await filtroGovernanca(prisma, "LOCATARIO");
   if (q) {
     const termo = normalizar(q);
     const documento = normalizarCpfCnpj(q);
     where.OR = [
       { nomeNorm: { contains: termo } },
-      { contato: { contains: q } },
-      { email: { contains: q } },
-      { telefone: { contains: q } },
-      ...(documento ? [{ cpfCnpj: { contains: documento } }] : []),
+      ...(podeVerPii ? [
+        { contato: { contains: q } },
+        { email: { contains: q } },
+        { telefone: { contains: q } },
+        ...(documento ? [{ cpfCnpj: { contains: documento } }] : []),
+      ] : []),
     ];
   }
   const contratoAberto: Prisma.ContratoWhereInput = { status: { not: "encerrado" } };
@@ -111,7 +122,7 @@ export default async function PaginaLocatarios({ searchParams }: { searchParams:
       },
       orderBy: { nomeNorm: "asc" },
     }),
-    sp.editar ? prisma.locatario.findUnique({ where: { id: sp.editar } }) : Promise.resolve(null),
+    podeEditar && sp.editar ? prisma.locatario.findUnique({ where: { id: sp.editar } }) : Promise.resolve(null),
   ]);
 
   return (
@@ -119,17 +130,17 @@ export default async function PaginaLocatarios({ searchParams }: { searchParams:
       <PageHeader
         titulo="Inquilinos"
         descricao="Pessoas e empresas locatárias, com seus vínculos e dados para contato."
-        acoes={
+        acoes={podeCriarContrato ?
           <Link href="/contratos/novo" className={btnSecundario}>
             Vincular em contrato
           </Link>
-        }
+        : null}
       />
       <NavegacaoCadastros atual="locatarios" />
       <AvisosCadastro ok={sp.ok} erro={sp.erro} />
 
-      <div className="grid grid-cols-1 items-start gap-4 2xl:grid-cols-[minmax(280px,0.38fr)_minmax(0,1fr)]">
-        <Card className="p-5 2xl:sticky 2xl:top-20">
+      <div className={podeEditar ? "grid grid-cols-1 items-start gap-4 2xl:grid-cols-[minmax(280px,0.38fr)_minmax(0,1fr)]" : "grid grid-cols-1 gap-4"}>
+        {podeEditar ? <Card className="p-5 2xl:sticky 2xl:top-20">
           <div className="mb-4">
             <h2 className="text-base font-bold tracking-tight text-tinta">
               {editando ? "Editar inquilino" : "Novo inquilino"}
@@ -243,7 +254,7 @@ export default async function PaginaLocatarios({ searchParams }: { searchParams:
               </div>
             </details>
           </form>
-        </Card>
+        </Card> : null}
 
         <Card>
           <div className="flex flex-col gap-3 border-b border-contorno px-4 py-4 sm:flex-row sm:items-end sm:justify-between">
@@ -258,7 +269,7 @@ export default async function PaginaLocatarios({ searchParams }: { searchParams:
                   type="search"
                   name="q"
                   defaultValue={q}
-                  placeholder="Nome, documento ou contato"
+                  placeholder={podeVerPii ? "Nome, documento ou contato" : "Nome"}
                   className={`${inputBase} mt-1 block w-56 py-1.5`}
                 />
               </label>
@@ -282,11 +293,11 @@ export default async function PaginaLocatarios({ searchParams }: { searchParams:
           {locatarios.length === 0 ? (
             <EstadoVazio
               titulo="Nenhum inquilino encontrado"
-              texto="Revise a busca ou cadastre um novo inquilino no formulário ao lado."
+              texto={podeEditar ? "Revise a busca ou cadastre um novo inquilino no formulário ao lado." : "Revise os filtros para localizar um inquilino autorizado."}
             />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="tabela min-w-[880px]">
+            <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
+              <table className="tabela tabela--acoes min-w-[880px]">
                 <caption className="sr-only">Inquilinos cadastrados</caption>
                 <thead>
                   <tr>
@@ -316,10 +327,10 @@ export default async function PaginaLocatarios({ searchParams }: { searchParams:
                       <tr key={locatario.id}>
                         <td className="font-semibold text-tinta">{locatario.nome}</td>
                         <td className="font-mono text-[11px] tabular-nums">
-                          <Sigilo>{formatarDocumento(locatario.cpfCnpj)}</Sigilo>
+                          <Sigilo>{podeVerPii ? formatarDocumento(locatario.cpfCnpj) : "Acesso restrito"}</Sigilo>
                         </td>
                         <td>
-                          {locatario.contato ? (
+                          {!podeVerPii ? <span className="text-tinta-suave">Acesso restrito</span> : locatario.contato ? (
                             <Sigilo>{locatario.contato}</Sigilo>
                           ) : (
                             <span className="text-tinta-suave">Não informado</span>
@@ -344,7 +355,8 @@ export default async function PaginaLocatarios({ searchParams }: { searchParams:
                         </td>
                         <td className="text-right font-mono tabular-nums">{locatario._count.contratos}</td>
                         <td className="text-right">
-                          <Link
+                          <LinkGovernanca tipo="LOCATARIO" id={locatario.id} />
+                          {podeEditar ? <Link
                             href={urlLista({
                               q,
                               vinculo,
@@ -354,7 +366,7 @@ export default async function PaginaLocatarios({ searchParams }: { searchParams:
                             className={`${btnSecundario} min-h-8 px-2.5 py-1 text-[11px]`}
                           >
                             Editar
-                          </Link>
+                          </Link> : <span className="text-[11px] text-tinta-suave">Consulta</span>}
                         </td>
                       </tr>
                     );

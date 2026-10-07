@@ -6,6 +6,7 @@
  * No modo período as linhas são exatamente os meses da janela (mesmo cruzando
  * anos) e o acumulado zera no primeiro mês da janela.
  */
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
 import {
   Ajuda,
@@ -39,6 +40,7 @@ export default async function PaginaCaixaAnual({
 }: {
   searchParams: Promise<{ ano?: string; de?: string; ate?: string }>;
 }) {
+  await exigirPaginaAcesso("/caixa/ano");
   const sp = await searchParams;
   const periodo = parsePeriodo(sp.de, sp.ate);
   const anoPadrao = parseCompetencia(await mesMaisRecente()).ano;

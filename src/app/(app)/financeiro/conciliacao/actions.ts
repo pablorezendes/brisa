@@ -1,5 +1,6 @@
 "use server";
 
+import { exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { exigirPermissaoFinanceira } from "@/lib/autorizacao";
@@ -20,6 +21,7 @@ function voltar(aviso: { ok?: string; erro?: string }): never {
 }
 
 export async function reprocessarConciliacao(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("pagamentos.conciliar", { global: true });
   const sessao = await exigirPermissaoFinanceira("CONCILIAR_PAGAMENTOS");
   const bruto = formData.get("pagamentoId");
   const pagamentoId = typeof bruto === "string" ? bruto.trim() : "";
@@ -47,6 +49,7 @@ export async function reprocessarConciliacao(formData: FormData): Promise<void> 
 }
 
 export async function ignorarLiquidacaoExterna(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("pagamentos.conciliar", { global: true });
   const sessao = await exigirPermissaoFinanceira("CONCILIAR_PAGAMENTOS");
   const bruto = formData.get("eventoId");
   const eventoId = typeof bruto === "string" ? bruto.trim() : "";

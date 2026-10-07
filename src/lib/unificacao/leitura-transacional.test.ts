@@ -14,7 +14,7 @@ describe("limite da transação de leitura unificada", () => {
   it("captura fontes e decisões na mesma transação e libera antes de derivar", async () => {
     const ordem: string[] = [];
     const foto = {} as Awaited<ReturnType<typeof carregarDadosFontesUnificacao>>;
-    const tx = { unificacaoRegistro: { findMany: vi.fn(async () => {
+    const tx = { recursoGovernado: { findMany: async () => [] }, unificacaoRegistro: { findMany: vi.fn(async () => {
       ordem.push("decisoes"); return [];
     }) } };
     const transacao = vi.fn(async (ler: (banco: typeof tx) => Promise<unknown>) => {
@@ -44,7 +44,7 @@ describe("limite da transação de leitura unificada", () => {
   it("propaga falha da fotografia sem produzir uma projeção incompleta", async () => {
     const falha = new Error("Falha artificial na leitura");
     vi.mocked(carregarDadosFontesUnificacao).mockRejectedValue(falha);
-    const tx = { unificacaoRegistro: { findMany: vi.fn(async () => []) } };
+    const tx = { recursoGovernado: { findMany: async () => [] }, unificacaoRegistro: { findMany: vi.fn(async () => []) } };
     const db = { $transaction: (ler: (banco: typeof tx) => Promise<unknown>) => ler(tx) } as unknown as PrismaClient;
     await expect(lerOperacaoUnificada(db)).rejects.toBe(falha);
     expect(derivarFontesUnificacao).not.toHaveBeenCalled();

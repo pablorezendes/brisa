@@ -7,6 +7,7 @@
  * família — frases curtas, exemplos com números reais e sempre a dica do
  * que fazer no lançamento.
  */
+import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
 import { Card, PageHeader, Selo } from "@/components/ui";
 
@@ -111,7 +112,8 @@ function Erro({
   );
 }
 
-export default function PaginaAjuda() {
+export default async function PaginaAjuda() {
+  await exigirPaginaAcesso("/ajuda");
   return (
     <div className="max-w-4xl">
       <PageHeader

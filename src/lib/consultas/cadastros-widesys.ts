@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 
 import { podeVerPiiCadastrosAtual } from "@/lib/autorizacao";
 import { prisma } from "@/lib/db";
+import { filtroGovernanca, recursoEstaAtivo } from "@/lib/governanca/filtros";
 import { normalizar } from "@/lib/dominio/normalizacao";
 import {
   mascararEmailCadastro,
@@ -63,7 +64,9 @@ export async function listarPessoasWidesys(entrada: {
   const buscaNorm = normalizar(busca);
   const buscaDocumento = busca.replace(/\D/g, "");
   const papeis = papeisDoFiltro(entrada.papel);
+  const ativos = await filtroGovernanca(prisma, "PESSOA");
   const where: Prisma.PessoaWhereInput = {
+    ...ativos,
     origem: ORIGEM_CADASTROS_WIDESYS,
     ...(busca
       ? {
@@ -92,7 +95,7 @@ export async function listarPessoasWidesys(entrada: {
     prisma.pessoa.count({ where }),
     prisma.pessoaPapel.groupBy({
       by: ["papel"],
-      where: { origem: ORIGEM_CADASTROS_WIDESYS },
+      where: { origem: ORIGEM_CADASTROS_WIDESYS, pessoa: ativos },
       _count: { _all: true },
     }),
     ...Object.values(GRUPOS_PAPEIS_WIDESYS).map((grupo) =>
@@ -100,6 +103,7 @@ export async function listarPessoasWidesys(entrada: {
         where: {
           origem: ORIGEM_CADASTROS_WIDESYS,
           papeis: { some: { papel: { in: [...grupo] } } },
+          ...ativos,
         },
       }),
     ),
@@ -166,6 +170,7 @@ export async function listarPessoasWidesys(entrada: {
 }
 
 export async function obterPessoaWidesys(id: string) {
+  if (!await recursoEstaAtivo(prisma, "PESSOA", id)) return null;
   const podeVerPii = await podeVerPiiCadastrosAtual();
   const pessoa = await prisma.pessoa.findFirst({
     where: { id, origem: ORIGEM_CADASTROS_WIDESYS },
@@ -310,6 +315,7 @@ export async function listarImoveisLegado(entrada: {
       ? "Comercial"
       : null;
   const where: Prisma.ImovelLegadoWhereInput = {
+    ...await filtroGovernanca(prisma, "IMOVEL_LEGADO"),
     origem: ORIGEM_CADASTROS_WIDESYS,
     ...(busca
       ? {
@@ -332,7 +338,7 @@ export async function listarImoveisLegado(entrada: {
             ? { publicado: false }
             : {}),
   };
-  const base = { origem: ORIGEM_CADASTROS_WIDESYS };
+  const base = { origem: ORIGEM_CADASTROS_WIDESYS, ...await filtroGovernanca(prisma, "IMOVEL_LEGADO") };
   const [total, disponiveis, alugados, publicados, naoPublicados, finalidades] =
     await Promise.all([
       prisma.imovelLegado.count({ where }),
@@ -413,6 +419,7 @@ export async function listarImoveisLegado(entrada: {
 }
 
 export async function obterImovelLegado(id: string) {
+  if (!await recursoEstaAtivo(prisma, "IMOVEL_LEGADO", id)) return null;
   const podeVerPii = await podeVerPiiCadastrosAtual();
   const imovel = await prisma.imovelLegado.findFirst({
     where: { id, origem: ORIGEM_CADASTROS_WIDESYS },

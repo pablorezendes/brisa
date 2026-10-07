@@ -1,11 +1,13 @@
 "use server";
 
+import { exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { exigirSessao } from "@/lib/auth";
 import { normalizar, normalizarCpfCnpj } from "@/lib/dominio/normalizacao";
 import { TIPOS_UNIDADE } from "@/lib/consultas/locacao";
+import { recursoEstaAtivo } from "@/lib/governanca/filtros";
 
 type Aviso = { ok?: string; erro?: string; editar?: string };
 
@@ -112,6 +114,7 @@ function dadosCobrancaLocatario(formData: FormData): {
 // ---------------------------------------------------------------------------
 
 export async function criarEmpreendimento(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("cadastros.editar", { global: true });
   await exigirSessao();
   const nomeInformado = nomeValido(campo(formData, "nome"), 120);
   if (!nomeInformado) {
@@ -136,8 +139,10 @@ export async function criarEmpreendimento(formData: FormData): Promise<void> {
 }
 
 export async function atualizarEmpreendimento(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("cadastros.editar", { global: true });
   await exigirSessao();
   const id = campo(formData, "id");
+  if (!await recursoEstaAtivo(prisma, "EMPREENDIMENTO", id)) voltar(ROTAS.empreendimentos, { erro: "Este cadastro foi excluído ou mesclado. Use Revisar e resolver para restaurar." });
   const nomeInformado = nomeValido(campo(formData, "nome"), 120);
   if (!id || !nomeInformado) {
     voltar(ROTAS.empreendimentos, {
@@ -170,8 +175,10 @@ export async function atualizarEmpreendimento(formData: FormData): Promise<void>
 }
 
 export async function definirStatusEmpreendimento(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("cadastros.editar", { global: true });
   await exigirSessao();
   const id = campo(formData, "id");
+  if (!await recursoEstaAtivo(prisma, "EMPREENDIMENTO", id)) voltar(ROTAS.empreendimentos, { erro: "Este cadastro foi excluído ou mesclado. Use Revisar e resolver para restaurar." });
   const ativo = campo(formData, "ativo");
   if (!id || (ativo !== "0" && ativo !== "1")) {
     voltar(ROTAS.empreendimentos, { erro: "Solicitação de status inválida." });
@@ -232,6 +239,7 @@ async function validarDadosUnidade(
     select: { id: true, ativo: true },
   });
   if (!empreendimento) return { erro: "Empreendimento não encontrado." };
+  if (!await recursoEstaAtivo(prisma, "EMPREENDIMENTO", empreendimentoId)) return { erro: "Este empreendimento foi excluído ou mesclado." };
   if (!empreendimento.ativo && empreendimento.id !== empreendimentoAtualId) {
     return { erro: "Selecione um empreendimento ativo para o imóvel." };
   }
@@ -244,6 +252,7 @@ async function validarDadosUnidade(
 }
 
 export async function criarUnidade(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("cadastros.editar", { global: true });
   await exigirSessao();
   const validacao = await validarDadosUnidade(formData);
   if ("erro" in validacao) voltar(ROTAS.unidades, { erro: validacao.erro });
@@ -263,8 +272,10 @@ export async function criarUnidade(formData: FormData): Promise<void> {
 }
 
 export async function atualizarUnidade(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("cadastros.editar", { global: true });
   await exigirSessao();
   const id = campo(formData, "id");
+  if (!await recursoEstaAtivo(prisma, "UNIDADE", id)) voltar(ROTAS.unidades, { erro: "Este imóvel foi excluído ou mesclado. Use Revisar e resolver para restaurar." });
   if (!id) voltar(ROTAS.unidades, { erro: "Imóvel não informado." });
 
   const existente = await prisma.unidade.findUnique({
@@ -303,8 +314,10 @@ export async function atualizarUnidade(formData: FormData): Promise<void> {
 }
 
 export async function definirStatusUnidade(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("cadastros.editar", { global: true });
   await exigirSessao();
   const id = campo(formData, "id");
+  if (!await recursoEstaAtivo(prisma, "UNIDADE", id)) voltar(ROTAS.unidades, { erro: "Este imóvel foi excluído ou mesclado. Use Revisar e resolver para restaurar." });
   const ativo = campo(formData, "ativo");
   if (!id || (ativo !== "0" && ativo !== "1")) {
     voltar(ROTAS.unidades, { erro: "Solicitação de status inválida." });
@@ -353,6 +366,7 @@ async function cpfJaUsado(cpfCnpj: string, ignorarId?: string): Promise<boolean>
 }
 
 export async function criarLocatario(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("cadastros.editar", { global: true });
   await exigirSessao();
   const nome = nomeValido(campo(formData, "nome"), 160);
   const contato = nomeValido(campo(formData, "contato"), 200);
@@ -390,8 +404,10 @@ export async function criarLocatario(formData: FormData): Promise<void> {
 }
 
 export async function atualizarLocatario(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("cadastros.editar", { global: true });
   await exigirSessao();
   const id = campo(formData, "id");
+  if (!await recursoEstaAtivo(prisma, "LOCATARIO", id)) voltar(ROTAS.locatarios, { erro: "Este inquilino foi excluído ou mesclado. Use Revisar e resolver para restaurar." });
   const nome = nomeValido(campo(formData, "nome"), 160);
   const contatoInformado = campo(formData, "contato");
   const contato = nomeValido(contatoInformado, 200);

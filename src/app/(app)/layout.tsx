@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { encerrarSessao, exigirSessao } from "@/lib/auth";
-import { perfilAtual } from "@/lib/autorizacao";
+import { acessoAtual } from "@/lib/acesso/servidor";
+import { navegacaoAcesso } from "@/lib/acesso/politica";
 import AppShell from "./app-shell";
 
 async function sair() {
@@ -15,10 +16,10 @@ export default async function AppLayout({
   children: React.ReactNode;
 }>) {
   const sessao = await exigirSessao();
-  const perfil = await perfilAtual();
+  const acesso = await acessoAtual();
 
   return (
-    <AppShell nome={sessao.nome} perfil={perfil} sair={sair}>
+    <AppShell nome={sessao.nome} perfil={acesso.perfil} acesso={navegacaoAcesso(acesso)} sair={sair}>
       {children}
     </AppShell>
   );

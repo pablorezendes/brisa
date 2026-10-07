@@ -58,6 +58,40 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Decisões locais duráveis: sync pode atualizar snapshots, nunca estes estados.
+model RecursoGovernado {
+  id             String   @id @default(uuid())
+  tipo           String // PESSOA|LOCATARIO|UNIDADE|EMPREENDIMENTO|IMOVEL_LEGADO|CAIXA|TITULO|CONTA
+  origemId       String
+  status         String // ATIVO|EXCLUIDO|MESCLADO|DESCARTADO|INATIVO
+  destinoId      String?
+  motivo         String
+  autorId        String
+  versao         Int      @default(1)
+  estadoAnterior String   @default("{}")
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
+  eventos        EventoGovernanca[]
+
+  @@unique([tipo, origemId])
+  @@index([tipo, status])
+  @@index([destinoId])
+}
+
+model EventoGovernanca {
+  id             String @id @default(uuid())
+  recursoId      String
+  acao           String
+  estadoAnterior String
+  estadoNovo     String
+  autorId        String
+  motivo         String
+  criadoEm       DateTime @default(now())
+  recurso        RecursoGovernado @relation(fields: [recursoId], references: [id], onDelete: Restrict)
+
+  @@index([recursoId, criadoEm])
+}
+
 // Configuração não contém credenciais em claro. Env AUTOMACOES_CHAVE cifra tokens.
 model ConfiguracaoComunicacao {
   id                    String   @id @default("cobranca")
@@ -218,12 +252,67 @@ model Usuario {
   nome                       String
   usuario                    String                  @unique // login
   senhaHash                  String // scrypt: salt:hash (hex)
-  perfil                     String                  @default("ADMINISTRADOR") // ADMINISTRADOR|FINANCEIRO|OPERADOR|CONSULTA
+  perfil                     String                  @default("CONSULTA") // ADMINISTRADOR|SOCIO|CONTABILIDADE|FINANCEIRO|OPERADOR|CONSULTA
+  ativo                      Boolean                 @default(true)
+  acessoGlobal               Boolean                 @default(false)
+  papelAcessoId              String?
+  permissoesExtras            String                  @default("[]")
+  permissoesNegadas           String                  @default("[]")
+  acessoVersao                Int                     @default(1)
+  sessaoVersao                Int                     @default(0)
+  papelAcesso                 PapelAcesso?            @relation(fields: [papelAcessoId], references: [id], onDelete: Restrict)
+  regrasAcesso                RegraAcesso[]
   criadoEm                   DateTime                @default(now())
   contasBancariasAtualizadas ContaBancaria[]         @relation("ContaBancariaAtualizadaPor")
   boletosCriados             Boleto[]                @relation("BoletoCriadoPor")
   pagamentosRegistrados      PagamentoRecebimento[]  @relation("PagamentoRegistradoPor")
   sincronizacoesIniciadas    SincronizacaoBancaria[] @relation("SincronizacaoIniciadaPor")
+}
+
+// Permissões e abrangência são independentes. Uma única função por usuário:
+// não se faz união cartesiana de funções de carteiras diferentes.
+// Registro das atualizações versionadas em instalações anteriores ao Prisma Migrate.
+model BrisaMigration {
+  versao String @id
+  hash String
+  aplicadoEm String
+  @@map("_BrisaMigration")
+}
+
+model PapelAcesso {
+  id          String   @id @default(uuid())
+  nome        String   @unique
+  descricao   String   @default("")
+  permissoes  String   @default("[]")
+  ativo       Boolean  @default(true)
+  versao      Int      @default(1)
+  criadoEm    DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+  usuarios    Usuario[]
+}
+
+model RegraAcesso {
+  id         String @id @default(uuid())
+  usuarioId  String
+  tipo       String // EMPREENDIMENTO|UNIDADE|LOCATARIO|PESSOA|IMOVEL_LEGADO
+  recursoId  String
+  efeito     String // PERMITIR|BLOQUEAR; bloqueio prevalece sobre herança
+  usuario    Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  @@unique([usuarioId, tipo, recursoId])
+  @@index([usuarioId, efeito])
+}
+
+model EventoAcesso {
+  id            String @id @default(uuid())
+  autorId       String
+  usuarioAlvoId String?
+  tipo          String
+  antes         String @default("{}")
+  depois        String @default("{}")
+  motivo        String
+  criadoEm      DateTime @default(now())
+  @@index([usuarioAlvoId, criadoEm])
+  @@index([criadoEm])
 }
 
 // ---------- Núcleo de locação ----------

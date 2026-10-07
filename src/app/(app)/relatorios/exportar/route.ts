@@ -7,6 +7,7 @@
  * operacionais, sem base de cálculo ou comissão. Valores em reais.
  */
 
+import { exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import ExcelJS from "exceljs";
 import { perfilAtual, perfilPodeVerComissoes } from "@/lib/autorizacao";
 import {
@@ -116,6 +117,7 @@ function planilhaResultado(wb: ExcelJS.Workbook, r: DadosResultado) {
 }
 
 export async function GET(request: Request) {
+  await exigirPermissaoAcesso("relatorios.exportar", { global: true });
   const params = new URL(request.url).searchParams;
   const tipo = params.get("tipo");
   if (tipo !== "comissao" && tipo !== "resultado") {
