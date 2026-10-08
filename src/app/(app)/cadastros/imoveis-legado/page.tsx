@@ -1,5 +1,6 @@
 import { exigirPaginaAcesso, exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
+import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 import { LinkGovernanca } from "@/components/link-governanca";
 import { Badge, Card, Dinheiro, Kpi, PageHeader, Sigilo, btnSecundario, inputBase } from "@/components/ui";
 import { IconeMenu } from "@/components/icones-menu";
@@ -277,6 +278,7 @@ export default async function PaginaImoveisLegado({
                     <div className="mt-3 flex items-center justify-between border-t border-contorno/70 pt-3">
                       <Badge cor="azul">Widesys</Badge>
                       <Link href={`/cadastros/imoveis-legado/${item.id}`} className="text-[11px] font-bold text-oliva-escura hover:underline">Ver imóvel →</Link>
+                      <ExcluirRegistroLink tipo="IMOVEL_LEGADO" origemId={item.id} />
                     </div>
                   </article>
                 );
@@ -326,6 +328,7 @@ export default async function PaginaImoveisLegado({
                         <td className="text-right">
                           <Link href={`/cadastros/imoveis-legado/${item.id}`} className="text-[11px] font-bold text-oliva-escura hover:underline">Detalhes →</Link>
                           <LinkGovernanca tipo="IMOVEL_LEGADO" id={item.id} />
+                          <ExcluirRegistroLink tipo="IMOVEL_LEGADO" origemId={item.id} />
                         </td>
                       </tr>
                     );

@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => {
   const db = {
     $transaction: vi.fn(),
     usuario: { findUnique: vi.fn() },
+    recursoGovernado: { findUnique: vi.fn() },
     configuracaoFiscal: { findUnique: vi.fn(), updateMany: vi.fn(), upsert: vi.fn() },
     notaFiscalServico: { findUnique: vi.fn(), count: vi.fn(), updateMany: vi.fn(), update: vi.fn(), create: vi.fn() },
     eventoFiscal: { create: vi.fn() },
@@ -29,6 +30,7 @@ describe("orquestração fiscal protegida", () => {
     mocks.autorizar.mockResolvedValue({ sub:"admin-ficticio" });
     mocks.db.$transaction.mockImplementation(async (callback) => callback(mocks.db));
     mocks.db.usuario.findUnique.mockResolvedValue({ perfil:"ADMINISTRADOR" });
+    mocks.db.recursoGovernado.findUnique.mockResolvedValue(null);
     mocks.db.configuracaoFiscal.findUnique.mockResolvedValue({ ...config });
     mocks.db.configuracaoFiscal.updateMany.mockResolvedValue({ count:1 });
     mocks.db.notaFiscalServico.findUnique.mockResolvedValue({ ...nota });
@@ -44,6 +46,13 @@ describe("orquestração fiscal protegida", () => {
   });
   it("exige confirmação explícita mesmo aprovado", async () => {
     await expect(transmitirNotaFiscal(nota.id,nota.payloadHash,false)).rejects.toThrow("Confirme"); expect(mocks.chamar).not.toHaveBeenCalled();
+  });
+  it("exclusão administrativa impede aprovar e transmitir sem chamar o provedor", async () => {
+    mocks.db.recursoGovernado.findUnique.mockResolvedValue({ status: "EXCLUIDO" });
+    await expect(transmitirNotaFiscal(nota.id, nota.payloadHash, true)).rejects.toThrow("excluído");
+    await expect(aprovarNotaFiscal(nota.id, nota.payloadHash, true)).rejects.toThrow("excluído");
+    expect(mocks.chamar).not.toHaveBeenCalled();
+    expect(mocks.db.notaFiscalServico.updateMany).not.toHaveBeenCalled();
   });
   it("revogação antes da reserva transacional bloqueia efeito externo", async () => {
     mocks.db.usuario.findUnique.mockResolvedValue({ perfil:"FINANCEIRO" });

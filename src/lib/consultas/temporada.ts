@@ -14,6 +14,7 @@
  */
 import { prisma } from "@/lib/db";
 import { filtroRecebimentosUnificados } from "./filtro-unificacao-nativa";
+import { filtroGovernanca } from "../governanca/filtros";
 import type {
   DespesaTemporada,
   Limpeza,
@@ -68,20 +69,20 @@ export type DadosTemporadaDoMes = {
 export async function dadosTemporadaDoMes(mes: string): Promise<DadosTemporadaDoMes> {
   const [unidades, limpezas, despesas, recebimentos] = await Promise.all([
     prisma.unidadeTemporada.findMany({
-      where: { ativo: true },
+      where: { ativo: true, ...await filtroGovernanca(prisma, "TEMPORADA_UNIDADE") },
       orderBy: { codigo: "asc" },
     }),
     prisma.limpeza.findMany({
-      where: { competencia: mes },
+      where: { competencia: mes, ...await filtroGovernanca(prisma, "TEMPORADA_LIMPEZA") },
       include: { unidadeTemporada: { select: { codigo: true } } },
     }),
     prisma.despesaTemporada.findMany({
-      where: { competencia: mes },
+      where: { competencia: mes, ...await filtroGovernanca(prisma, "TEMPORADA_DESPESA") },
       include: { unidadeTemporada: { select: { codigo: true } } },
       orderBy: [{ tipo: "asc" }],
     }),
     prisma.recebimentoTemporada.findMany({
-      where: { competencia: mes },
+      where: { competencia: mes, ...await filtroGovernanca(prisma, "TEMPORADA_RECEBIMENTO") },
       include: { unidadeTemporada: { select: { codigo: true } } },
     }),
   ]);
@@ -118,17 +119,17 @@ export async function dadosTemporadaDoPeriodo(
   const janela = { gte: meses[0], lte: meses[meses.length - 1] };
   const [limpezas, despesas, recebimentos] = await Promise.all([
     prisma.limpeza.findMany({
-      where: { competencia: janela },
+      where: { competencia: janela, ...await filtroGovernanca(prisma, "TEMPORADA_LIMPEZA") },
       include: { unidadeTemporada: { select: { codigo: true } } },
       orderBy: [{ competencia: "asc" }],
     }),
     prisma.despesaTemporada.findMany({
-      where: { competencia: janela },
+      where: { competencia: janela, ...await filtroGovernanca(prisma, "TEMPORADA_DESPESA") },
       include: { unidadeTemporada: { select: { codigo: true } } },
       orderBy: [{ competencia: "asc" }, { tipo: "asc" }],
     }),
     prisma.recebimentoTemporada.findMany({
-      where: { competencia: janela },
+      where: { competencia: janela, ...await filtroGovernanca(prisma, "TEMPORADA_RECEBIMENTO") },
       include: { unidadeTemporada: { select: { codigo: true } } },
       orderBy: [{ competencia: "asc" }],
     }),

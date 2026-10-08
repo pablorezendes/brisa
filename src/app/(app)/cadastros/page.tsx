@@ -16,7 +16,7 @@ export default async function PaginaCadastros() {
   await exigirPaginaAcesso("/cadastros");
   const perfil = await perfilAtual();
   const podeUnificar = perfil === "ADMINISTRADOR" || perfil === "FINANCEIRO";
-  const [pessoasVisiveis, imoveisVisiveis, empreendimentosVisiveis, unidadesVisiveis, locatariosVisiveis] = await Promise.all([filtroGovernanca(prisma, "PESSOA"), filtroGovernanca(prisma, "IMOVEL_LEGADO"), filtroGovernanca(prisma, "EMPREENDIMENTO"), filtroGovernanca(prisma, "UNIDADE"), filtroGovernanca(prisma, "LOCATARIO")]);
+  const [pessoasVisiveis, imoveisVisiveis, empreendimentosVisiveis, unidadesVisiveis, locatariosVisiveis, contratosVisiveis] = await Promise.all([filtroGovernanca(prisma, "PESSOA"), filtroGovernanca(prisma, "IMOVEL_LEGADO"), filtroGovernanca(prisma, "EMPREENDIMENTO"), filtroGovernanca(prisma, "UNIDADE"), filtroGovernanca(prisma, "LOCATARIO"), filtroGovernanca(prisma, "CONTRATO")]);
   const [
     pessoasLegado,
     papeisLegado,
@@ -41,8 +41,8 @@ export default async function PaginaCadastros() {
     prisma.unidade.count({ where: { ...unidadesVisiveis, ativo: true } }),
     prisma.locatario.count({ where: locatariosVisiveis }),
     prisma.locatario.count({ where: { ...locatariosVisiveis, contato: null } }),
-    prisma.contrato.count({ where: { status: "ativo" } }),
-    prisma.unidade.count({ where: { ...unidadesVisiveis, contratos: { none: { status: { not: "encerrado" } } } } }),
+    prisma.contrato.count({ where: { ...contratosVisiveis, status: "ativo" } }),
+    prisma.unidade.count({ where: { ...unidadesVisiveis, contratos: { none: { ...contratosVisiveis, status: { not: "encerrado" } } } } }),
   ]);
 
   return (

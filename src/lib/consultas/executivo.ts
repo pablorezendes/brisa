@@ -6,6 +6,7 @@
  * saldo de caixa e contratos a reajustar.
  */
 import { prisma } from "@/lib/db";
+import { filtroGovernanca } from "../governanca/filtros";
 import { filtroCaixaUnificado, filtroRecebimentosUnificados } from "./filtro-unificacao-nativa";
 import { calcularRecebimento } from "@/lib/dominio/comissao";
 import { competencia, parseCompetencia } from "@/lib/dominio/normalizacao";
@@ -125,15 +126,15 @@ export async function dadosExecutivos(mes: string): Promise<DadosExecutivo> {
       prisma.contrato.findMany({
         // regra canônica (igual à home e às consultas de período): todo
         // contrato NÃO encerrado reajusta — "acordo" também tem aniversário
-        where: { status: { not: "encerrado" }, mesReajuste: mesNum },
+        where: { status: { not: "encerrado" }, mesReajuste: mesNum, ...await filtroGovernanca(prisma, "CONTRATO") },
         include: {
           unidade: { include: { empreendimento: true } },
           locatario: true,
         },
       }),
-      prisma.recebimentoTemporada.findMany({ where: { competencia: mes } }),
-      prisma.despesaTemporada.findMany({ where: { competencia: mes } }),
-      prisma.limpeza.findMany({ where: { competencia: mes } }),
+      prisma.recebimentoTemporada.findMany({ where: { competencia: mes, ...await filtroGovernanca(prisma, "TEMPORADA_RECEBIMENTO") } }),
+      prisma.despesaTemporada.findMany({ where: { competencia: mes, ...await filtroGovernanca(prisma, "TEMPORADA_DESPESA") } }),
+      prisma.limpeza.findMany({ where: { competencia: mes, ...await filtroGovernanca(prisma, "TEMPORADA_LIMPEZA") } }),
     ]);
 
   // ---------- séries mensais do núcleo ----------

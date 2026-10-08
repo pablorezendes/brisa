@@ -18,7 +18,11 @@ export function filtrarFontesGovernadas(fontes: FonteUnificacao[], estados: { ti
   return fontes.filter(f => {
     const tipo = f.dominio === "PESSOA" ? (f.origem === "BRISA" ? "LOCATARIO" : "PESSOA")
       : f.dominio === "IMOVEL" ? (f.origem === "BRISA" ? "UNIDADE" : "IMOVEL_LEGADO")
-      : f.dominio === "MOVIMENTO" && f.origem === "BRISA" ? "CAIXA" : null;
-    return !inativos.has(`TITULO:${f.chave}`) && !(tipo && inativos.has(`${tipo}:${f.origemId}`));
+      : f.dominio === "CONTRATO" ? (f.origem === "BRISA" ? "CONTRATO" : "CONTRATO_LEGADO")
+      : f.dominio === "MOVIMENTO" ? (f.origem === "BRISA" ? "CAIXA" : "MOVIMENTO_LEGADO")
+      : f.dominio === "PARAMETRO" ? "PARAMETRO" : null;
+    // Baixas são detalhes do título: excluir o título também retira seus
+    // detalhes da operação corrente, sem apagar o evento/pagamento original.
+    return !inativos.has(`TITULO:${f.chave}`) && !(f.tituloChave && inativos.has(`TITULO:${f.tituloChave}`)) && !(tipo && inativos.has(`${tipo}:${f.origemId}`));
   });
 }

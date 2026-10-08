@@ -2,6 +2,7 @@ import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
 import { Badge, Card, Dinheiro, PageHeader, Sigilo, btnSecundario } from "@/components/ui";
 import { detalheImportacaoPlanilha } from "@/lib/consultas/importacoes-planilha";
+import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Origem da linha importada — Brisa" };
@@ -42,6 +43,7 @@ export default async function PaginaOrigemImportacao({ params }: { params: Promi
           <h2 className="text-base font-bold">Efeito desta carga</h2>
           <p className="mt-2 text-sm leading-relaxed text-tinta-suave">{registro.status === "IMPORTADO" ? "Um novo lançamento foi criado no caixa a partir desta linha." : registro.status === "JA_EXISTENTE" ? "A origem foi reconhecida como um lançamento já existente. Nenhum valor foi somado novamente." : "Esta linha permanece em conferência e não participa do saldo nem dos indicadores do caixa."}</p>
           {dados.lancamentoCaixaId && dados.mesReferencia ? <Link href={`/caixa?mes=${encodeURIComponent(dados.mesReferencia)}`} className="mt-3 inline-block text-sm font-semibold text-oliva-escura hover:underline">Consultar caixa do período →</Link> : null}
+          {dados.lancamentoCaixaId && <div className="mt-3"><ExcluirRegistroLink tipo="CAIXA" origemId={dados.lancamentoCaixaId}>Excluir lançamento vinculado</ExcluirRegistroLink><p className="mt-1 text-xs text-tinta-suave">A evidência da importação continua preservada; a decisão retira somente o lançamento da operação atual.</p></div>}
           {dados.motivos.length > 0 ? <ul className="mt-4 grid list-disc gap-2 pl-4 text-xs leading-relaxed text-tinta-suave">{dados.motivos.map(motivo => <li key={motivo}>{motivo}</li>)}</ul> : null}
         </Card>
         {dados.candidatos.length > 0 ? <Card className="p-5">

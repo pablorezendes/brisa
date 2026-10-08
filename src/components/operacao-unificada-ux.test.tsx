@@ -10,6 +10,7 @@ vi.mock("@/lib/consultas/unificacao", () => ({ listarUnificados: mocks.listar, d
 vi.mock("@/app/(app)/unificacao/actions", () => ({ sincronizarUnificacao: vi.fn(), resolverUnificacao: vi.fn() }));
 vi.mock("@/components/acao-autorizada", () => ({ AcaoAutorizada: () => null, podeExibirAcao: () => false }));
 vi.mock("@/components/link-governanca", () => ({ LinkGovernanca: () => null }));
+vi.mock("@/components/excluir-registro-link", () => ({ ExcluirRegistroLink: () => null, ExcluirUnificadoLink: ({ registro }: { registro: Pick<LinhaUnificada, "chave"> }) => <span data-revisao-exclusao={registro.chave}>Excluir da plataforma</span> }));
 vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("ACESSO_NEGADO"); } }));
 
 import { EstadoUnificado, OperacaoUnificada, OrigensUnificadas } from "./operacao-unificada";
@@ -61,6 +62,7 @@ describe("origem e situação são informações diferentes", () => {
     expect(proxima).toContain("mes=2026-06");
     expect(proxima).toContain("pagina=2");
     expect(html).toContain("estado=PENDENTE&amp;origem=PLANILHA");
+    expect(html).toContain('data-revisao-exclusao="BRISA:RECEBER:r1"');
     expect(html).not.toContain("consolidação concluída");
   });
   it("não consulta a lista quando o perfil não pode acessar dados globais", async () => {
@@ -77,6 +79,7 @@ describe("origem e situação são informações diferentes", () => {
     expect(html).toContain("Linha: 12");
     expect(html).toContain("não há decisão manual registrada");
     expect(html).toContain("origem ainda a confirmar");
+    expect(html).toContain('data-revisao-exclusao="BRISA:RECEBER:r1"');
     expect(html).not.toContain("SEGREDO_TAXA");
     expect(html).not.toContain("SEGREDO_ADMINISTRACAO");
     expect(html).not.toContain('name="justificativa"');

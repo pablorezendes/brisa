@@ -13,7 +13,7 @@
 import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import { BaseFinanceira } from "@/components/base-financeira";
 import { AcaoAutorizada } from "@/components/acao-autorizada";
-import { LinkGovernanca } from "@/components/link-governanca";
+import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 import Link from "next/link";
 import { OperacaoUnificada, podeAcessarUnificacao, type ParametrosUnificacao } from "@/components/operacao-unificada";
 import type { LancamentoCaixa } from "@prisma/client";
@@ -75,7 +75,7 @@ function CelulaAcoes({ l }: { l: LancamentoCaixa }) {
         >
           Editar
         </Link></AcaoAutorizada>
-        <LinkGovernanca tipo="CAIXA" id={l.id}>Excluir com revisão</LinkGovernanca>
+        <ExcluirRegistroLink tipo="CAIXA" origemId={l.id} />
       </span>
     </td>
   );

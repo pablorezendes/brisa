@@ -35,7 +35,7 @@ export async function consultarCarteira(db: PrismaClient, p: PoliticaAcesso, mes
   const empreendimentos = await db.empreendimento.findMany({ where: { AND: [p.global ? {} : { id: { in: [...ids(p, "EMPREENDIMENTO", "PERMITIR"), ...unidades.map(u => u.empreendimentoId)] } }, { id: { notIn: negados("EMPREENDIMENTO") } }] }, select: { id: true, nome: true }, orderBy: { nome: "asc" } });
   const pessoasBloqueadas = await db.pessoa.findMany({ where: { id: { in: negados("PESSOA") } }, select: { origem: true, legadoId: true } });
   const bloqueioPessoaExterna = new Set(pessoasBloqueadas.map(x => referencia(x.origem, x.legadoId)));
-  const contratos = await db.contrato.findMany({ where: { unidadeId: { in: unidades.map(u => u.id) }, OR: [
+  const contratos = await db.contrato.findMany({ where: { id: { notIn: inativos("CONTRATO") }, unidadeId: { in: unidades.map(u => u.id) }, OR: [
     { locatarioId: null }, { locatario: { is: { id: { notIn: negados("LOCATARIO") }, OR: [{ pessoaId: null }, { pessoaId: { notIn: negados("PESSOA") } }] } } },
   ] }, select: { id: true, unidadeId: true, locatarioId: true, status: true, inicio: true, fim: true } });
   const locatarios = await db.locatario.findMany({ where: { AND: [
@@ -46,7 +46,7 @@ export async function consultarCarteira(db: PrismaClient, p: PoliticaAcesso, mes
     id: true, origem: true, legadoId: true, nome: true, referencia: true,
   } });
   // Contratos importados só entram mediante identidade externa exata do imóvel.
-  const contratosLegados = (await db.contratoLegado.findMany({ where: { OR: imoveisLegados.map(i => ({ origem: i.origem, imovelLegadoId: i.legadoId })), statusImportacao: { notIn: ["QUARENTENA", "AUSENTE_NA_FONTE"] } }, select: {
+  const contratosLegados = (await db.contratoLegado.findMany({ where: { id: { notIn: inativos("CONTRATO_LEGADO") }, OR: imoveisLegados.map(i => ({ origem: i.origem, imovelLegadoId: i.legadoId })), statusImportacao: { notIn: ["QUARENTENA", "AUSENTE_NA_FONTE"] } }, select: {
     id: true, origem: true, legadoId: true, imovelLegadoId: true, situacaoOrigem: true, inicio: true, fim: true,
     partes: { select: { origem: true, pessoaLegadoId: true, papel: true, statusImportacao: true } },
   } })).filter(c => !c.partes.some(x => ["QUARENTENA", "AUSENTE_NA_FONTE"].includes(x.statusImportacao) || x.origem !== c.origem || (x.pessoaLegadoId && bloqueioPessoaExterna.has(referencia(x.origem, x.pessoaLegadoId)))));

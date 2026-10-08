@@ -1,8 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { PoliticaAcesso } from "./politica";
+import { podeExibirAcao } from "@/components/acao-autorizada";
 
 const mocks = vi.hoisted(() => ({
   acesso: vi.fn(), contar: vi.fn(), listar: vi.fn(), editar: vi.fn(), contrato: vi.fn(), recebimentos: vi.fn(),
+  politica: null as PoliticaAcesso | null,
 }));
 vi.mock("server-only", () => ({}));
 vi.mock("./servidor", () => ({
@@ -10,7 +13,7 @@ vi.mock("./servidor", () => ({
 }));
 vi.mock("../governanca/filtros", () => ({ filtroGovernanca: vi.fn().mockResolvedValue({}) }));
 vi.mock("../db", () => ({ prisma: { locatario: {
-  count: mocks.contar, findMany: mocks.listar, findUnique: mocks.editar,
+  count: mocks.contar, findMany: mocks.listar, findFirst: mocks.editar,
 } } }));
 vi.mock("@/app/(app)/cadastros/actions", () => ({
   atualizarLocatario: vi.fn(), criarLocatario: vi.fn(),
@@ -19,6 +22,11 @@ vi.mock("@/app/(app)/contratos/actions", () => ({ encerrarContrato: vi.fn() }));
 // LinkGovernanca é um Server Component assíncrono com política própria.
 // Este teste renderiza o DTO/HTML da página, sem transformar SSR síncrono em RSC.
 vi.mock("@/components/link-governanca", () => ({ LinkGovernanca: () => null }));
+vi.mock("@/components/excluir-registro-link", () => ({
+  // O componente RSC real possui testes próprios; o stub conserva a política da ação no HTML.
+  ExcluirRegistroLink: () => mocks.politica && podeExibirAcao(mocks.politica, { permissao: "governanca.editar", perfis: ["ADMINISTRADOR"] })
+    ? <a href="/cadastros/governanca?modo=excluir">Excluir da plataforma</a> : null,
+}));
 vi.mock("../consultas/locacao", () => ({
   contratoDetalhe: mocks.contrato, recebimentosDoContrato: mocks.recebimentos,
   formatarDataBR: (s: string) => s || "—",
@@ -37,10 +45,11 @@ const locatario = {
   bairro: "Bairro", cidade: "Cidade", uf: "GO", contratos: [], _count: { contratos: 0 },
 };
 function conceder(permissoes: string[] = []) {
-  mocks.acesso.mockResolvedValue(montarPolitica({
+  mocks.politica = montarPolitica({
     id: "u-1", perfil: "FINANCEIRO", ativo: true, acessoGlobal: true,
     permissoesExtras: JSON.stringify(permissoes), permissoesNegadas: "[]", regrasAcesso: [],
-  }));
+  });
+  mocks.acesso.mockResolvedValue(mocks.politica);
 }
 
 describe("HTML de cadastros nativos respeita PII e capacidade de edição", () => {
@@ -69,6 +78,7 @@ describe("HTML de cadastros nativos respeita PII e capacidade de edição", () =
     expect(html).not.toContain('name="cpfCnpj"');
     expect(html).not.toContain("Vincular em contrato");
     expect(html).not.toContain(">Editar<");
+    expect(html).not.toContain("Excluir da plataforma");
     expect(mocks.editar).not.toHaveBeenCalled();
   });
 
@@ -77,6 +87,7 @@ describe("HTML de cadastros nativos respeita PII e capacidade de edição", () =
     const html = renderToStaticMarkup(await PaginaLocatarios({ searchParams: Promise.resolve({ editar: "l-1" }) }));
     expect(html).not.toContain(CONTATO);
     expect(html).not.toContain('name="cpfCnpj"');
+    expect(html).not.toContain("Excluir da plataforma");
     expect(mocks.editar).not.toHaveBeenCalled();
   });
 
@@ -86,6 +97,7 @@ describe("HTML de cadastros nativos respeita PII e capacidade de edição", () =
     expect(html).toContain(CONTATO);
     expect(html).toContain("123.456.789-01");
     expect(html).not.toContain('name="cpfCnpj"');
+    expect(html).not.toContain("Excluir da plataforma");
     expect(mocks.editar).not.toHaveBeenCalled();
   });
 
@@ -104,5 +116,16 @@ describe("HTML de cadastros nativos respeita PII e capacidade de edição", () =
     expect(html).not.toContain(ENDERECO);
     expect(html).not.toContain("Confirmar encerramento");
     expect(html).not.toContain("/c-1/editar");
+    expect(html).not.toContain("Excluir da plataforma");
+  });
+
+  it("financeiro com governança e edição extras continua sem exclusão administrativa", async () => {
+    conceder(["governanca.editar", "cadastros.editar", "cadastros.sensiveis"]);
+    const html = renderToStaticMarkup(await PaginaLocatarios({ searchParams: Promise.resolve({ editar: "l-1" }) }));
+    expect(html).toContain('name="cpfCnpj"');
+    expect(html).toContain(CONTATO);
+    expect(html).not.toContain("Excluir da plataforma");
+    expect(html).not.toContain("modo=excluir");
+    expect(mocks.editar).toHaveBeenCalledWith({ where: { AND: [{ id: "l-1" }, {}] } });
   });
 });

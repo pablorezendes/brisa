@@ -25,7 +25,7 @@ import * as temporada from "@/app/(app)/temporada/actions";
 const CASOS = [
   ...Object.entries(caixa).map(([nome, executar]) => ({ nome: "caixa." + nome, permissao: nome === "excluirLancamento" ? "governanca.editar" : "caixa.editar", executar })),
   ...Object.entries(contratos).map(([nome, executar]) => ({ nome: "contratos." + nome, permissao: "contratos.editar", executar })),
-  ...Object.entries(temporada).map(([nome, executar]) => ({ nome: "temporada." + nome, permissao: "temporada.editar", executar })),
+  ...Object.entries(temporada).map(([nome, executar]) => ({ nome: "temporada." + nome, permissao: nome.startsWith("excluir") ? "governanca.editar" : "temporada.editar", executar })),
 ];
 
 describe("ações anteriormente sem autorização interna", () => {

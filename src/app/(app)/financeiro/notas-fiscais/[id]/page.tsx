@@ -1,8 +1,10 @@
 import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
+import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 import { notFound } from "next/navigation";
 import { Badge, Card, Dinheiro, PageHeader, Sigilo } from "@/components/ui";
 import { prisma } from "@/lib/db";
+import { recursoEstaAtivo } from "@/lib/governanca/filtros";
 import { exigirAcessoFiscal } from "@/lib/fiscal/acesso";
 import { ROTA_FISCAL, type PayloadFiscal } from "@/lib/fiscal/dominio";
 import { AvisoFiscal, FormularioRascunho, StatusFiscal, botaoFiscal, botaoFiscalSecundario } from "../_ui";
@@ -16,13 +18,14 @@ export default async function DetalheNotaFiscal({ params, searchParams }: { para
   await exigirAcessoFiscal();
   const { id } = await params;
   const avisos = await searchParams;
+  if (!await recursoEstaAtivo(prisma, "NFSE", id)) notFound();
   const nota = await prisma.notaFiscalServico.findUnique({ where: { id }, include: { eventos: { orderBy: { criadoEm: "desc" }, take: 60 } } });
   if (!nota) notFound();
   const p = JSON.parse(nota.payload) as PayloadFiscal;
   const corrigivel = ["RASCUNHO", "REJEITADA"].includes(nota.status);
   const consultavel = ["TRANSMITINDO", "PROCESSANDO", "INCERTA", "AUTORIZADA", "CANCELADA"].includes(nota.status);
   const identidade = <><input type="hidden" name="id" value={nota.id}/><input type="hidden" name="payloadHash" value={nota.payloadHash}/></>;
-  return <div><PageHeader titulo="Revisão e acompanhamento fiscal" descricao="Confira a prestação antes de aprovar. Referência, numeração e histórico permanecem vinculados a este documento." acoes={<Link href={ROTA_FISCAL} className={botaoFiscalSecundario}>Voltar às notas</Link>}/><AvisoFiscal {...avisos}/>
+  return <div><PageHeader titulo="Revisão e acompanhamento fiscal" descricao="Confira a prestação antes de aprovar. Referência, numeração e histórico permanecem vinculados a este documento." acoes={<><Link href={ROTA_FISCAL} className={botaoFiscalSecundario}>Voltar às notas</Link><ExcluirRegistroLink tipo="NFSE" origemId={nota.id}/></>}/><AvisoFiscal {...avisos}/>
     <Card className="mb-5 p-5 sm:p-6"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="break-all text-lg font-semibold text-tinta">{nota.origemChave}</h2><div className="flex flex-wrap gap-2"><Badge cor={nota.ambiente === "PRODUCAO" ? "verde" : "azul"}>{nota.ambiente === "PRODUCAO" ? "Produção" : "Homologação · sem validade fiscal"}</Badge><StatusFiscal status={nota.status}/></div></div>
       <dl className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">{[["Tomador",nota.tomadorNome],["CPF/CNPJ",nota.tomadorDocumento],["Competência",nota.competencia],["DPS reservada",`${p.serie_dps} / ${p.numero_dps}`]].map(([titulo,valor])=><div key={titulo}><dt className="text-[10px] font-semibold uppercase tracking-wider text-tinta-suave">{titulo}</dt><dd className="mt-1 break-words text-sm text-tinta">{valor}</dd></div>)}</dl>
       <div className="mt-5 grid gap-5 border-t border-contorno pt-5 sm:grid-cols-2"><div><p className="text-xs text-tinta-suave">Valor do serviço</p><p className="mt-2 max-w-full font-mono text-2xl"><Sigilo><Dinheiro centavos={nota.valorServico}/></Sigilo></p></div><div><p className="text-xs text-tinta-suave">Tributação revisada</p><p className="mt-2 break-words font-mono text-xs">ISS {p.codigo_tributacao_nacional_iss} · NBS {p.codigo_nbs}<br/>IBS/CBS {p.ibs_cbs_situacao_tributaria} / {p.ibs_cbs_classificacao_tributaria}</p></div></div>

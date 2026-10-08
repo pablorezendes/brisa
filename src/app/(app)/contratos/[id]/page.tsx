@@ -1,6 +1,7 @@
 import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import { pode } from "@/lib/acesso/politica";
 import Link from "next/link";
+import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 import { notFound } from "next/navigation";
 import {
   PageHeader,
@@ -59,6 +60,7 @@ export default async function PaginaDetalheContrato({
   const acesso = await acessoAtual();
   const podeVerPii = pode(acesso, "cadastros.sensiveis");
   const podeEditar = pode(acesso, "contratos.editar");
+  const podeExcluir = acesso.perfil === "ADMINISTRADOR" && pode(acesso, "governanca.editar");
   const { id } = await params;
   const sp = await searchParams;
   const contrato = await contratoDetalhe(id);
@@ -94,6 +96,7 @@ export default async function PaginaDetalheContrato({
             {podeEditar && podeVerPii ? <Link href={`/contratos/${contrato.id}/editar`} className={btnSecundario}>
               Editar
             </Link> : null}
+            <ExcluirRegistroLink tipo="CONTRATO" origemId={contrato.id} />
             {podeEditar && contrato.status !== "encerrado" ? (
               <Link
                 href={`/contratos/${contrato.id}?encerrar=1`}
@@ -217,7 +220,7 @@ export default async function PaginaDetalheContrato({
           <h2 className="text-sm font-bold">Histórico de recebimentos</h2>
         </div>
         <div className="overflow-x-auto">
-          <table className="tabela">
+          <table className="tabela tabela--acoes">
             <thead>
               <tr>
                 <th>Mês (lançamento)</th>
@@ -231,12 +234,13 @@ export default async function PaginaDetalheContrato({
                 <th>Data</th>
                 <th>Via</th>
                 <th>Observação</th>
+                {podeExcluir ? <th>Ações</th> : null}
               </tr>
             </thead>
             <tbody>
               {linhas.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-6 text-center text-tinta-suave/60">
+                  <td colSpan={podeExcluir ? 12 : 11} className="py-6 text-center text-tinta-suave/60">
                     Nenhum recebimento lançado para este contrato.
                   </td>
                 </tr>
@@ -276,6 +280,7 @@ export default async function PaginaDetalheContrato({
                     <td className="max-w-48 truncate" title={podeVerPii ? r.observacao ?? undefined : undefined}>
                       {podeVerPii ? r.observacao ?? "—" : "Acesso restrito"}
                     </td>
+                    {podeExcluir ? <td><ExcluirRegistroLink tipo="TITULO" origemId={`BRISA:RECEBER:${r.id}`} /></td> : null}
                   </tr>
                 ))
               )}
@@ -286,7 +291,7 @@ export default async function PaginaDetalheContrato({
                   <td colSpan={6}>Total do contrato</td>
                   <td className="text-right"><Dinheiro centavos={totalRecebido} /></td>
                   <td className="text-right"><Dinheiro centavos={totalSaldoAberto} destaque /></td>
-                  <td colSpan={3}></td>
+                  <td colSpan={podeExcluir ? 4 : 3}></td>
                 </tr>
               </tfoot>
             ) : null}

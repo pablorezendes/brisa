@@ -2,7 +2,8 @@ import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import "server-only";
 
 import Link from "next/link";
-import { LinkGovernanca } from "@/components/link-governanca";
+import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
+import { filtroGovernanca } from "@/lib/governanca/filtros";
 import {
   Badge,
   Card,
@@ -830,6 +831,7 @@ export default async function PaginaContasBancarias({
   const sp = await searchParams;
   const [contasConsulta, perfil] = await Promise.all([
     prisma.contaBancaria.findMany({
+      where: await filtroGovernanca(prisma, "CONTA"),
       include: {
         atualizadoPor: { select: { nome: true } },
         _count: { select: { boletos: true } },
@@ -1126,7 +1128,7 @@ export default async function PaginaContasBancarias({
                     <td className="text-right">
                       <div className="flex flex-col items-end gap-2">
                         <FormularioConta conta={conta} podeGerenciar={podeGerenciar} />
-                        <LinkGovernanca tipo="CONTA" id={conta.id} />
+                        <ExcluirRegistroLink tipo="CONTA" origemId={conta.id} />
                         {podeGerenciar &&
                         conta.integracaoHabilitada &&
                         infraestrutura.webhook &&

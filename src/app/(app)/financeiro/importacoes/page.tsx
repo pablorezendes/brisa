@@ -1,4 +1,5 @@
 import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
+import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 import Link from "next/link";
 import { Badge, Card, Dinheiro, PageHeader, Sigilo, btnSecundario, inputBase } from "@/components/ui";
 import { listarImportacoesPlanilha } from "@/lib/consultas/importacoes-planilha";
@@ -109,7 +110,7 @@ export default async function PaginaImportacoes({ searchParams }: {
           <td className="font-mono text-xs">{linha.reservado ? "—" : linha.conteudo?.data || linha.conteudo?.mesReferencia || "Não definida"}</td>
           <td><Badge cor={linha.status === "IMPORTADO" ? "verde" : linha.status === "JA_EXISTENTE" ? "azul" : "ambar"}>{ROTULOS_STATUS[linha.status] ?? "A conferir"}</Badge></td>
           <td className="text-right">{linha.reservado ? "—" : <Sigilo><Dinheiro centavos={linha.conteudo?.valor} /></Sigilo>}</td>
-          <td><Link href={`/financeiro/importacoes/${linha.id}`} prefetch={false} className="text-xs font-semibold text-oliva-escura hover:underline">Conferir origem →</Link></td>
+          <td><div className="flex flex-wrap gap-2"><Link href={`/financeiro/importacoes/${linha.id}`} prefetch={false} className="text-xs font-semibold text-oliva-escura hover:underline">Conferir origem →</Link>{!linha.reservado && linha.conteudo?.lancamentoCaixaId && <ExcluirRegistroLink tipo="CAIXA" origemId={linha.conteudo.lancamentoCaixaId}>Excluir lançamento vinculado</ExcluirRegistroLink>}</div></td>
         </tr>)}
         {dados.linhas.length === 0 ? <tr><td colSpan={6} className="py-12! text-center! text-sm text-tinta-suave">{dados.totalLotes === 0 ? "Nenhuma carga de planilha registrada ainda." : "Nenhuma linha corresponde aos filtros selecionados."}</td></tr> : null}
         </tbody>

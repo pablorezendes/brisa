@@ -6,6 +6,7 @@
  */
 
 import { prisma } from "@/lib/db";
+import { filtroGovernanca } from "../governanca/filtros";
 import {
   calcularRecebimento,
   comissaoPorEmpreendimento,
@@ -266,7 +267,7 @@ export async function contratosAReajustarDoMes(
 ): Promise<ContratoAReajustar[]> {
   const { mes: mesNum } = parseCompetencia(mes);
   const contratos = await prisma.contrato.findMany({
-    where: { mesReajuste: mesNum, status: { not: "encerrado" } },
+    where: { mesReajuste: mesNum, status: { not: "encerrado" }, ...await filtroGovernanca(prisma, "CONTRATO") },
     include: {
       unidade: { include: { empreendimento: true } },
       locatario: true,
@@ -377,7 +378,7 @@ export async function kpisDoMes(mes: string): Promise<KpisDoMes> {
       },
     }),
     prisma.contrato.count({
-      where: { mesReajuste: mesNum, status: { not: "encerrado" } },
+      where: { mesReajuste: mesNum, status: { not: "encerrado" }, ...await filtroGovernanca(prisma, "CONTRATO") },
     }),
     prisma.lancamentoCaixa.groupBy({
       by: ["centroCusto", "tipo"],
@@ -385,15 +386,15 @@ export async function kpisDoMes(mes: string): Promise<KpisDoMes> {
       _sum: { valor: true },
     }),
     prisma.recebimentoTemporada.aggregate({
-      where: { competencia: mes },
+      where: { competencia: mes, ...await filtroGovernanca(prisma, "TEMPORADA_RECEBIMENTO") },
       _sum: { valor: true },
     }),
     prisma.despesaTemporada.aggregate({
-      where: { competencia: mes },
+      where: { competencia: mes, ...await filtroGovernanca(prisma, "TEMPORADA_DESPESA") },
       _sum: { valor: true },
     }),
     prisma.limpeza.findMany({
-      where: { competencia: mes },
+      where: { competencia: mes, ...await filtroGovernanca(prisma, "TEMPORADA_LIMPEZA") },
       select: { quantidade: true, valorUnitario: true, extraPdl: true },
     }),
   ]);
@@ -496,7 +497,7 @@ export async function kpisDoPeriodo(meses: string[]): Promise<KpisDoPeriodo> {
         },
       }),
       prisma.contrato.count({
-        where: { mesReajuste: { in: mesesNum }, status: { not: "encerrado" } },
+        where: { mesReajuste: { in: mesesNum }, status: { not: "encerrado" }, ...await filtroGovernanca(prisma, "CONTRATO") },
       }),
       prisma.lancamentoCaixa.groupBy({
         by: ["centroCusto", "tipo"],
@@ -504,15 +505,15 @@ export async function kpisDoPeriodo(meses: string[]): Promise<KpisDoPeriodo> {
         _sum: { valor: true },
       }),
       prisma.recebimentoTemporada.aggregate({
-        where: { competencia: { gte: de, lte: ate } },
+        where: { competencia: { gte: de, lte: ate }, ...await filtroGovernanca(prisma, "TEMPORADA_RECEBIMENTO") },
         _sum: { valor: true },
       }),
       prisma.despesaTemporada.aggregate({
-        where: { competencia: { gte: de, lte: ate } },
+        where: { competencia: { gte: de, lte: ate }, ...await filtroGovernanca(prisma, "TEMPORADA_DESPESA") },
         _sum: { valor: true },
       }),
       prisma.limpeza.findMany({
-        where: { competencia: { gte: de, lte: ate } },
+        where: { competencia: { gte: de, lte: ate }, ...await filtroGovernanca(prisma, "TEMPORADA_LIMPEZA") },
         select: { quantidade: true, valorUnitario: true, extraPdl: true },
       }),
     ]);
@@ -657,6 +658,7 @@ export async function contratosAReajustarDoPeriodo(
     where: {
       mesReajuste: { in: numerosDeMes(meses) },
       status: { not: "encerrado" },
+      ...await filtroGovernanca(prisma, "CONTRATO"),
     },
     include: {
       unidade: { include: { empreendimento: true } },

@@ -7,7 +7,7 @@
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
 import { filtroRecebimentosUnificados } from "./filtro-unificacao-nativa";
-import { filtroGovernanca } from "../governanca/filtros";
+import { filtroGovernanca, recursoEstaAtivo } from "../governanca/filtros";
 
 // ---------- validação de formatos ----------
 
@@ -172,7 +172,7 @@ const ordemContratos = [
 /** Contratos com status "ativo" (base do "Gerar devidos do mês"). */
 export async function contratosAtivos(): Promise<ContratoComRelacoes[]> {
   return prisma.contrato.findMany({
-    where: { status: "ativo" },
+    where: { status: "ativo", ...await filtroGovernanca(prisma, "CONTRATO") },
     include: incluirRelacoesContrato,
     orderBy: ordemContratos,
   });
@@ -183,7 +183,7 @@ export async function contratosParaLista(
   incluirEncerrados: boolean
 ): Promise<ContratoComRelacoes[]> {
   return prisma.contrato.findMany({
-    where: incluirEncerrados ? undefined : { status: { not: "encerrado" } },
+    where: { ...(!incluirEncerrados ? { status: { not: "encerrado" } } : {}), ...await filtroGovernanca(prisma, "CONTRATO") },
     include: incluirRelacoesContrato,
     orderBy: ordemContratos,
   });
@@ -192,6 +192,7 @@ export async function contratosParaLista(
 /** Todos os contratos, para selects (lançamento avulso aceita até encerrados — atrasos). */
 export async function contratosParaSelecao(): Promise<ContratoComRelacoes[]> {
   return prisma.contrato.findMany({
+    where: await filtroGovernanca(prisma, "CONTRATO"),
     include: incluirRelacoesContrato,
     orderBy: ordemContratos,
   });
@@ -200,6 +201,7 @@ export async function contratosParaSelecao(): Promise<ContratoComRelacoes[]> {
 export async function contratoDetalhe(
   id: string
 ): Promise<ContratoComRelacoes | null> {
+  if (!await recursoEstaAtivo(prisma, "CONTRATO", id)) return null;
   return prisma.contrato.findUnique({
     where: { id },
     include: incluirRelacoesContrato,

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { Card, PageHeader, btnPrimario, btnSecundario, inputBase } from "@/components/ui";
 import { exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import { prisma } from "@/lib/db";
@@ -6,6 +7,7 @@ import { previaGovernanca } from "@/lib/governanca/servico";
 import { ErroGovernanca, ROTULOS_GOVERNANCA, TIPOS_GOVERNANCA, type TipoGovernanca } from "@/lib/governanca/tipos";
 import { buscarFinanceirosGovernanca, financeiroSelecionadoGovernanca, filtrosSelecaoGovernanca, type OpcaoFinanceiraGovernanca } from "@/lib/consultas/selecao-governanca";
 import { executarGovernanca } from "./actions";
+import { TelaExclusao, TelaLixeira } from "./exclusao";
 
 export const metadata = { title: "Revisar e resolver — Brisa" };
 type Opcoes = { id: string; nome: string }[];
@@ -23,11 +25,15 @@ function rotuloFinanceiro(item: OpcaoFinanceiraGovernanca) {
   return `${item.nome} · ${data} · ${item.origem}`;
 }
 const estados: Record<string, string> = { EXCLUIDO: "Excluído com histórico", DESCARTADO: "Duplicata excluída", MESCLADO: "Unido a outro cadastro", INATIVO: "Inativo", ATIVO: "Disponível" };
-type Parametros = { tipo?: string; origemId?: string; ok?: string; erro?: string; q?: string; mes?: string; buscaMantido?: string; mesMantido?: string };
+type Parametros = { tipo?: string; origemId?: string; ok?: string; erro?: string; q?: string; mes?: string; buscaMantido?: string; mesMantido?: string; modo?: string; pagina?: string };
 export default async function PaginaGovernanca({ searchParams }: { searchParams: Promise<Parametros> }) {
   const acesso = await exigirPermissaoAcesso("governanca.editar", { global: true });
   const sp = await searchParams;
+  if (sp.modo === "excluir" && (!(TIPOS_GOVERNANCA as readonly string[]).includes(sp.tipo ?? "") || !sp.origemId)) notFound();
   const tipo = (TIPOS_GOVERNANCA as readonly string[]).includes(sp.tipo ?? "") ? sp.tipo as TipoGovernanca : "LOCATARIO";
+  if (!["PESSOA", "LOCATARIO", "UNIDADE", "EMPREENDIMENTO", "IMOVEL_LEGADO", "CAIXA", "TITULO", "CONTA"].includes(tipo) && acesso.perfil !== "ADMINISTRADOR") notFound();
+  if (sp.modo === "lixeira") return <TelaLixeira pagina={sp.pagina} />;
+  if (sp.modo === "excluir" && sp.origemId) return <TelaExclusao tipo={tipo} origemId={sp.origemId} erro={sp.erro} ok={sp.ok} />;
   await exigirPermissaoAcesso(tipo === "CONTA" ? "contas.ver" : "cadastros.sensiveis", { global: true });
   const financeiro = tipo === "CAIXA" || tipo === "TITULO";
   const filtros = filtrosSelecaoGovernanca(sp.q, sp.mes);
@@ -48,7 +54,7 @@ export default async function PaginaGovernanca({ searchParams }: { searchParams:
   const mantidos = tipo === "TITULO" && previa?.status === "ATIVO" ? await buscarFinanceirosGovernanca(tipo, { q: filtrosMantido.q, mes: filtrosMantido.mes, mantido: true, excluirId: previa.origemId, dominio: selecionado?.dominio }) : null;
   const escolhas = resultados ? [...(selecionado && !resultados.itens.some(r => r.id === selecionado.id) ? [selecionado] : []), ...resultados.itens].map(r => ({ id: r.id, nome: rotuloFinanceiro(r) })) : lista;
   return <div>
-    <PageHeader titulo="Revisar e resolver" descricao="Encontre pelo nome, confira o que será mantido e confirme. Você pode organizar os dados sem perder o histórico." acoes={<><Link className={btnSecundario} href="/financeiro/dados">Organizar dados</Link><Link className={btnSecundario} href="/cadastros">Cadastros</Link></>} />
+    <PageHeader titulo="Revisar e resolver" descricao="Encontre pelo nome, confira o que será mantido e confirme. Você pode organizar os dados sem perder o histórico." acoes={<>{acesso.perfil === "ADMINISTRADOR" && <Link className={btnSecundario} href="/cadastros/governanca?modo=lixeira">Lixeira</Link>}<Link className={btnSecundario} href="/financeiro/dados">Organizar dados</Link><Link className={btnSecundario} href="/cadastros">Cadastros</Link></>} />
     {erro && <p role="alert" className="mb-4 rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-800">{erro}</p>}
     {sp.ok && <p role="status" className="mb-4 rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-800">{sp.ok}</p>}
     <Card className="mb-4 p-5"><h2 className="mb-3 font-semibold">1. Encontre o cadastro ou lançamento</h2>
@@ -59,6 +65,7 @@ export default async function PaginaGovernanca({ searchParams }: { searchParams:
     </Card>
     {previa && <Card className="mb-4 p-5"><h2 className="font-semibold">2. Confira o registro e o efeito da decisão</h2><p className="mt-2 text-base font-semibold">{previa.nome}</p><p className="mt-1 text-xs text-tinta-suave">{selecionado ? `${selecionado.origem} · ${selecionado.competencia ?? "Sem competência"} · ` : ""}{estados[previa.status] ?? previa.status}</p>
       {selecionado?.href && <Link href={selecionado.href} className="mt-2 inline-block text-xs text-azul underline">Abrir lançamento para comparar</Link>}
+      {acesso.perfil === "ADMINISTRADOR" && <div className="mt-4 rounded-xl border border-red-200 p-4"><p className="mb-3 text-sm">O administrador pode excluir da plataforma mesmo com pagamentos, conciliação ou vínculos, preservando o histórico e sem cancelar operações externas.</p><Link className={btnSecundario} href={`/cadastros/governanca?${new URLSearchParams({ modo: "excluir", tipo, origemId: previa.origemId })}`}>{previa.status === "EXCLUIDO" ? "Conferir exclusão e restaurar" : "Excluir da plataforma"}</Link></div>}
       <dl className="my-4 grid grid-cols-2 gap-3 md:grid-cols-4">{Object.entries(previa.vinculos).map(([k,n]) => <div key={k} className="rounded-lg border border-linha p-3"><dt className="text-xs text-tinta-suave">{k}</dt><dd className="text-xl font-semibold">{n}</dd></div>)}</dl>
       {mantidos && <form method="get" className="mb-4 grid gap-3 rounded-xl border border-linha p-4 sm:grid-cols-[minmax(0,1fr)_10rem_auto]"><input type="hidden" name="tipo" value={tipo} /><input type="hidden" name="origemId" value={previa.origemId} /><input type="hidden" name="q" value={filtros.q} /><input type="hidden" name="mes" value={filtros.mes} /><label className="min-w-0 text-sm">Encontre o título que ficará<input type="search" name="buscaMantido" defaultValue={filtrosMantido.q} maxLength={120} placeholder="Nome ou descrição do registro correto" className={`${inputBase} w-full`} /></label><label className="min-w-0 text-sm">Competência do mantido<input type="month" name="mesMantido" defaultValue={filtrosMantido.mes} className={`${inputBase} w-full`} /></label><button className={`${btnSecundario} self-end`}>Buscar mantido</button><p className="text-xs text-tinta-suave sm:col-span-3">{mantidos.total} título(s) disponível(is). {mantidos.total > 30 ? "Refine a busca para encontrar o título correto; exibimos até 30 por busca." : "O título mantido não é alterado nem recebe um novo pagamento."}</p></form>}
       <form action={executarGovernanca} className="space-y-4"><input type="hidden" name="tipo" value={tipo} /><input type="hidden" name="origemId" value={previa.origemId} /><input type="hidden" name="assinaturaPrevia" value={previa.assinatura} />

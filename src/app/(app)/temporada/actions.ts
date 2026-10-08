@@ -15,6 +15,8 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { parseBRL } from "@/lib/dominio/dinheiro";
 import { normalizar } from "@/lib/dominio/normalizacao";
+import { recursoEstaAtivo } from "@/lib/governanca/filtros";
+import { redirect } from "next/navigation";
 
 const RE_MES = /^\d{4}-(0[1-9]|1[0-2])$/;
 const TIPOS_DESPESA_MANUAIS = new Set(["ENERGIA", "CONDO", "IPTU", "EXTRA"]);
@@ -30,6 +32,8 @@ export async function criarUnidadeTemporada(formData: FormData): Promise<void> {
   await exigirPermissaoAcesso("temporada.editar", { global: true });
   const codigo = normalizar(texto(formData, "codigo"));
   if (!codigo || codigo.length > 30) return;
+  const existente = await prisma.unidadeTemporada.findUnique({ where: { codigo }, select: { id: true } });
+  if (existente && !await recursoEstaAtivo(prisma, "TEMPORADA_UNIDADE", existente.id)) throw new Error("Unidade excluída. Restaure o cadastro antes de reativar.");
   await prisma.unidadeTemporada.upsert({
     where: { codigo },
     update: { ativo: true },
@@ -51,7 +55,7 @@ export async function salvarLimpeza(formData: FormData): Promise<void> {
   const unidade = await prisma.unidadeTemporada.findUnique({
     where: { id: unidadeTemporadaId },
   });
-  if (!unidade) return;
+  if (!unidade || !await recursoEstaAtivo(prisma, "TEMPORADA_UNIDADE", unidade.id)) return;
 
   const qtd = Number.parseInt(texto(formData, "quantidade"), 10);
   const quantidade = Number.isInteger(qtd) && qtd > 0 ? qtd : 0;
@@ -64,6 +68,7 @@ export async function salvarLimpeza(formData: FormData): Promise<void> {
     where: { unidadeTemporadaId, competencia },
   });
   if (existente) {
+    if (!await recursoEstaAtivo(prisma, "TEMPORADA_LIMPEZA", existente.id)) throw new Error("Limpeza excluída. Restaure o lançamento para editar.");
     await prisma.limpeza.update({
       where: { id: existente.id },
       data: { quantidade, valorUnitario, extraPdl },
@@ -94,7 +99,7 @@ export async function lancarDespesa(formData: FormData): Promise<void> {
     const unidade = await prisma.unidadeTemporada.findUnique({
       where: { id: idUnidade },
     });
-    if (!unidade) return;
+    if (!unidade || !await recursoEstaAtivo(prisma, "TEMPORADA_UNIDADE", unidade.id)) return;
     unidadeTemporadaId = unidade.id;
   }
 
@@ -104,13 +109,12 @@ export async function lancarDespesa(formData: FormData): Promise<void> {
   revalidatePath("/temporada");
 }
 
-/** Exclui uma despesa (deleteMany é idempotente — não lança se já excluída). */
+/** Encaminha à confirmação auditada; nunca apaga o registro histórico. */
 export async function excluirDespesa(formData: FormData): Promise<void> {
-  await exigirPermissaoAcesso("temporada.editar", { global: true });
+  await exigirPermissaoAcesso("governanca.editar", { global: true });
   const id = texto(formData, "id");
   if (!id) return;
-  await prisma.despesaTemporada.deleteMany({ where: { id } });
-  revalidatePath("/temporada");
+  redirect(`/cadastros/governanca?${new URLSearchParams({ tipo: "TEMPORADA_DESPESA", origemId: id, modo: "excluir" })}`);
 }
 
 /** Lança recebimento de temporada (valor obrigatório; plataforma/hóspede opcionais). */
@@ -128,7 +132,7 @@ export async function lancarRecebimentoTemporada(formData: FormData): Promise<vo
     const unidade = await prisma.unidadeTemporada.findUnique({
       where: { id: idUnidade },
     });
-    if (!unidade) return;
+    if (!unidade || !await recursoEstaAtivo(prisma, "TEMPORADA_UNIDADE", unidade.id)) return;
     unidadeTemporadaId = unidade.id;
   }
 
@@ -143,9 +147,8 @@ export async function lancarRecebimentoTemporada(formData: FormData): Promise<vo
 
 /** Exclui um recebimento de temporada. */
 export async function excluirRecebimentoTemporada(formData: FormData): Promise<void> {
-  await exigirPermissaoAcesso("temporada.editar", { global: true });
+  await exigirPermissaoAcesso("governanca.editar", { global: true });
   const id = texto(formData, "id");
   if (!id) return;
-  await prisma.recebimentoTemporada.deleteMany({ where: { id } });
-  revalidatePath("/temporada");
+  redirect(`/cadastros/governanca?${new URLSearchParams({ tipo: "TEMPORADA_RECEBIMENTO", origemId: id, modo: "excluir" })}`);
 }

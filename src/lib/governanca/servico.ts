@@ -9,7 +9,7 @@ import { montarPolitica, pode, carteiraIrrestrita } from "../acesso/politica";
 
 type Tx = Prisma.TransactionClient;
 type MovimentoVinculo = { tabela: "contrato" | "boleto" | "unidade" | "recebimento" | "unidadeTemporada"; campo: "locatarioId" | "unidadeId" | "empreendimentoId"; ids: string[]; de: string; para: string };
-type Estado = { ativo?: boolean; movimentos?: MovimentoVinculo[] };
+type Estado = { ativo?: boolean; movimentos?: MovimentoVinculo[]; nome?: string; exclusaoAdministrativa?: boolean; anterior?: { status: string; destinoId: string | null; motivo: string; estadoAnterior: string } | null };
 const chave = (tipo: TipoGovernanca, origemId: string) => ({ tipo_origemId: { tipo, origemId } });
 const hash = (v: unknown) => createHash("sha256").update(JSON.stringify(v)).digest("hex");
 async function autorizar(tx: Tx, ator: AtorGovernanca, conta = false, restaurar = false) {
@@ -26,20 +26,50 @@ function motivoValido(motivo: string) {
   if (m.length < 5 || m.length > 500) throw new ErroGovernanca("MOTIVO_INVALIDO", "Explique o motivo da decisão em 5 a 500 caracteres para preservar a auditoria.");
   return m;
 }
-async function entidade(tx: Tx, tipo: TipoGovernanca, id: string): Promise<{ id: string; nome: string; ativo?: boolean }> {
+async function entidade(tx: Tx, tipo: TipoGovernanca, id: string): Promise<{ id: string; nome: string; ativo?: boolean; dadosHash?: string; referencia?: string; valor?: number | null }> {
   let r;
   if (tipo === "PESSOA") r = await tx.pessoa.findUnique({ where: { id }, select: { id: true, nome: true, ativo: true } });
   if (tipo === "LOCATARIO") r = await tx.locatario.findUnique({ where: { id }, select: { id: true, nome: true } });
   if (tipo === "UNIDADE") { const u = await tx.unidade.findUnique({ where: { id } }); if (u) r = { id: u.id, nome: u.identificacao, ativo: u.ativo }; }
   if (tipo === "EMPREENDIMENTO") r = await tx.empreendimento.findUnique({ where: { id }, select: { id: true, nome: true, ativo: true } });
   if (tipo === "IMOVEL_LEGADO") { const i = await tx.imovelLegado.findUnique({ where: { id } }); if (i) r = { id: i.id, nome: i.nome ?? i.referencia ?? i.legadoId }; }
-  if (tipo === "CAIXA") { const l = await tx.lancamentoCaixa.findUnique({ where: { id } }); if (l) r = { id: l.id, nome: l.descricao ?? "Lançamento de caixa" }; }
-  if (tipo === "CONTA") { const c = await tx.contaBancaria.findUnique({ where: { id } }); if (c) r = { id: c.id, nome: c.apelido, ativo: c.ativa }; }
-  if (tipo === "TITULO") { const f = (await carregarFontesUnificacao(tx)).find(f => f.chave === id && ["PAGAR", "RECEBER"].includes(f.dominio)); if (f) r = { id, nome: f.titulo }; }
+  if (tipo === "CAIXA") { const l = await tx.lancamentoCaixa.findUnique({ where: { id } }); if (l) r = { id: l.id, nome: l.descricao ?? "Lançamento de caixa", referencia: [l.caixaOrigem, l.data ?? l.mesReferencia, l.tipo].filter(Boolean).join(" · "), valor: l.valor, dadosHash: hash(l) }; }
+  if (tipo === "CONTA") { const c = await tx.contaBancaria.findUnique({ where: { id } }); if (c) r = { id: c.id, nome: c.apelido, ativo: c.ativa, dadosHash: hash(c) }; }
+  if (tipo === "TITULO") {
+    const [, origem, dominio, identificador] = /^(BRISA|WIDESYS):(RECEBER|PAGAR):(.+)$/.exec(id) ?? [];
+    if (origem === "BRISA" && dominio === "RECEBER") {
+      const t = await tx.recebimento.findUnique({ where: { id: identificador }, include: { contrato: { include: { locatario: true, unidade: true } } } });
+      if (t) r = { id, nome: `${t.contrato.locatario?.nome ?? "Recebimento"} · ${t.contrato.unidade.identificacao} · ${t.competencia}`, referencia: `Brisa · competência ${t.competencia} · lançamento ${t.mesLancamento}`, valor: t.valor + t.iptu + t.cond, dadosHash: hash(t) };
+    } else if (origem === "WIDESYS") {
+      const t = await tx.tituloFinanceiroLegado.findUnique({ where: { id: identificador } });
+      if (t && t.natureza === dominio) {
+        const pessoa = t.pessoaLegadoId ? await tx.pessoa.findUnique({ where: { origem_legadoId: { origem: t.origem, legadoId: t.pessoaLegadoId } }, select: { nome: true } }) : null;
+        r = { id, nome: `${pessoa?.nome ?? "Título Widesys"} · ${t.legadoId} · ${dominio === "PAGAR" ? "a pagar" : "a receber"}`, referencia: ["Widesys", t.contaBancariaRotulo, t.planoContaRotulo, t.vencimento ? `vencimento ${t.vencimento}` : t.competencia, t.numeroDocumento ? `documento ${t.numeroDocumento}` : null].filter(Boolean).join(" · "), valor: t.valorDevido ?? t.valorOriginal, dadosHash: hash(t) };
+      }
+    }
+  }
+  if (tipo === "CONTRATO") { const c = await tx.contrato.findUnique({ where: { id }, include: { unidade: true, locatario: true } }); if (c) r = { id, nome: `${c.locatario?.nome ?? "Contrato"} · ${c.unidade.identificacao}`, dadosHash: hash(c) }; }
+  if (tipo === "CONTRATO_LEGADO") { const c = await tx.contratoLegado.findUnique({ where: { id } }); if (c) r = { id, nome: `Contrato Widesys ${c.numeroContrato ?? c.legadoId}`, dadosHash: hash(c) }; }
+  if (tipo === "MOVIMENTO_LEGADO") { const m = await tx.movimentoFinanceiroLegado.findUnique({ where: { id } }); if (m) r = { id, nome: `${m.descricao ?? "Movimento Widesys"} · ${m.legadoId}`, referencia: ["Widesys", m.contaBancariaRotulo, m.dataMovimento ?? m.competencia, m.natureza].filter(Boolean).join(" · "), valor: m.valor, dadosHash: hash(m) }; }
+  if (tipo === "BOLETO") { const b = await tx.boleto.findUnique({ where: { id } }); if (b) r = { id, nome: `${b.pagadorNome} · boleto ${b.seuNumero}`, referencia: `Vencimento ${b.dataVencimento} · ${b.status}`, valor: b.valor, dadosHash: hash(b) }; }
+  if (tipo === "NFSE") { const n = await tx.notaFiscalServico.findUnique({ where: { id } }); if (n) r = { id, nome: `${n.tomadorNome} · NFS-e ${n.numero ?? n.referencia}`, referencia: `Competência ${n.competencia} · ${n.status}`, valor: n.valorServico, dadosHash: hash(n) }; }
+  if (tipo === "PARAMETRO") { const p = await tx.catalogoLegadoRegistro.findUnique({ where: { id } }); if (p) r = { id, nome: p.titulo ?? p.label ?? `Parâmetro ${p.legadoId}`, dadosHash: hash(p) }; }
+  if (tipo === "TEMPORADA_UNIDADE") { const u = await tx.unidadeTemporada.findUnique({ where: { id } }); if (u) r = { id, nome: `Unidade temporada ${u.codigo}`, dadosHash: hash(u) }; }
+  if (tipo === "TEMPORADA_RECEBIMENTO") { const t = await tx.recebimentoTemporada.findUnique({ where: { id } }); if (t) r = { id, nome: `Recebimento temporada · ${t.hospede ?? t.plataforma ?? t.competencia}`, dadosHash: hash(t) }; }
+  if (tipo === "TEMPORADA_DESPESA") { const t = await tx.despesaTemporada.findUnique({ where: { id } }); if (t) r = { id, nome: `Despesa temporada · ${t.tipo} · ${t.competencia}`, dadosHash: hash(t) }; }
+  if (tipo === "TEMPORADA_LIMPEZA") { const t = await tx.limpeza.findUnique({ where: { id } }); if (t) r = { id, nome: `Limpeza temporada · ${t.competencia}`, dadosHash: hash(t) }; }
   if (!r) throw new ErroGovernanca("NAO_ENCONTRADO", "Registro não encontrado.");
   return r;
 }
 async function vinculos(tx: Tx, tipo: TipoGovernanca, id: string): Promise<Record<string, number>> {
+  if (tipo === "TITULO" && id.startsWith("BRISA:RECEBER:")) {
+    const recebimentoId = id.slice("BRISA:RECEBER:".length);
+    return { pagamentos: await tx.pagamentoRecebimento.count({ where: { recebimentoId } }), boletos: await tx.boleto.count({ where: { recebimentoId } }) };
+  }
+  if (tipo === "CONTRATO") return { recebimentos: await tx.recebimento.count({ where: { contratoId: id } }) };
+  if (tipo === "BOLETO") return { pagamentos: await tx.pagamentoRecebimento.count({ where: { boletoId: id } }), eventosBancarios: await tx.eventoBoleto.count({ where: { boletoId: id } }) };
+  if (tipo === "NFSE") return { eventosFiscais: await tx.eventoFiscal.count({ where: { notaFiscalId: id } }) };
+  if (tipo === "TEMPORADA_UNIDADE") return { recebimentos: await tx.recebimentoTemporada.count({ where: { unidadeTemporadaId: id } }), despesas: await tx.despesaTemporada.count({ where: { unidadeTemporadaId: id } }), limpezas: await tx.limpeza.count({ where: { unidadeTemporadaId: id } }) };
   if (tipo === "PESSOA") {
     const p = await tx.pessoa.findUniqueOrThrow({ where: { id } });
     const [locatarios, contratos, titulos, imoveis] = await Promise.all([
@@ -69,7 +99,7 @@ export async function previaGovernanca(db: PrismaClient, tipo: string, origemId:
     const registro = await entidade(tx, tipo, origemId);
     const estado = await tx.recursoGovernado.findUnique({ where: chave(tipo, origemId) });
     const referencias = await vinculos(tx, tipo, origemId);
-    return { tipo, origemId, nome: registro.nome, status: estado?.status ?? (tipo === "CONTA" && registro.ativo === false ? "INATIVO" : "ATIVO"), versao: estado?.versao ?? 0, vinculos: referencias, podeExcluir: !["TITULO", "CONTA"].includes(tipo) && Object.values(referencias).every(n => n === 0), assinatura: hash({ registro, referencias, versao: estado?.versao ?? 0 }) };
+    return { tipo, origemId, nome: registro.nome, referencia: registro.referencia, valor: registro.valor, status: estado?.status ?? (tipo === "CONTA" && registro.ativo === false ? "INATIVO" : "ATIVO"), versao: estado?.versao ?? 0, vinculos: referencias, podeExcluir: ["PESSOA", "LOCATARIO", "UNIDADE", "EMPREENDIMENTO", "IMOVEL_LEGADO", "CAIXA"].includes(tipo) && Object.values(referencias).every(n => n === 0), assinatura: hash({ registro, referencias, versao: estado?.versao ?? 0 }) };
   });
 }
 async function conferirPrevia(tx: Tx, tipo: TipoGovernanca, id: string, ator: AtorGovernanca) {
@@ -94,9 +124,30 @@ async function definirAtivo(tx: Tx, tipo: TipoGovernanca, id: string, ativo: boo
   if (tipo === "UNIDADE") await tx.unidade.update({ where: { id }, data: { ativo } });
   if (tipo === "EMPREENDIMENTO") await tx.empreendimento.update({ where: { id }, data: { ativo } });
 }
+
+/** Exclusão administrativa da plataforma: overlay reversível, sem cascata ou efeito bancário/fiscal. */
+export async function excluirAdministrativamente(db: PrismaClient, tipo: string, id: string, motivo: string, ator: AtorGovernanca) {
+  validarIdentidade(tipo, id); const m = motivoValido(motivo);
+  return db.$transaction(async tx => {
+    await autorizar(tx, ator, tipo === "CONTA", true);
+    if (!ator.assinaturaPrevia) throw new ErroGovernanca("PREVIA_OBRIGATORIA", "Confira o registro antes de excluir da plataforma.");
+    const anterior = await tx.recursoGovernado.findUnique({ where: chave(tipo, id) });
+    if (anterior?.status === "EXCLUIDO") return anterior;
+    await conferirPrevia(tx, tipo, id, ator);
+    const registro = await entidade(tx, tipo, id);
+    // A decisão explícita do administrador pode retirar registros pagos,
+    // conciliados, inconsistentes ou de mês fechado. Não altera o fato original,
+    // o fechamento, a baixa, as FKs, o boleto ou a resposta fiscal.
+    const estadoAnterior = { exclusaoAdministrativa: true, nome: registro.nome, anterior: anterior ? {
+      status: anterior.status, destinoId: anterior.destinoId, motivo: anterior.motivo,
+      estadoAnterior: anterior.estadoAnterior,
+    } : tipo === "CONTA" && registro.ativo === false ? { status: "INATIVO", destinoId: null, motivo: m, estadoAnterior: "{}" } : null };
+    return registrar(tx, tipo, id, "EXCLUIDO", null, m, ator, estadoAnterior);
+  }, { timeout: 30000 });
+}
 export async function excluirRecurso(db: PrismaClient, tipo: string, id: string, motivo: string, ator: AtorGovernanca) {
   validarIdentidade(tipo, id); const m = motivoValido(motivo);
-  if (["CONTA", "TITULO"].includes(tipo)) throw new ErroGovernanca("ACAO_INVALIDA", "Use a ação específica de inativação ou descarte.");
+  if (!["PESSOA", "LOCATARIO", "UNIDADE", "EMPREENDIMENTO", "IMOVEL_LEGADO", "CAIXA"].includes(tipo)) throw new ErroGovernanca("ACAO_INVALIDA", "Use a exclusão administrativa da plataforma ou a ação específica deste registro.");
   return db.$transaction(async tx => {
     await autorizar(tx, ator);
     const atual = await tx.recursoGovernado.findUnique({ where: chave(tipo, id) });
@@ -184,6 +235,13 @@ export async function restaurarRecurso(db: PrismaClient, tipo: string, id: strin
     if (!atual || atual.status === "ATIVO") return atual;
     await entidade(tx, tipo, id);
     const estado = JSON.parse(atual.estadoAnterior) as Estado;
+    if (estado.exclusaoAdministrativa) {
+      // Retorna exatamente ao overlay anterior, sem reativar uma conta bancária,
+      // desfazer mesclagens ou habilitar emissão por efeito colateral.
+      const anterior = estado.anterior;
+      return registrar(tx, tipo, id, anterior?.status ?? "ATIVO", anterior?.destinoId ?? null, m, ator,
+        anterior ? JSON.parse(anterior.estadoAnterior) as Estado : {});
+    }
     if (tipo === "CAIXA") {
       const caixa = await tx.lancamentoCaixa.findUniqueOrThrow({ where: { id } });
       if (await tx.fechamentoMensal.count({ where: { mesLancamento: caixa.mesReferencia } })) throw new ErroGovernanca("MES_FECHADO", "O mês deste lançamento foi fechado. Reabra-o antes de restaurar.");

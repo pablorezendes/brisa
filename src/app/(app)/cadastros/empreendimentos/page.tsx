@@ -2,6 +2,7 @@ import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import { podeExibirAcao } from "@/components/acao-autorizada";
 import { filtroGovernanca } from "@/lib/governanca/filtros";
 import Link from "next/link";
+import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 import { LinkGovernanca } from "@/components/link-governanca";
 import { Card, PageHeader, btnPrimario, btnSecundario, inputBase } from "@/components/ui";
 import { prisma } from "@/lib/db";
@@ -44,8 +45,11 @@ export default async function PaginaEmpreendimentos({ searchParams }: { searchPa
   const q = (sp.q ?? "").trim();
   const status = sp.status === "inativos" ? "inativos" : sp.status === "ativos" ? "ativos" : "todos";
 
+  const [empreendimentosVisiveis, unidadesVisiveis, contratosVisiveis] = await Promise.all([
+    filtroGovernanca(prisma, "EMPREENDIMENTO"), filtroGovernanca(prisma, "UNIDADE"), filtroGovernanca(prisma, "CONTRATO"),
+  ]);
   const where = {
-    ...await filtroGovernanca(prisma, "EMPREENDIMENTO"),
+    ...empreendimentosVisiveis,
     ...(q ? { nome: { contains: normalizar(q) } } : {}),
     ...(status === "ativos" ? { ativo: true } : status === "inativos" ? { ativo: false } : {}),
   };
@@ -55,10 +59,11 @@ export default async function PaginaEmpreendimentos({ searchParams }: { searchPa
       where,
       include: {
         unidades: {
+          where: unidadesVisiveis,
           select: {
             ativo: true,
             contratos: {
-              where: { status: { not: "encerrado" } },
+              where: { ...contratosVisiveis, status: { not: "encerrado" } },
               select: { id: true },
             },
           },
@@ -67,7 +72,7 @@ export default async function PaginaEmpreendimentos({ searchParams }: { searchPa
       orderBy: { nome: "asc" },
     }),
     podeEditar && sp.editar
-      ? prisma.empreendimento.findUnique({ where: { id: sp.editar } })
+      ? prisma.empreendimento.findFirst({ where: { AND: [{ id: sp.editar }, empreendimentosVisiveis] } })
       : Promise.resolve(null),
   ]);
 
@@ -196,7 +201,7 @@ export default async function PaginaEmpreendimentos({ searchParams }: { searchPa
                         <td className="text-right font-mono tabular-nums">{empreendimento.unidades.length}</td>
                         <td className="text-right font-mono tabular-nums">{contratosAbertos}</td>
                         <td>
-                          <div className="flex justify-end gap-1.5">
+                          <div className="flex flex-wrap items-center justify-end gap-1.5">
                             {podeEditar && <Link
                               href={urlLista({ q, status, editar: empreendimento.id })}
                               className={`${btnSecundario} min-h-8 px-2.5 py-1 text-[11px]`}
@@ -204,6 +209,7 @@ export default async function PaginaEmpreendimentos({ searchParams }: { searchPa
                               Editar
                             </Link>}
                             <LinkGovernanca tipo="EMPREENDIMENTO" id={empreendimento.id} />
+                            <ExcluirRegistroLink tipo="EMPREENDIMENTO" origemId={empreendimento.id} />
                             {podeEditar && (empreendimento.ativo && unidadesAtivas > 0 ? (
                               <button
                                 type="button"

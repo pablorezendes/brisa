@@ -1,7 +1,7 @@
 import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import { BaseFinanceira } from "@/components/base-financeira";
 import { podeExibirAcao } from "@/components/acao-autorizada";
-import { LinkGovernanca } from "@/components/link-governanca";
+import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 import Link from "next/link";
 import { OperacaoUnificada, podeAcessarUnificacao, type ParametrosUnificacao } from "@/components/operacao-unificada";
 import {
@@ -528,7 +528,7 @@ export default async function PaginaRecebimentos({
                           </Link>
                         </span>
                       ) : null}
-                      {!linhaTravada(r) && <LinkGovernanca tipo="TITULO" id={`BRISA:RECEBER:${r.id}`}>Descartar duplicata</LinkGovernanca>}
+                      <ExcluirRegistroLink tipo="TITULO" origemId={`BRISA:RECEBER:${r.id}`} />
                     </td>
                   </tr>
                   );

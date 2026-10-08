@@ -1,5 +1,6 @@
 import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
+import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 import { podeAcessarUnificacao } from "@/components/operacao-unificada";
 import {
   Ajuda,
@@ -385,7 +386,7 @@ export default async function PainelCobranca({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="tabela">
+            <table className="tabela tabela--acoes">
               <thead>
                 <tr>
                   <th>
@@ -417,6 +418,7 @@ export default async function PainelCobranca({
                     Observação{" "}
                     <Ajuda dica="Anotação feita no lançamento — acordos, pagamento parcial, motivo do atraso. Ao registrar qualquer combinação com o locatário, escreva aqui para a família toda saber." />
                   </th>
+                  <th className="text-right">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -471,6 +473,9 @@ export default async function PainelCobranca({
                         <span className="text-tinta-suave/60">—</span>
                       )}
                     </td>
+                    <td className="text-right">
+                      <ExcluirRegistroLink tipo="TITULO" origemId={`BRISA:RECEBER:${p.recebimentoId}`} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -483,7 +488,7 @@ export default async function PainelCobranca({
                   <td className="text-right">
                     <Dinheiro centavos={vm.pendentesValor} destaque />
                   </td>
-                  <td colSpan={3} />
+                  <td colSpan={4} />
                 </tr>
               </tfoot>
             </table>

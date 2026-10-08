@@ -1,5 +1,6 @@
 import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
+import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 import {
   Card,
   Dinheiro,
@@ -125,14 +126,16 @@ export default async function PaginaConciliacao({
                       <td>{pagamento.conciliadoEm ? <Selo nivel="otimo">conciliado</Selo> : <div><Selo nivel="critico">pendente</Selo><div className="mt-1 text-[9px] text-tinta-suave">{MOTIVOS[pagamento.motivoPendencia ?? ""] ?? pagamento.motivoPendencia ?? "Revisão necessária"}</div></div>}</td>
                       <td><div className="text-[10px] font-semibold text-tinta">{pagamento.origem === "SICOOB" ? "Sicoob · LIQUI tipo 5" : pagamento.origem.toLowerCase()}</div><div className="mt-0.5 text-[9px] text-tinta-suave">{dataHora(pagamento.criadoEm)}</div></td>
                       <td className="text-right">
-                        {!pagamento.conciliadoEm && pagamento.origem === "SICOOB" ? (
+                        <div className="flex flex-col items-end gap-2">{!pagamento.conciliadoEm && pagamento.origem === "SICOOB" ? (
                           <form action={reprocessarConciliacao}>
                             <input type="hidden" name="pagamentoId" value={pagamento.id} />
                             <button type="submit" className={`${btnSecundario} min-h-8 px-2.5 py-1 text-[10px]`}>
                               Reavaliar
                             </button>
                           </form>
-                        ) : <span className="text-[10px] text-tinta-suave">—</span>}
+                        ) : null}
+                        <ExcluirRegistroLink tipo="TITULO" origemId={`BRISA:RECEBER:${pagamento.recebimentoId}`}>Excluir lançamento vinculado</ExcluirRegistroLink>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -142,6 +145,8 @@ export default async function PaginaConciliacao({
           </div>
         )}
       </Card>
+
+      <p className="mb-5 text-xs leading-relaxed text-tinta-suave">Excluir o lançamento vinculado retira o título financeiro da plataforma, com histórico. Isso não estorna o pagamento no banco nem desfaz a liquidação externa.</p>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
         <Card>

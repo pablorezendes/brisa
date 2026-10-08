@@ -67,6 +67,32 @@ Abra https://brisa.tescod.com — o app pede o login criado no primeiro acesso.
 
 ## 4) Atualizações futuras
 
+### Exclusão administrativa da plataforma (07/10/2026)
+
+As listas de cadastros, contratos, títulos, movimentos, cobrança, boletos,
+contas, NFS-e e temporada oferecem **Excluir da plataforma** ao administrador.
+A confirmação exige motivo e ciência do efeito local. É possível retirar
+registros pagos, conciliados, inconsistentes ou de meses fechados. A decisão é
+uma exclusão lógica em `RecursoGovernado`, com trilha de auditoria e restauração
+em **Organizar dados → Ver lixeira**. Nenhum schema ou seed novo é necessário.
+
+A exclusão não apaga fatos originais, não estorna pagamentos, não cancela boletos
+no Sicoob nem notas fiscais no município/provedor. Não libera a chave de
+idempotência para emitir novamente. Excluir um cadastro/contrato não exclui suas
+cobranças em cascata. Baixas são detalhes de pagamento: a ação nessas linhas
+identifica explicitamente o **título vinculado**, não um estorno isolado.
+
+As consultas operacionais respeitam exclusões atuais também em mês fechado;
+o snapshot do fechamento permanece intacto e pode divergir da visão corrente.
+Novas execuções/emissões de recursos excluídos são impedidas. Retornos bancários
+continuam preservados para auditoria; uma liquidação nova de boleto/título
+excluído fica para revisão, sem recriar o lançamento ou aplicar nova baixa.
+Reimportar/atualizar a mesma identidade não remove sua exclusão.
+
+Históricos de importação, eventos bancários/fiscais e auditoria não são uma
+segunda operação financeira e continuam preservados. A lixeira não tem ação
+de apagar definitivamente. Nenhuma exclusão é executada na atualização do app.
+
 ### Organizar dados e diagnosticar Widesys (07/10/2026)
 
 `Financeiro → Organizar dados` separa origem (Excel/Widesys/Brisa sem prova de
@@ -79,7 +105,8 @@ identificada nas telas, e não devem ser somados à visão unificada.
 Importações parciais e análises automáticas não significam conciliação financeira
 concluída. Linhas Excel pendentes não participam do caixa; sua aprovação individual
 ainda não está implementada. Exclusões de registros operacionais continuam com
-histórico, motivo e proteção de pagamentos/meses fechados. Nenhuma carga ou exclusão
+histórico e motivo; a exclusão administrativa acima permite revisar também pagos
+e meses fechados. Nenhuma carga ou exclusão
 é executada ao abrir a central.
 
 Após atualizar o código e reconstruir o container, pode testar a conexão do próprio

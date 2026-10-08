@@ -6,7 +6,7 @@
  * no servidor antes de tocar no banco (a UI apenas esconde os formulários).
  */
 import { exigirPermissaoAcesso } from "@/lib/acesso/servidor";
-import { idsGovernadosInativos, recursoEstaAtivo } from "@/lib/governanca/filtros";
+import { filtroGovernanca, idsGovernadosInativos, recursoEstaAtivo } from "@/lib/governanca/filtros";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
@@ -126,7 +126,7 @@ export async function gerarDevidosDoMes(formData: FormData): Promise<void> {
         throw new ErroProtecaoUnificacao("O mês foi fechado. Reabra-o antes de gerar cobranças.");
       }
       const [contratos, existentes, protecao] = await Promise.all([
-        tx.contrato.findMany({ where: { status: "ativo" }, include: { unidade: true } }),
+        tx.contrato.findMany({ where: { status: "ativo", ...await filtroGovernanca(tx, "CONTRATO") }, include: { unidade: true } }),
         tx.recebimento.findMany({ where: { OR: [{ mesLancamento: mes }, { competencia: mes }] }, select: { contratoId: true } }),
         carregarProtecaoFinanceira(tx),
       ]);
@@ -280,6 +280,7 @@ export async function criarLancamentoAvulso(formData: FormData): Promise<void> {
   await exigirMesAberto(mes);
 
   const contratoId = campo(formData, "contratoId");
+  if (contratoId && !await recursoEstaAtivo(prisma, "CONTRATO", contratoId)) voltar(mes, { erro: "Contrato excluído. Restaure-o antes de criar lançamentos." });
   const contrato = contratoId
     ? await prisma.contrato.findUnique({
         where: { id: contratoId },

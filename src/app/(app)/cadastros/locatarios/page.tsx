@@ -2,6 +2,7 @@ import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import { pode } from "@/lib/acesso/politica";
 import { filtroGovernanca } from "@/lib/governanca/filtros";
 import Link from "next/link";
+import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 import { LinkGovernanca } from "@/components/link-governanca";
 import type { Prisma } from "@prisma/client";
 import { Badge, Card, PageHeader, Sigilo, btnPrimario, btnSecundario, inputBase } from "@/components/ui";
@@ -72,7 +73,9 @@ export default async function PaginaLocatarios({ searchParams }: { searchParams:
       ? "sem-contrato"
       : "todos";
 
-  const where: Prisma.LocatarioWhereInput = await filtroGovernanca(prisma, "LOCATARIO");
+  const locatariosVisiveis = await filtroGovernanca(prisma, "LOCATARIO");
+  const contratosVisiveis = await filtroGovernanca(prisma, "CONTRATO");
+  const where: Prisma.LocatarioWhereInput = { ...locatariosVisiveis };
   if (q) {
     const termo = normalizar(q);
     const documento = normalizarCpfCnpj(q);
@@ -86,7 +89,7 @@ export default async function PaginaLocatarios({ searchParams }: { searchParams:
       ] : []),
     ];
   }
-  const contratoAberto: Prisma.ContratoWhereInput = { status: { not: "encerrado" } };
+  const contratoAberto: Prisma.ContratoWhereInput = { ...contratosVisiveis, status: { not: "encerrado" } };
   if (vinculo === "com-contrato") where.contratos = { some: contratoAberto };
   if (vinculo === "sem-contrato") where.contratos = { none: contratoAberto };
 
@@ -105,7 +108,7 @@ export default async function PaginaLocatarios({ searchParams }: { searchParams:
       take: porPagina,
       include: {
         contratos: {
-          where: { status: { not: "encerrado" } },
+          where: contratoAberto,
           select: {
             id: true,
             status: true,
@@ -118,11 +121,11 @@ export default async function PaginaLocatarios({ searchParams }: { searchParams:
           },
           orderBy: [{ status: "desc" }, { id: "asc" }],
         },
-        _count: { select: { contratos: true } },
+        _count: { select: { contratos: { where: contratosVisiveis } } },
       },
       orderBy: { nomeNorm: "asc" },
     }),
-    podeEditar && sp.editar ? prisma.locatario.findUnique({ where: { id: sp.editar } }) : Promise.resolve(null),
+    podeEditar && sp.editar ? prisma.locatario.findFirst({ where: { AND: [{ id: sp.editar }, locatariosVisiveis] } }) : Promise.resolve(null),
   ]);
 
   return (
@@ -356,6 +359,7 @@ export default async function PaginaLocatarios({ searchParams }: { searchParams:
                         <td className="text-right font-mono tabular-nums">{locatario._count.contratos}</td>
                         <td className="text-right">
                           <LinkGovernanca tipo="LOCATARIO" id={locatario.id} />
+                          <ExcluirRegistroLink tipo="LOCATARIO" origemId={locatario.id} />
                           {podeEditar ? <Link
                             href={urlLista({
                               q,

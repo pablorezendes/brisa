@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { lerOperacaoUnificada } from "../unificacao/servico";
+import { recursoEstaAtivo } from "../governanca/filtros";
 import { normalizar } from "../dominio/normalizacao";
 import {
   CONFIG_COBRANCA_PADRAO, validarConfigCobranca, normalizarEmail, normalizarTelefoneBR,
@@ -264,6 +265,13 @@ export async function processarComunicacoes(db: PrismaClient, opcoes: { agora?: 
         const autorizado = await tx.contatoCobranca.findUnique({ where: { id: m.contatoId } });
         const operador = await tx.usuario.findUnique({ where: { id: m.criadoPor }, select: { perfil: true } });
         const cfg = vigente ? configSalva(vigente.dados) : null;
+        // Revalida exclusão na mesma transação da reserva. A prévia fora da
+        // transação não pode autorizar um envio após a retirada administrativa.
+        const fontesAtivas = await Promise.all(titulo!.fontes.map(chave => recursoEstaAtivo(tx, "TITULO", chave)));
+        if (fontesAtivas.some(ativo => !ativo)) {
+          await tx.mensagemCobranca.updateMany({ where: { id: m.id, status: "AGENDADA" }, data: { status: "CANCELADA", erroCodigo: "REGISTRO_EXCLUIDO" } });
+          return false;
+        }
         // Cancelar/revogar antes deste ponto impede o envio; após ENVIANDO pode haver pedido em trânsito.
         const bloqueio = vigente?.versao !== m.configVersao ? "CONFIG_ALTERADA" : !autorizado?.autorizado || autorizado.destino !== m.destino || autorizado.pessoaChave !== m.pessoaChave ? "CONTATO_REVOGADO" : operador?.perfil !== "ADMINISTRADOR" ? "PERMISSAO_REVOGADA" : !cfg || !(m.canal === "EMAIL" ? cfg.emailAtivo : cfg.whatsappAtivo) || (m.etapa !== "MANUAL" && !cfg.automacaoAtiva) ? "CANAL_OU_AUTOMACAO_PAUSADA" : null;
         if (bloqueio) { await tx.mensagemCobranca.updateMany({ where: { id: m.id, status: "AGENDADA" }, data: { status: "CANCELADA", erroCodigo: bloqueio } }); return false; }

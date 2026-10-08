@@ -31,7 +31,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   vi.stubEnv("AUTOMACOES_CHAVE", Buffer.alloc(32, 7).toString("base64"));
   vi.stubEnv("AUTOMACOES_ENVIO_HABILITADO", "1");
-  for (const tabela of ["EventoComunicacao", "RetornoComunicacao", "MensagemCobranca", "ContatoCobranca", "ConfiguracaoComunicacao", "TravaAutomacao", "Usuario"]) await db.$executeRawUnsafe(`DELETE FROM "${tabela}"`);
+  for (const tabela of ["EventoGovernanca", "RecursoGovernado", "EventoComunicacao", "RetornoComunicacao", "MensagemCobranca", "ContatoCobranca", "ConfiguracaoComunicacao", "TravaAutomacao", "Usuario"]) await db.$executeRawUnsafe(`DELETE FROM "${tabela}"`);
   await db.usuario.create({ data: { id: "admin-teste", nome: "Admin teste", usuario: "admin-teste", senhaHash: "não autentica", perfil: "ADMINISTRADOR" } });
   linhas = [structuredClone(pessoa), structuredClone(titulo)];
   vi.mocked(lerOperacaoUnificada).mockImplementation(async () => ({ linhas, fontes: linhas, decisoes: [] }));
@@ -53,6 +53,14 @@ async function preparar(canal: "EMAIL" | "WHATSAPP" = "EMAIL") {
 const email = () => vi.fn(async () => ({ status: "ACEITO" as const, codigo: "ACEITO" as const, provedorId: "envio-ficticio" }));
 
 describe("outbox de cobrança em banco isolado", () => {
+  it("exclusão após a prévia cancela a reserva e não chama o remetente", async () => {
+    const mensagem = await preparar();
+    await db.recursoGovernado.create({ data: { tipo: "TITULO", origemId: titulo.chave, status: "EXCLUIDO", motivo: "Duplicata de teste", autorId: "admin-teste" } });
+    const enviar = email();
+    await processarComunicacoes(db, { agora, email: enviar });
+    expect(enviar).not.toHaveBeenCalled();
+    expect(await db.mensagemCobranca.findUnique({ where: { id: mensagem.id }, select: { status: true, erroCodigo: true } })).toEqual({ status: "CANCELADA", erroCodigo: "REGISTRO_EXCLUIDO" });
+  });
   it("cifra token, protege edição concorrente e não admite operador", async () => {
     await salvarConfigComunicacoes(db, base, 0, { emailToken: "token-ficticio-de-testes" }, "admin-teste");
     const c = await db.configuracaoComunicacao.findUniqueOrThrow({ where: { id: "cobranca" } });

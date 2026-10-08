@@ -1,5 +1,6 @@
 import { exigirPaginaAcesso, exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
+import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 import { LinkGovernanca } from "@/components/link-governanca";
 import { OperacaoUnificada, podeAcessarUnificacao } from "@/components/operacao-unificada";
 import { Badge, Card, Kpi, PageHeader, Sigilo, btnSecundario, inputBase } from "@/components/ui";
@@ -272,6 +273,7 @@ export default async function PaginaPessoas({
                     <div className="mt-3 flex items-center justify-between border-t border-contorno/70 pt-3">
                       <Badge cor="azul">Widesys</Badge>
                       <Link href={`/cadastros/pessoas/${item.id}`} className="text-[11px] font-bold text-oliva-escura hover:underline">Ver cadastro →</Link>
+                      <ExcluirRegistroLink tipo="PESSOA" origemId={item.id} />
                     </div>
                   </article>
                 );
@@ -320,6 +322,7 @@ export default async function PaginaPessoas({
                         <td className="text-right">
                           <Link href={`/cadastros/pessoas/${item.id}`} className="text-[11px] font-bold text-oliva-escura hover:underline">Detalhes →</Link>
                           <LinkGovernanca tipo="PESSOA" id={item.id} />
+                          <ExcluirRegistroLink tipo="PESSOA" origemId={item.id} />
                         </td>
                       </tr>
                     );

@@ -131,6 +131,7 @@ export async function criarContrato(formData: FormData): Promise<void> {
 export async function atualizarContrato(formData: FormData): Promise<void> {
   await exigirPermissaoAcesso("contratos.editar", { global: true });
   const id = campo(formData, "id");
+  if (id && !await recursoEstaAtivo(prisma, "CONTRATO", id)) redirect("/contratos?erro=" + encodeURIComponent("Contrato excluído. Restaure-o antes de editar."));
   const existente = id
     ? await prisma.contrato.findUnique({ where: { id } })
     : null;
@@ -156,6 +157,7 @@ export async function atualizarContrato(formData: FormData): Promise<void> {
 export async function encerrarContrato(formData: FormData): Promise<void> {
   await exigirPermissaoAcesso("contratos.editar", { global: true });
   const id = campo(formData, "id");
+  if (id && !await recursoEstaAtivo(prisma, "CONTRATO", id)) redirect("/contratos?erro=" + encodeURIComponent("Contrato excluído. Restaure-o antes de alterar."));
   const existente = id
     ? await prisma.contrato.findUnique({ where: { id } })
     : null;

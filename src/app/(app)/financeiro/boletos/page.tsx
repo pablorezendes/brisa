@@ -1,6 +1,7 @@
 import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import { podeExibirAcao } from "@/components/acao-autorizada";
 import Link from "next/link";
+import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 import {
   Card,
   Dinheiro,
@@ -298,13 +299,15 @@ export default async function PaginaBoletos({
                           ) : "—"}
                         </td>
                         <td className="text-right">
-                          {podeEmitir ? (
+                          <div className="flex flex-col items-end gap-2">{podeEmitir ? (
                             <form id={`emitir-${recebimento.id}`} action={emitirBoleto}>
                               <input type="hidden" name="recebimentoId" value={recebimento.id} />
                               <input type="hidden" name="mes" value={mes} />
                               <button type="submit" className={btnPrimario}>Emitir boleto</button>
                             </form>
-                          ) : "—"}
+                          ) : null}
+                          <ExcluirRegistroLink tipo="TITULO" origemId={`BRISA:RECEBER:${recebimento.id}`} />
+                          </div>
                         </td>
                       </tr>
                     );
@@ -382,7 +385,7 @@ export default async function PaginaBoletos({
                         {boleto.mensagemErro ? <div className="mt-1 max-w-60 text-[9px] leading-snug text-erro">{boleto.mensagemErro}</div> : null}
                       </td>
                       <td className="text-right">
-                        <span className="inline-flex gap-2">
+                        <div className="flex flex-wrap items-center justify-end gap-2">
                           <Link href={`/financeiro/boletos?mes=${mes}&filtro=${filtro}&boleto=${boleto.id}`} className={`${btnSecundario} min-h-8 px-2.5 py-1 text-[10px]`}>Detalhes</Link>
                           {permiteSincronizar && boleto.nossoNumero && !["BAIXADO_SEM_PAGAMENTO", "ESTORNADO"].includes(boleto.status) ? (
                             <form action={sincronizarBoleto}>
@@ -391,7 +394,8 @@ export default async function PaginaBoletos({
                               <button type="submit" className={`${btnSecundario} min-h-8 px-2.5 py-1 text-[10px]`}>Consultar</button>
                             </form>
                           ) : null}
-                        </span>
+                          <ExcluirRegistroLink tipo="BOLETO" origemId={boleto.id} />
+                        </div>
                       </td>
                     </tr>
                   );
@@ -401,6 +405,8 @@ export default async function PaginaBoletos({
           </div>
         )}
       </Card>
+
+      <p className="mt-3 text-xs leading-relaxed text-tinta-suave">Excluir da plataforma preserva o histórico e não cancela a cobrança no banco. Na fila de emissão, a exclusão é do lançamento financeiro; nos títulos bancários, é do boleto local.</p>
 
       {selecionado ? (
         <Card className="mt-5 p-5">

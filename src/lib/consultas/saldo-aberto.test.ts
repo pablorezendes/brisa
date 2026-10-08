@@ -23,6 +23,7 @@ vi.mock("@/lib/db", () => ({
     },
     despesaTemporada: { aggregate: mocks.despesaTemporadaAggregate },
     limpeza: { findMany: mocks.limpezaFindMany },
+    recursoGovernado: { findMany: async () => [], findUnique: async () => null },
   },
 }));
 

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { descartarTitulo, excluirRecurso, inativarConta, mesclarRecursos, previaGovernanca, restaurarRecurso } from "./servico";
+import { descartarTitulo, excluirAdministrativamente, excluirRecurso, inativarConta, mesclarRecursos, previaGovernanca, restaurarRecurso } from "./servico";
 import { filtroGovernanca, filtrarFontesGovernadas } from "./filtros";
 import { carregarFontesUnificacao } from "../unificacao/fontes";
 import { lerOperacaoUnificada } from "../unificacao/servico";
@@ -33,6 +33,213 @@ beforeEach(async () => {
   await db.empreendimento.createMany({ data: [{ id: "e1", nome: "Origem" }, { id: "e2", nome: "Destino" }] });
   await db.unidade.createMany({ data: [{ id: "u1", empreendimentoId: "e1", identificacao: "1" }, { id: "u2", empreendimentoId: "e1", identificacao: "2" }] });
   await db.locatario.createMany({ data: [{ id: "l1", nome: "Pessoa origem", nomeNorm: "PESSOA ORIGEM" }, { id: "l2", nome: "Pessoa destino", nomeNorm: "PESSOA DESTINO" }] });
+});
+
+async function atorConferido(tipo: string, id: string) {
+  const previa = await previaGovernanca(db, tipo, id);
+  return { ...ator, assinaturaPrevia: previa.assinatura };
+}
+
+async function operacaoBancariaSintetica(status = "LIQUIDADO") {
+  await recebimentos();
+  await db.recebimento.update({ where: { id: "r1" }, data: { recebido: 10000, dataPagamento: "2026-06-10", via: "BOLETO" } });
+  await db.contaBancaria.create({ data: { id: "b1", codigoBanco: "756", nomeBanco: "Banco sintético", agencia: "1", numero: "1", apelido: "Conta sintética", ativa: true, padrao: true, integracaoHabilitada: true, boletosHabilitados: true } });
+  await db.boleto.create({ data: {
+    id: "bol1", contaBancariaId: "b1", recebimentoId: "r1", locatarioId: "l1", chaveIdempotencia: "bol1", seuNumero: "bol1", nossoNumero: "1",
+    ambienteBanco: "SANDBOX", numeroClienteBanco: 1, numeroContaBanco: 1, codigoModalidadeBanco: 1, especieDocumentoBanco: "DS",
+    status, conciliacaoStatus: "CONCILIADO", valor: 10000, valorPago: 10000, dataVencimento: "2026-06-01", pagadorNome: "Pagador sintético", pagadorCpfCnpj: "00000000000",
+  } });
+  await db.eventoBoleto.create({ data: { id: "ev1", boletoId: "bol1", chaveEvento: "evento-1", origem: "MOVIMENTACAO", tipo: "LIQUIDACAO_CONFIRMADA", payloadHash: "sintetico", statusProcessamento: "PROCESSADO" } });
+  await db.pagamentoRecebimento.create({ data: { id: "pg1", recebimentoId: "r1", boletoId: "bol1", eventoBoletoId: "ev1", contaBancariaId: "b1", chaveIdempotencia: "pg1", valor: 10000, dataPagamento: "2026-06-10", status: "CONFIRMADO", conciliadoEm: new Date("2026-06-10T12:00:00Z") } });
+  await db.fechamentoMensal.create({ data: { mesLancamento: "2026-06", comissaoTotal: 1700, detalhe: '[{"empreendimento":"e1","valor":1700}]', unificacaoExcluidos: "[]" } });
+}
+
+async function retratoFatosFinanceiros() {
+  return {
+    recebimentos: await db.recebimento.findMany({ orderBy: { id: "asc" } }),
+    pagamentos: await db.pagamentoRecebimento.findMany({ orderBy: { id: "asc" } }),
+    boletos: await db.boleto.findMany({ orderBy: { id: "asc" } }),
+    eventos: await db.eventoBoleto.findMany({ orderBy: { id: "asc" } }),
+    contas: await db.contaBancaria.findMany({ orderBy: { id: "asc" } }),
+    contratos: await db.contrato.findMany({ orderBy: { id: "asc" } }),
+    fechamentos: await db.fechamentoMensal.findMany({ orderBy: { id: "asc" } }),
+  };
+}
+
+describe("exclusão administrativa explícita e reversível", () => {
+  it("retira título pago e conciliado de mês fechado sem modificar fatos financeiros ou vínculos", async () => {
+    await operacaoBancariaSintetica();
+    const antes = await retratoFatosFinanceiros();
+    const conferido = await atorConferido("TITULO", "BRISA:RECEBER:r1");
+    await excluirAdministrativamente(db, "TITULO", "BRISA:RECEBER:r1", "Administrador conferiu duplicidade", conferido);
+    expect(await retratoFatosFinanceiros()).toEqual(antes);
+    expect(await db.recursoGovernado.findFirstOrThrow()).toMatchObject({ tipo: "TITULO", origemId: "BRISA:RECEBER:r1", status: "EXCLUIDO" });
+    const linhas = (await lerOperacaoUnificada(db)).linhas;
+    expect(linhas.some(l => l.chave === "BRISA:RECEBER:r1")).toBe(false);
+    expect(linhas.some(l => l.chave === "BRISA:RECEBER:r2")).toBe(true);
+    await restaurarRecurso(db, "TITULO", "BRISA:RECEBER:r1", "Revisão da exclusão administrativa", await atorConferido("TITULO", "BRISA:RECEBER:r1"));
+    expect(await retratoFatosFinanceiros()).toEqual(antes);
+    expect((await lerOperacaoUnificada(db)).linhas.some(l => l.chave === "BRISA:RECEBER:r1")).toBe(true);
+    expect(await db.eventoGovernanca.findMany({ orderBy: { criadoEm: "asc" } })).toEqual([
+      expect.objectContaining({ acao: "EXCLUIDO", estadoAnterior: "ATIVO", estadoNovo: "EXCLUIDO", autorId: ator.id }),
+      expect.objectContaining({ acao: "ATIVO", estadoAnterior: "EXCLUIDO", estadoNovo: "ATIVO", autorId: ator.id }),
+    ]);
+  });
+
+  it("exclui e restaura caixa de mês fechado preservando valores e snapshot de fechamento", async () => {
+    await db.lancamentoCaixa.create({ data: { id: "cx", mesReferencia: "2026-06", centroCusto: "GERAL", tipo: "ENTRADA", valor: 19999, descricao: "Importação Excel sintética", caixaOrigem: "planilha:Plan4" } });
+    await db.fechamentoMensal.create({ data: { mesLancamento: "2026-06", comissaoTotal: 450, detalhe: '[{"total":450}]' } });
+    const caixa = await db.lancamentoCaixa.findUniqueOrThrow({ where: { id: "cx" } });
+    const fechamento = await db.fechamentoMensal.findMany();
+    await excluirAdministrativamente(db, "CAIXA", "cx", "Revisão de lançamento importado", await atorConferido("CAIXA", "cx"));
+    expect(await filtroGovernanca(db, "CAIXA")).toEqual({ id: { notIn: ["cx"] } });
+    await restaurarRecurso(db, "CAIXA", "cx", "Restaurar lançamento confirmado", await atorConferido("CAIXA", "cx"));
+    expect(await filtroGovernanca(db, "CAIXA")).toEqual({});
+    expect(await db.lancamentoCaixa.findUniqueOrThrow({ where: { id: "cx" } })).toEqual(caixa);
+    expect(await db.fechamentoMensal.findMany()).toEqual(fechamento);
+  });
+
+  it("permite retirar título Widesys em quarentena sem apagar origem, erro ou trilha de importação", async () => {
+    const capturadoEm = new Date("2026-09-22T15:00:00Z");
+    await db.importacaoLegadoLote.create({ data: { id: "lote", origem: "WIDESYS", capturaId: "captura-sintetica", manifestoHash: "hash", capturadoEm, status: "QUARENTENA" } });
+    await db.importacaoLegadoItem.create({ data: { id: "item", loteId: "lote", origem: "WIDESYS", escopo: "TITULO_PAGAR", legadoId: "99", snapshotHash: "hash", acao: "QUARENTENA", status: "QUARENTENA", quarentenaMotivo: "DATA_INVALIDA" } });
+    await db.pessoa.create({ data: { legadoId: "pessoa-teste", nome: "Fornecedor sintético", nomeNorm: "FORNECEDOR SINTETICO", snapshot: "{}", snapshotHash: "sintetico" } });
+    await db.tituloFinanceiroLegado.create({ data: { id: "wt", escopo: "TITULO_PAGAR", legadoId: "99", ultimoItemId: "item", natureza: "PAGAR", pessoaLegadoId: "pessoa-teste", competencia: "2026-06", contaBancariaRotulo: "Conta sintética", situacaoNormalizada: "PAGO", statusImportacao: "QUARENTENA", quarentenaMotivo: "DATA_INVALIDA", valorDevido: 13000, valorPago: 13000, capturadoEm, snapshot: '{"fonte":"sintetica"}', snapshotHash: "hash" } });
+    expect(await previaGovernanca(db, "TITULO", "WIDESYS:PAGAR:wt")).toMatchObject({ nome: "Fornecedor sintético · 99 · a pagar", referencia: "Widesys · Conta sintética · 2026-06", valor: 13000 });
+    const antes = await db.tituloFinanceiroLegado.findUniqueOrThrow({ where: { id: "wt" } });
+    const item = await db.importacaoLegadoItem.findMany();
+    await excluirAdministrativamente(db, "TITULO", "WIDESYS:PAGAR:wt", "Revisão explícita da inconsistência", await atorConferido("TITULO", "WIDESYS:PAGAR:wt"));
+    expect((await lerOperacaoUnificada(db)).linhas.some(l => l.chave === "WIDESYS:PAGAR:wt")).toBe(false);
+    expect(await db.tituloFinanceiroLegado.findUniqueOrThrow({ where: { id: "wt" } })).toEqual(antes);
+    expect(await db.importacaoLegadoItem.findMany()).toEqual(item);
+    await restaurarRecurso(db, "TITULO", "WIDESYS:PAGAR:wt", "Restaurar para nova conferência", await atorConferido("TITULO", "WIDESYS:PAGAR:wt"));
+    expect((await lerOperacaoUnificada(db)).linhas.find(l => l.chave === "WIDESYS:PAGAR:wt")).toMatchObject({ estado: "QUARENTENA" });
+  });
+
+  it.each(["LOCATARIO", "UNIDADE", "EMPREENDIMENTO", "CONTRATO"] as const)("cadastro %s com vínculos é excluído sem cascata ou reatribuição", async tipo => {
+    await operacaoBancariaSintetica();
+    const id = { LOCATARIO: "l1", UNIDADE: "u1", EMPREENDIMENTO: "e1", CONTRATO: "c1" }[tipo];
+    const antes = await retratoFatosFinanceiros();
+    const inquilinos = await db.locatario.findMany();
+    const unidades = await db.unidade.findMany();
+    const empreendimentos = await db.empreendimento.findMany();
+    await excluirAdministrativamente(db, tipo, id, "Administrador retirou apenas este cadastro", await atorConferido(tipo, id));
+    expect(await filtroGovernanca(db, tipo)).toEqual({ id: { notIn: [id] } });
+    expect(await retratoFatosFinanceiros()).toEqual(antes);
+    expect(await db.locatario.findMany()).toEqual(inquilinos);
+    expect(await db.unidade.findMany()).toEqual(unidades);
+    expect(await db.empreendimento.findMany()).toEqual(empreendimentos);
+  });
+
+  it("exclui conta padrão ativa sem desabilitar integração e preserva retorno bancário posterior", async () => {
+    await operacaoBancariaSintetica("REGISTRADO");
+    const conta = await db.contaBancaria.findUniqueOrThrow({ where: { id: "b1" } });
+    await excluirAdministrativamente(db, "CONTA", "b1", "Ocultar cadastro duplicado na plataforma", await atorConferido("CONTA", "b1"));
+    expect(await db.contaBancaria.findUniqueOrThrow({ where: { id: "b1" } })).toEqual(conta);
+    expect(await filtroGovernanca(db, "CONTA")).toEqual({ id: { notIn: ["b1"] } });
+    // Simula somente a persistência de um retorno em banco sintético; não chama API.
+    await db.boleto.update({ where: { id: "bol1" }, data: { status: "LIQUIDADO", situacaoBanco: "LIQUIDADO" } });
+    await restaurarRecurso(db, "CONTA", "b1", "Restaurar conta sem alterar o retorno", await atorConferido("CONTA", "b1"));
+    expect(await db.boleto.findUniqueOrThrow({ where: { id: "bol1" } })).toMatchObject({ status: "LIQUIDADO", situacaoBanco: "LIQUIDADO" });
+    expect(await db.contaBancaria.findUniqueOrThrow({ where: { id: "b1" } })).toEqual(conta);
+  });
+
+  it.each(["REGISTRADO", "LIQUIDADO", "RESULTADO_DESCONHECIDO"])("boleto %s pode ser excluído localmente sem cancelar, estornar ou liberar identidade", async status => {
+    await operacaoBancariaSintetica(status);
+    await db.boleto.update({ where: { id: "bol1" }, data: { slotRecebimentoAtivo: "r1" } });
+    const antes = await retratoFatosFinanceiros();
+    await excluirAdministrativamente(db, "BOLETO", "bol1", "Retirada administrativa do boleto local", await atorConferido("BOLETO", "bol1"));
+    expect(await filtroGovernanca(db, "BOLETO")).toEqual({ id: { notIn: ["bol1"] } });
+    expect(await retratoFatosFinanceiros()).toEqual(antes);
+    await restaurarRecurso(db, "BOLETO", "bol1", "Restaurar histórico do boleto local", await atorConferido("BOLETO", "bol1"));
+    expect(await retratoFatosFinanceiros()).toEqual(antes);
+  });
+
+  it.each(["AUTORIZADA", "PROCESSANDO", "INCERTA"])("NFS-e %s mantém documento, referência e eventos ao excluir e restaurar", async status => {
+    await db.notaFiscalServico.create({ data: { id: "nf", chaveIdempotencia: "nf", referencia: "nf-ref", origemChave: "servico-sintetico", ambiente: "HOMOLOGACAO", status, emitenteCnpj: "00000000000000", competencia: "2026-06", tomadorNome: "Tomador sintético", tomadorDocumento: "00000000000", valorServico: 20000, descricao: "Serviço sintético", payload: "{}", payloadHash: "hash", configHash: "hash", numero: "1", criadoPor: ator.id } });
+    await db.eventoFiscal.create({ data: { notaFiscalId: "nf", tipo: status, mensagem: "Registro sintético, sem transmissão" } });
+    const nota = await db.notaFiscalServico.findUniqueOrThrow({ where: { id: "nf" }, include: { eventos: true } });
+    await excluirAdministrativamente(db, "NFSE", "nf", "Retirada administrativa do documento local", await atorConferido("NFSE", "nf"));
+    expect(await filtroGovernanca(db, "NFSE")).toEqual({ id: { notIn: ["nf"] } });
+    expect(await db.notaFiscalServico.findUniqueOrThrow({ where: { id: "nf" }, include: { eventos: true } })).toEqual(nota);
+    await restaurarRecurso(db, "NFSE", "nf", "Restaurar referência fiscal preservada", await atorConferido("NFSE", "nf"));
+    expect(await db.notaFiscalServico.findUniqueOrThrow({ where: { id: "nf" }, include: { eventos: true } })).toEqual(nota);
+  });
+
+  it("rejeita flag administrador forjada pelo ator usando perfil real da base", async () => {
+    await db.usuario.create({ data: { id: "contador", nome: "Contador sintético", usuario: "contador", senhaHash: "nao-autenticavel", perfil: "CONTABILIDADE", acessoGlobal: true, permissoesExtras: '["governanca.editar"]' } });
+    const assinaturaPrevia = (await previaGovernanca(db, "LOCATARIO", "l1")).assinatura;
+    await expect(excluirAdministrativamente(db, "LOCATARIO", "l1", "Solicitação com perfil forjado", { id: "contador", administrador: true, assinaturaPrevia })).rejects.toMatchObject({ codigo: "SOMENTE_ADMIN" });
+    expect(await db.recursoGovernado.count()).toBe(0);
+    expect(await db.eventoGovernanca.count()).toBe(0);
+  });
+
+  it("nega exclusão ao administrador inativo", async () => {
+    await db.usuario.update({ where: { id: ator.id }, data: { ativo: false } });
+    await expect(excluirAdministrativamente(db, "LOCATARIO", "l1", "Revisão sem acesso suficiente", await atorConferido("LOCATARIO", "l1"))).rejects.toMatchObject({ codigo: "SEM_PERMISSAO" });
+    expect(await db.eventoGovernanca.count()).toBe(0);
+  });
+
+  it.each([true, false])("financeiro com governança concedida e acessoGlobal=%s não vira administrador", async acessoGlobal => {
+    await db.usuario.create({ data: { id: "financeiro", nome: "Financeiro sintético", usuario: "financeiro", senhaHash: "nao-autenticavel", perfil: "FINANCEIRO", acessoGlobal, permissoesExtras: '["governanca.editar"]' } });
+    const assinaturaPrevia = (await previaGovernanca(db, "LOCATARIO", "l1")).assinatura;
+    await expect(excluirAdministrativamente(db, "LOCATARIO", "l1", "Revisão sem perfil administrativo", { id: "financeiro", administrador: true, assinaturaPrevia })).rejects.toMatchObject({ codigo: "SOMENTE_ADMIN" });
+    expect(await db.recursoGovernado.count()).toBe(0);
+    expect(await db.eventoGovernanca.count()).toBe(0);
+  });
+
+  it("exige prévia e motivo antes de qualquer gravação", async () => {
+    await expect(excluirAdministrativamente(db, "LOCATARIO", "l1", "Revisão administrativa", ator)).rejects.toMatchObject({ codigo: "PREVIA_OBRIGATORIA" });
+    await expect(excluirAdministrativamente(db, "LOCATARIO", "l1", "", await atorConferido("LOCATARIO", "l1"))).rejects.toMatchObject({ codigo: "MOTIVO_INVALIDO" });
+    expect(await db.recursoGovernado.count()).toBe(0);
+    expect(await db.eventoGovernanca.count()).toBe(0);
+  });
+
+  it("rejeita prévia de título se valor mudou após a conferência", async () => {
+    await recebimentos();
+    const conferido = await atorConferido("TITULO", "BRISA:RECEBER:r1");
+    await db.recebimento.update({ where: { id: "r1" }, data: { valor: 12000 } });
+    await expect(excluirAdministrativamente(db, "TITULO", "BRISA:RECEBER:r1", "Revisão de dados anteriores", conferido)).rejects.toMatchObject({ codigo: "PREVIA_DESATUALIZADA" });
+    expect(await db.eventoGovernanca.count()).toBe(0);
+  });
+
+  it("rejeita prévia de caixa se valor mudou após a conferência", async () => {
+    await db.lancamentoCaixa.create({ data: { id: "cx", mesReferencia: "2026-06", centroCusto: "GERAL", tipo: "ENTRADA", valor: 500, descricao: "Caixa sintético" } });
+    const conferido = await atorConferido("CAIXA", "cx");
+    await db.lancamentoCaixa.update({ where: { id: "cx" }, data: { valor: 10000 } });
+    await expect(excluirAdministrativamente(db, "CAIXA", "cx", "Revisão de dados anteriores", conferido)).rejects.toMatchObject({ codigo: "PREVIA_DESATUALIZADA" });
+    expect(await db.eventoGovernanca.count()).toBe(0);
+  });
+
+  it("rejeita prévia se surgiu vínculo depois da conferência", async () => {
+    const conferido = await atorConferido("LOCATARIO", "l1");
+    await contrato();
+    await expect(excluirAdministrativamente(db, "LOCATARIO", "l1", "Conferência com vínculo antigo", conferido)).rejects.toMatchObject({ codigo: "PREVIA_DESATUALIZADA" });
+    expect(await db.eventoGovernanca.count()).toBe(0);
+  });
+
+  it("repetir a confirmação não duplica evento, versão ou exclusão", async () => {
+    const conferido = await atorConferido("LOCATARIO", "l1");
+    const primeira = await excluirAdministrativamente(db, "LOCATARIO", "l1", "Duplicata identificada pelo administrador", conferido);
+    const repeticao = await excluirAdministrativamente(db, "LOCATARIO", "l1", "Reenvio do mesmo formulário", conferido);
+    expect(repeticao).toEqual(primeira);
+    expect(await db.recursoGovernado.count()).toBe(1);
+    expect(await db.eventoGovernanca.count()).toBe(1);
+    await restaurarRecurso(db, "LOCATARIO", "l1", "Restaurar cadastro confirmado", await atorConferido("LOCATARIO", "l1"));
+    await restaurarRecurso(db, "LOCATARIO", "l1", "Repetição da restauração", await atorConferido("LOCATARIO", "l1"));
+    expect(await db.eventoGovernanca.count()).toBe(2);
+  });
+
+  it("restaurar sobre uma mesclagem anterior devolve o overlay anterior sem desfazer seus vínculos", async () => {
+    await contrato();
+    await mesclarRecursos(db, "LOCATARIO", "l1", "l2", "Mesclagem previamente confirmada", ator);
+    const mesclado = await db.recursoGovernado.findFirstOrThrow();
+    await excluirAdministrativamente(db, "LOCATARIO", "l1", "Retirar apenas cadastro já mesclado", await atorConferido("LOCATARIO", "l1"));
+    await restaurarRecurso(db, "LOCATARIO", "l1", "Voltar à condição anterior à exclusão", await atorConferido("LOCATARIO", "l1"));
+    expect(await db.recursoGovernado.findFirstOrThrow()).toMatchObject({ status: "MESCLADO", destinoId: "l2", estadoAnterior: mesclado.estadoAnterior });
+    expect((await db.contrato.findUniqueOrThrow({ where: { id: "c1" } })).locatarioId).toBe("l2");
+    expect(await filtroGovernanca(db, "LOCATARIO")).toEqual({ id: { notIn: ["l1"] } });
+  });
 });
 afterEach(async () => { await db?.$disconnect(); });
 afterAll(() => { const alvo = resolve(dir); if (alvo.startsWith(`${resolve(tmpdir())}${sep}`) && basename(alvo).startsWith("brisa-governanca-")) rmSync(alvo, { recursive: true, force: true }); });

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { Prisma } from "@prisma/client";
 import { exigirAcessoFiscal } from "./acesso";
+import { recursoEstaAtivo } from "../governanca/filtros";
 import {
   ErroFiscal, MUNICIPIO_GOIANIA, ambienteFiscal, chaveFiscal, documentoFiscal, hashConfiguracaoFiscal,
   hashFiscal, lerParametrosFiscais, montarPayloadFiscal, textoFiscal, validarEmitente, valorFiscal,
@@ -16,6 +17,9 @@ export async function obterConfiguracaoFiscal() {
 }
 
 type AtualizacaoConfiguracao = ConfigFiscalBase & { habilitada: boolean; homologacaoValidada: boolean; confirmarProducao: boolean; versao: string };
+async function exigirNotaAtiva(db: Prisma.TransactionClient, id: string) {
+  if (!await recursoEstaAtivo(db, "NFSE", id)) throw new ErroFiscal("Documento excluído da operação. Restaure-o antes de editar, aprovar ou transmitir. O histórico fiscal permanece preservado.");
+}
 
 export async function salvarConfiguracaoFiscal(dados: AtualizacaoConfiguracao) {
   const sessao = await exigirAcessoFiscal();
@@ -47,6 +51,7 @@ export async function salvarConfiguracaoFiscal(dados: AtualizacaoConfiguracao) {
 export async function salvarRascunhoFiscal(dados: RascunhoFiscal, id?: string, versao?: string) {
   const sessao = await exigirAcessoFiscal();
   return prisma.$transaction(async (tx) => {
+    if (id) await exigirNotaAtiva(tx, id);
     const config = await tx.configuracaoFiscal.findUnique({ where: { id: "goiania" } });
     if (!config) throw new ErroFiscal("Cadastre primeiro o emitente e o enquadramento fiscal.");
     const origemChave = textoFiscal(dados.origemChave, "Identificador da prestação", 140).normalize("NFKC").toUpperCase().replace(/\s+/g, " ");
@@ -83,6 +88,7 @@ export async function aprovarNotaFiscal(id: string, payloadHash: string, confirm
   const sessao = await exigirAcessoFiscal();
   if (!confirmacao) throw new ErroFiscal("Confirme a revisão fiscal antes de aprovar.");
   await prisma.$transaction(async (tx) => {
+    await exigirNotaAtiva(tx, id);
     const nota = await tx.notaFiscalServico.findUnique({ where: { id } });
     const config = await tx.configuracaoFiscal.findUnique({ where: { id: "goiania" } });
     if (!nota || !config || nota.status !== "RASCUNHO" || nota.payloadHash !== payloadHash) throw new ErroFiscal("Somente a versão atual de um rascunho pode ser aprovada.");
@@ -110,6 +116,7 @@ export async function transmitirNotaFiscal(id: string, payloadHash: string, conf
   const sessao = await exigirAcessoFiscal();
   if (!confirmacao) throw new ErroFiscal("Confirme a transmissão fiscal deste documento.");
   const nota = await prisma.$transaction(async (tx) => {
+    await exigirNotaAtiva(tx, id);
     const usuario = await tx.usuario.findUnique({ where: { id: sessao.sub }, select: { perfil: true } });
     if (usuario?.perfil !== "ADMINISTRADOR") throw new ErroFiscal("A autorização administrativa foi revogada. Transmissão bloqueada.");
     const config = await tx.configuracaoFiscal.findUnique({ where: { id: "goiania" } });
@@ -163,6 +170,7 @@ export async function consultarNotaFiscal(id: string) {
 export async function devolverRascunhoFiscal(id: string, payloadHash: string) {
   const sessao = await exigirAcessoFiscal();
   await prisma.$transaction(async (tx) => {
+    await exigirNotaAtiva(tx, id);
     const resultado = await tx.notaFiscalServico.updateMany({ where: { id, status: "APROVADA", payloadHash }, data: { status: "RASCUNHO", aprovadoPor: null, aprovadoEm: null } });
     if (!resultado.count) throw new ErroFiscal("Somente documento aprovado e não transmitido pode voltar para revisão.");
     await tx.eventoFiscal.create({ data: { notaFiscalId: id, tipo: "REVISAO_REABERTA", mensagem: "Aprovação retirada antes da transmissão. Exige nova revisão.", usuarioId: sessao.sub } });

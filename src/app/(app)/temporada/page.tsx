@@ -1,6 +1,7 @@
 import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import { AcaoAutorizada, podeExibirAcao } from "@/components/acao-autorizada";
 import Link from "next/link";
+import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 import {
   Ajuda,
   PageHeader,
@@ -32,8 +33,6 @@ import {
 } from "@/lib/consultas/temporada";
 import {
   criarUnidadeTemporada,
-  excluirDespesa,
-  excluirRecebimentoTemporada,
   lancarDespesa,
   lancarRecebimentoTemporada,
   salvarLimpeza,
@@ -116,7 +115,7 @@ export default async function PaginaTemporada({
   const limpezaPorUnidade = new Map(limpezas.map((l) => [l.unidadeTemporadaId, l]));
   // Linhas LIMPEZA derivadas para o bloco de despesas (uma por unidade com limpeza).
   const limpezasDerivadas = limpezas
-    .map((l) => ({ codigo: l.unidadeTemporada.codigo, total: totalLimpeza(l) }))
+    .map((l) => ({ id: l.id, codigo: l.unidadeTemporada.codigo, total: totalLimpeza(l) }))
     .filter((l) => l.total > 0)
     .sort((a, b) => a.codigo.localeCompare(b.codigo, "pt-BR"));
 
@@ -132,6 +131,7 @@ export default async function PaginaTemporada({
     );
   // Linhas LIMPEZA derivadas da janela (uma por unidade×mês com limpeza).
   const limpezasDerivadasJanela = limpezasJanela.map((l) => ({
+    id: l.id,
     mes: l.competencia,
     codigo: l.unidadeTemporada.codigo,
     total: totalLimpeza(l),
@@ -260,7 +260,7 @@ export default async function PaginaTemporada({
               <p className="px-5 py-4 text-sm text-tinta-suave">Nenhuma limpeza no período.</p>
             ) : (
               <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
-                <table className="tabela">
+                <table className="tabela tabela--acoes">
                   <thead>
                     <tr>
                       {comMes ? <th>Mês</th> : null}
@@ -272,6 +272,7 @@ export default async function PaginaTemporada({
                         Total{" "}
                         <Ajuda dica="Quantidade × valor unitário + extra/PDL do mês da linha. Para corrigir, abra o mês na visão mensal." />
                       </th>
+                      <th>Ações</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -293,6 +294,7 @@ export default async function PaginaTemporada({
                         <td className="text-right">
                           <Dinheiro centavos={totalLimpeza(l)} />
                         </td>
+                        <td className="text-right"><ExcluirRegistroLink tipo="TEMPORADA_LIMPEZA" origemId={l.id}/></td>
                       </tr>
                     ))}
                   </tbody>
@@ -302,6 +304,7 @@ export default async function PaginaTemporada({
                       <td className="text-right">
                         <Dinheiro centavos={apuracao.totalLimpezas} destaque />
                       </td>
+                      <td />
                     </tr>
                   </tfoot>
                 </table>
@@ -322,7 +325,7 @@ export default async function PaginaTemporada({
               <p className="px-5 py-4 text-sm text-tinta-suave">Nenhuma despesa no período.</p>
             ) : (
               <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
-                <table className="tabela">
+                <table className="tabela tabela--acoes">
                   <thead>
                     <tr>
                       {comMes ? <th>Mês</th> : null}
@@ -335,6 +338,7 @@ export default async function PaginaTemporada({
                         <Ajuda dica="ENERGIA, CONDO, IPTU ou EXTRA — lançados na visão mensal. LIMPEZA é derivada automaticamente do bloco de limpezas; não a lance de novo." />
                       </th>
                       <th className="text-right">Valor</th>
+                      <th>Ações</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -356,6 +360,7 @@ export default async function PaginaTemporada({
                         <td className="text-right">
                           <Dinheiro centavos={d.valor} />
                         </td>
+                        <td className="text-right"><ExcluirRegistroLink tipo="TEMPORADA_DESPESA" origemId={d.id}/></td>
                       </tr>
                     ))}
                     {limpezasDerivadasJanela.map((l) => (
@@ -373,6 +378,7 @@ export default async function PaginaTemporada({
                         <td className="text-right">
                           <Dinheiro centavos={l.total} />
                         </td>
+                        <td className="text-right"><ExcluirRegistroLink tipo="TEMPORADA_LIMPEZA" origemId={l.id}>Excluir limpeza de origem</ExcluirRegistroLink></td>
                       </tr>
                     ))}
                   </tbody>
@@ -382,6 +388,7 @@ export default async function PaginaTemporada({
                       <td className="text-right">
                         <Dinheiro centavos={apuracao.despesa} destaque />
                       </td>
+                      <td />
                     </tr>
                   </tfoot>
                 </table>
@@ -404,7 +411,7 @@ export default async function PaginaTemporada({
               </p>
             ) : (
               <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
-                <table className="tabela">
+                <table className="tabela tabela--acoes">
                   <thead>
                     <tr>
                       {comMes ? <th>Mês</th> : null}
@@ -412,6 +419,7 @@ export default async function PaginaTemporada({
                       <th>Plataforma</th>
                       <th>Hóspede</th>
                       <th className="text-right">Valor</th>
+                      <th>Ações</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -432,6 +440,7 @@ export default async function PaginaTemporada({
                         <td className="text-right">
                           <Dinheiro centavos={r.valor} />
                         </td>
+                        <td className="text-right"><ExcluirRegistroLink tipo="TEMPORADA_RECEBIMENTO" origemId={r.id}/></td>
                       </tr>
                     ))}
                   </tbody>
@@ -441,6 +450,7 @@ export default async function PaginaTemporada({
                       <td className="text-right">
                         <Dinheiro centavos={apuracao.receita} destaque />
                       </td>
+                      <td />
                     </tr>
                   </tfoot>
                 </table>
@@ -552,6 +562,7 @@ export default async function PaginaTemporada({
                             {podeEditar && <button type="submit" form={formId} className={btnSecundario}>
                               Salvar
                             </button>}
+                            {l && <ExcluirRegistroLink tipo="TEMPORADA_LIMPEZA" origemId={l.id} className="mt-2"/>}
                           </td>
                         </tr>
                       );
@@ -617,15 +628,7 @@ export default async function PaginaTemporada({
                           <Dinheiro centavos={d.valor} />
                         </td>
                         <td className="text-right">
-                          <AcaoAutorizada permissao="temporada.editar"><form action={excluirDespesa}>
-                            <input type="hidden" name="id" value={d.id} />
-                            <button
-                              type="submit"
-                              className="text-xs text-tinta-suave hover:text-erro"
-                            >
-                              Excluir
-                            </button>
-                          </form></AcaoAutorizada>
+                          <ExcluirRegistroLink tipo="TEMPORADA_DESPESA" origemId={d.id}/>
                         </td>
                       </tr>
                     ))}
@@ -639,7 +642,7 @@ export default async function PaginaTemporada({
                         <td className="text-right">
                           <Dinheiro centavos={l.total} />
                         </td>
-                        <td></td>
+                        <td className="text-right"><ExcluirRegistroLink tipo="TEMPORADA_LIMPEZA" origemId={l.id}>Excluir limpeza de origem</ExcluirRegistroLink></td>
                       </tr>
                     ))}
                   </tbody>
@@ -719,15 +722,7 @@ export default async function PaginaTemporada({
                           <Dinheiro centavos={r.valor} />
                         </td>
                         <td className="text-right">
-                          <AcaoAutorizada permissao="temporada.editar"><form action={excluirRecebimentoTemporada}>
-                            <input type="hidden" name="id" value={r.id} />
-                            <button
-                              type="submit"
-                              className="text-xs text-tinta-suave hover:text-erro"
-                            >
-                              Excluir
-                            </button>
-                          </form></AcaoAutorizada>
+                          <ExcluirRegistroLink tipo="TEMPORADA_RECEBIMENTO" origemId={r.id}/>
                         </td>
                       </tr>
                     ))}
@@ -782,9 +777,10 @@ export default async function PaginaTemporada({
               <div className="flex flex-wrap items-center gap-3">
                 <span className="text-sm font-semibold">Unidades de temporada</span>
                 {unidades.map((u) => (
-                  <Badge key={u.id} cor="azul">
-                    {u.codigo}
-                  </Badge>
+                  <span key={u.id} className="inline-flex flex-col items-start gap-1 rounded-lg border border-contorno p-2">
+                    <Badge cor="azul">{u.codigo}</Badge>
+                    <ExcluirRegistroLink tipo="TEMPORADA_UNIDADE" origemId={u.id}/>
+                  </span>
                 ))}
                 <AcaoAutorizada permissao="temporada.editar"><form action={criarUnidadeTemporada} className="flex items-center gap-2">
                   <input

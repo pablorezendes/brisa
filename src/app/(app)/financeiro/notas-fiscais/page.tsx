@@ -1,7 +1,9 @@
 import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
+import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 import { Badge, Card, Dinheiro, PageHeader, Sigilo } from "@/components/ui";
 import { prisma } from "@/lib/db";
+import { filtroGovernanca } from "@/lib/governanca/filtros";
 import { exigirAcessoFiscal } from "@/lib/fiscal/acesso";
 import { ROTA_FISCAL, STATUS_FISCAIS } from "@/lib/fiscal/dominio";
 import { AbasFiscais, AvisoFiscal, StatusFiscal, botaoFiscal, botaoFiscalSecundario } from "./_ui";
@@ -15,11 +17,12 @@ export default async function NotasFiscaisPage({ searchParams }: { searchParams:
   const params = await searchParams;
   const status = params.status && Object.hasOwn(STATUS_FISCAIS, params.status) ? params.status : undefined;
   const pagina = Math.min(10000, Math.max(1, Number.parseInt(params.pagina ?? "1", 10) || 1));
+  const visiveis = await filtroGovernanca(prisma, "NFSE");
   const [config, notas, total, contagens] = await Promise.all([
     prisma.configuracaoFiscal.findUnique({ where: { id: "goiania" }, select: { habilitada: true, ambiente: true } }),
-    prisma.notaFiscalServico.findMany({ where: { status }, orderBy: { criadoEm: "desc" }, skip: (pagina - 1) * 30, take: 30 }),
-    prisma.notaFiscalServico.count({ where: { status } }),
-    prisma.notaFiscalServico.groupBy({ by: ["status"], _count: true }),
+    prisma.notaFiscalServico.findMany({ where: { status, ...visiveis }, orderBy: { criadoEm: "desc" }, skip: (pagina - 1) * 30, take: 30 }),
+    prisma.notaFiscalServico.count({ where: { status, ...visiveis } }),
+    prisma.notaFiscalServico.groupBy({ by: ["status"], where: visiveis, _count: true }),
   ]);
   const qtd = (estados: string[]) => contagens.filter((r) => estados.includes(r.status)).reduce((acc, r) => acc + r._count, 0);
   return <div>
@@ -32,9 +35,25 @@ export default async function NotasFiscaisPage({ searchParams }: { searchParams:
     {!config && <Card className="mb-5 p-5"><h2 className="text-sm font-semibold text-tinta">Comece pela configuração fiscal</h2><p className="mt-2 text-xs leading-relaxed text-tinta-suave">Cadastre emitente, serviço e tributação com sua contabilidade. O adaptador Focus NFe é opcional e exige conta contratada, certificado cadastrado no provedor, liberação municipal e token no servidor. Nenhuma contratação ou emissão foi realizada.</p><Link href={`${ROTA_FISCAL}/configuracao`} className={`${botaoFiscalSecundario} mt-3`}>Configurar emitente</Link></Card>}
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-contorno p-5"><h2 className="text-sm font-semibold text-tinta">Documentos e histórico</h2><form className="flex items-center gap-2"><label className="sr-only" htmlFor="status-fiscal">Situação</label><select id="status-fiscal" name="status" defaultValue={status ?? ""} className="max-w-full rounded-lg border border-contorno bg-carta p-2 text-xs"><option value="">Todas as situações</option>{Object.entries(STATUS_FISCAIS).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select><button className={botaoFiscalSecundario}>Filtrar</button></form></div>
-      {!notas.length ? <div className="p-10 text-center"><p className="text-sm font-semibold text-tinta">Nenhuma nota nesta seleção</p><p className="mt-2 text-xs text-tinta-suave">Os dados financeiros não são convertidos em notas automaticamente. Crie um rascunho com o serviço e o tomador conferidos.</p></div> : <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}><table className="tabela tabela--acoes min-w-[850px] w-full"><thead><tr><th>Prestação / tomador</th><th>Competência</th><th>Ambiente</th><th>Valor do serviço</th><th>Situação</th><th>Documento</th></tr></thead><tbody>{notas.map((nota)=><tr key={nota.id}><td><Link href={`${ROTA_FISCAL}/${nota.id}`} className="font-semibold text-oliva-escura hover:underline">{nota.origemChave}</Link><span className="mt-1 block max-w-60 truncate text-xs text-tinta-suave">{nota.tomadorNome}</span></td><td className="font-mono text-xs">{nota.competencia}</td><td><Badge cor={nota.ambiente === "PRODUCAO" ? "verde" : "azul"}>{nota.ambiente === "PRODUCAO" ? "Produção" : "Teste"}</Badge></td><td><Sigilo><Dinheiro centavos={nota.valorServico}/></Sigilo></td><td><StatusFiscal status={nota.status}/></td><td><Link href={`${ROTA_FISCAL}/${nota.id}`} className="text-xs font-semibold text-oliva-escura">{nota.numero ? `NFS-e ${nota.numero}` : "Abrir revisão"} →</Link></td></tr>)}</tbody></table></div>}
+      {!notas.length ? <div className="p-10 text-center"><p className="text-sm font-semibold text-tinta">Nenhuma nota nesta seleção</p><p className="mt-2 text-xs text-tinta-suave">Os dados financeiros não são convertidos em notas automaticamente. Crie um rascunho com o serviço e o tomador conferidos.</p></div> : (
+        <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
+          <table className="tabela tabela--acoes min-w-[1000px] w-full">
+            <thead><tr><th>Prestação / tomador</th><th>Competência</th><th>Ambiente</th><th>Valor do serviço</th><th>Situação</th><th>Ações</th></tr></thead>
+            <tbody>{notas.map((nota) => (
+              <tr key={nota.id}>
+                <td><Link href={`${ROTA_FISCAL}/${nota.id}`} className="font-semibold text-oliva-escura hover:underline">{nota.origemChave}</Link><span className="mt-1 block max-w-60 truncate text-xs text-tinta-suave">{nota.tomadorNome}</span></td>
+                <td className="font-mono text-xs">{nota.competencia}</td>
+                <td><Badge cor={nota.ambiente === "PRODUCAO" ? "verde" : "azul"}>{nota.ambiente === "PRODUCAO" ? "Produção" : "Teste"}</Badge></td>
+                <td><Sigilo><Dinheiro centavos={nota.valorServico}/></Sigilo></td>
+                <td><StatusFiscal status={nota.status}/></td>
+                <td><div className="flex flex-col items-start gap-2"><Link href={`${ROTA_FISCAL}/${nota.id}`} className="text-xs font-semibold text-oliva-escura">{nota.numero ? `NFS-e ${nota.numero}` : "Abrir revisão"} →</Link><ExcluirRegistroLink tipo="NFSE" origemId={nota.id}/></div></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-contorno p-4 text-xs text-tinta-suave"><span>{total} documento(s) · página {pagina}</span><div className="flex gap-3">{pagina > 1 && <Link href={`${ROTA_FISCAL}?${new URLSearchParams({ ...(status ? { status } : {}), pagina: String(pagina - 1) })}`}>Anterior</Link>}{pagina * 30 < total && <Link href={`${ROTA_FISCAL}?${new URLSearchParams({ ...(status ? { status } : {}), pagina: String(pagina + 1) })}`}>Próxima</Link>}</div></div>
     </Card>
-    <p className="mt-4 text-xs leading-relaxed text-tinta-suave">Escopo inicial: serviços nacionais tributáveis sem retenções ou regimes especiais. Não emite NF-e de mercadorias, não registra receitas ou baixas financeiras e não envia notas ao cliente automaticamente.</p>
+    <p className="mt-4 text-xs leading-relaxed text-tinta-suave">Excluir da plataforma preserva o histórico e não cancela a NFS-e no município ou no provedor. Escopo inicial: serviços nacionais tributáveis sem retenções ou regimes especiais. Não emite NF-e de mercadorias, não registra receitas ou baixas financeiras e não envia notas ao cliente automaticamente.</p>
   </div>;
 }

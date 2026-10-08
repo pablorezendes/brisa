@@ -13,6 +13,7 @@
  */
 
 import { prisma } from "@/lib/db";
+import { filtroGovernanca, recursoEstaAtivo } from "../governanca/filtros";
 import { filtroRecebimentosUnificados } from "./filtro-unificacao-nativa";
 import { calcularRecebimento } from "@/lib/dominio/comissao";
 import { competencia } from "@/lib/dominio/normalizacao";
@@ -176,6 +177,9 @@ interface AgregadoJanela {
 
 /** Agrega os recebimentos da janela por empreendimento + ocupação + nomes. */
 async function agregadosPorEmpreendimento(meses: string[]) {
+  const [filtroEmpreendimentos, filtroUnidades, filtroContratos, filtroLocatarios] = await Promise.all([
+    filtroGovernanca(prisma, "EMPREENDIMENTO"), filtroGovernanca(prisma, "UNIDADE"), filtroGovernanca(prisma, "CONTRATO"), filtroGovernanca(prisma, "LOCATARIO"),
+  ]);
   const [recebs, unidades, empreendimentos] = await Promise.all([
     prisma.recebimento.findMany({
       where: {
@@ -192,16 +196,16 @@ async function agregadosPorEmpreendimento(meses: string[]) {
       },
     }),
     prisma.unidade.findMany({
-      where: { ativo: true },
+      where: { ativo: true, ...filtroUnidades, empreendimento: filtroEmpreendimentos },
       select: {
         empreendimentoId: true,
         contratos: {
-          where: { status: { not: "encerrado" } },
+          where: { status: { not: "encerrado" }, ...filtroContratos, OR: [{ locatarioId: null }, { locatario: { is: filtroLocatarios } }] },
           select: { status: true, locatarioId: true, inicio: true },
         },
       },
     }),
-    prisma.empreendimento.findMany({ select: { id: true, nome: true } }),
+    prisma.empreendimento.findMany({ where: filtroEmpreendimentos, select: { id: true, nome: true } }),
   ]);
 
   const idx = new Map(meses.map((m, i) => [m, i]));
@@ -256,6 +260,9 @@ function montarCartoes(
   corteSerie: number
 ): CartaoEmpreendimento[] {
   return [...porEmp.entries()]
+    // Retira a dimensão cadastral excluída, sem excluir seus títulos históricos.
+    // Os lançamentos filhos mantidos continuam nos relatórios financeiros gerais.
+    .filter(([id]) => nomePorId.has(id))
     .map(([id, agg]) => ({
       id,
       nome: nomePorId.get(id) ?? "?",
@@ -336,6 +343,10 @@ async function detalheDaJanela(
   id: string,
   meses: string[]
 ): Promise<DetalheEmpreendimentoJanela | null> {
+  if (!await recursoEstaAtivo(prisma, "EMPREENDIMENTO", id)) return null;
+  const [filtroUnidades, filtroContratos, filtroLocatarios] = await Promise.all([
+    filtroGovernanca(prisma, "UNIDADE"), filtroGovernanca(prisma, "CONTRATO"), filtroGovernanca(prisma, "LOCATARIO"),
+  ]);
   const empreendimento = await prisma.empreendimento.findUnique({
     where: { id },
     select: { id: true, nome: true },
@@ -352,10 +363,10 @@ async function detalheDaJanela(
       },
     }),
     prisma.unidade.findMany({
-      where: { empreendimentoId: id },
+      where: { empreendimentoId: id, ...filtroUnidades },
       include: {
         contratos: {
-          where: { status: { not: "encerrado" } },
+          where: { status: { not: "encerrado" }, ...filtroContratos, OR: [{ locatarioId: null }, { locatario: { is: filtroLocatarios } }] },
           include: { locatario: true },
         },
       },

@@ -1,14 +1,20 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ acesso: vi.fn(), empreendimentos: vi.fn(), editarEmpreendimento: vi.fn(), unidades: vi.fn(), editarUnidade: vi.fn(), contarUnidades: vi.fn() }));
+import type { PoliticaAcesso } from "./politica";
+import { podeExibirAcao } from "@/components/acao-autorizada";
+const mocks = vi.hoisted(() => ({ acesso: vi.fn(), empreendimentos: vi.fn(), editarEmpreendimento: vi.fn(), unidades: vi.fn(), editarUnidade: vi.fn(), contarUnidades: vi.fn(), politica: null as PoliticaAcesso | null }));
 vi.mock("./servidor", () => ({ acessoAtual: mocks.acesso, exigirPaginaAcesso: vi.fn() }));
 vi.mock("../db", () => ({ prisma: {
-  empreendimento: { findMany: mocks.empreendimentos, findUnique: mocks.editarEmpreendimento },
-  unidade: { findMany: mocks.unidades, findUnique: mocks.editarUnidade, count: mocks.contarUnidades },
+  empreendimento: { findMany: mocks.empreendimentos, findFirst: mocks.editarEmpreendimento },
+  unidade: { findMany: mocks.unidades, findFirst: mocks.editarUnidade, count: mocks.contarUnidades },
 } }));
-vi.mock("../governanca/filtros", () => ({ filtroGovernanca: vi.fn().mockResolvedValue({}) }));
+vi.mock("../governanca/filtros", () => ({ filtroGovernanca: vi.fn().mockResolvedValue({ id: { notIn: ["excluido"] } }) }));
 // O link RSC tem testes próprios; este teste verifica a política real das páginas/formulários.
 vi.mock("@/components/link-governanca", () => ({ LinkGovernanca: () => null }));
+vi.mock("@/components/excluir-registro-link", () => ({
+  ExcluirRegistroLink: () => mocks.politica && podeExibirAcao(mocks.politica, { permissao: "governanca.editar", perfis: ["ADMINISTRADOR"] })
+    ? <a href="/cadastros/governanca?modo=excluir">Excluir da plataforma</a> : null,
+}));
 vi.mock("../consultas/locacao", () => ({ TIPOS_UNIDADE: ["comercial", "residencial", "temporada"] }));
 vi.mock("@/app/(app)/cadastros/actions", () => ({
   atualizarEmpreendimento: vi.fn(), criarEmpreendimento: vi.fn(), definirStatusEmpreendimento: vi.fn(),
@@ -19,9 +25,10 @@ import PaginaUnidades from "@/app/(app)/cadastros/unidades/page";
 import { montarPolitica } from "./politica";
 
 function conceder(permissoes: string[] = []) {
-  mocks.acesso.mockResolvedValue(montarPolitica({ id: "consulta", perfil: "FINANCEIRO", ativo: true, acessoGlobal: true,
+  mocks.politica = montarPolitica({ id: "consulta", perfil: "FINANCEIRO", ativo: true, acessoGlobal: true,
     permissoesExtras: JSON.stringify(permissoes), permissoesNegadas: "[]", regrasAcesso: [],
-  }));
+  });
+  mocks.acesso.mockResolvedValue(mocks.politica);
 }
 const empreendimento = { id: "emp", nome: "Edifício autorizado", ativo: true, unidades: [] };
 const unidade = { id: "un", identificacao: "Sala autorizada", empreendimentoId: "emp", empreendimento, ativo: true, tipo: "comercial", contratos: [], _count: { contratos: 0 } };
@@ -44,6 +51,7 @@ describe("cadastros em modo de consulta", () => {
     expect(html).not.toContain("Editar empreendimento");
     expect(html).not.toContain(">Editar<");
     expect(html).not.toContain("Desativar");
+    expect(html).not.toContain("Excluir da plataforma");
     expect(mocks.editarEmpreendimento).not.toHaveBeenCalled();
   });
 
@@ -56,15 +64,18 @@ describe("cadastros em modo de consulta", () => {
     expect(html).not.toContain(">Editar<");
     expect(html).not.toContain("Novo contrato");
     expect(html).not.toContain("Desativar");
+    expect(html).not.toContain("Excluir da plataforma");
     expect(mocks.editarUnidade).not.toHaveBeenCalled();
   });
 
   it("edição explicitamente concedida mantém o formulário de imóveis", async () => {
-    conceder(["cadastros.editar"]);
+    conceder(["cadastros.editar", "governanca.editar"]);
     const html = renderToStaticMarkup(await PaginaUnidades({ searchParams: Promise.resolve({ editar: "un" }) }));
-    expect(mocks.editarUnidade).toHaveBeenCalled();
+    expect(mocks.editarUnidade).toHaveBeenCalledWith({ where: { AND: [{ id: "un" }, { id: { notIn: ["excluido"] } }] }, include: { empreendimento: true } });
     expect(html).toContain("Editar imóvel");
     expect(html).toContain("Salvar alterações");
     expect(html).not.toContain("Novo contrato");
+    expect(html).not.toContain("Excluir da plataforma");
+    expect(html).not.toContain("modo=excluir");
   });
 });

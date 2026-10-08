@@ -1,5 +1,6 @@
 import { exigirPaginaAcesso, exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
+import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 import { LinkGovernanca } from "@/components/link-governanca";
 import { notFound } from "next/navigation";
 import { Badge, Card, Dinheiro, PageHeader, Sigilo, btnSecundario } from "@/components/ui";
@@ -89,6 +90,7 @@ export default async function PaginaDetalheImovelLegado({
             ← Voltar à carteira
           </Link>
           <LinkGovernanca tipo="IMOVEL_LEGADO" id={id} />
+          <ExcluirRegistroLink tipo="IMOVEL_LEGADO" origemId={id} />
           </>
         }
       />

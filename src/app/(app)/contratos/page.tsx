@@ -1,6 +1,7 @@
 import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import { pode } from "@/lib/acesso/politica";
 import Link from "next/link";
+import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 import { OperacaoUnificada, podeAcessarUnificacao, type ParametrosUnificacao } from "@/components/operacao-unificada";
 import {
   Ajuda,
@@ -228,6 +229,7 @@ export default async function PaginaContratos({
                         >
                           Detalhe
                         </Link>
+                        <ExcluirRegistroLink tipo="CONTRATO" origemId={c.id} />
                       </td>
                     </tr>
                   ))}

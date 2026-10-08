@@ -1,5 +1,6 @@
 import { exigirPaginaAcesso, exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
+import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 import { LinkGovernanca } from "@/components/link-governanca";
 import { notFound } from "next/navigation";
 import { Badge, Card, PageHeader, Sigilo, btnSecundario } from "@/components/ui";
@@ -105,6 +106,7 @@ export default async function PaginaDetalhePessoa({
             ← Voltar às pessoas
           </Link>
           <LinkGovernanca tipo="PESSOA" id={id} />
+          <ExcluirRegistroLink tipo="PESSOA" origemId={id} />
           </>
         }
       />

@@ -3,6 +3,7 @@ import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import type { Boleto, ContaBancaria, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { recursoEstaAtivo } from "@/lib/governanca/filtros";
 import {
   carregarProtecaoFinanceira,
   impedimentoGeracaoUnificada,
@@ -346,6 +347,29 @@ async function validarUnificacaoParaEmissao(
   if (impedimento) throw new ErroOperacaoBoleto(impedimento, "UNIFICACAO_PENDENTE");
 }
 
+/** Pais permanecem como referência histórica, mas não autorizam nova cobrança. */
+async function validarCadastrosParaEmissao(
+  db: Pick<Prisma.TransactionClient, "recebimento" | "recursoGovernado">,
+  recebimentoId: string,
+  contaBancariaId: string,
+) {
+  const recebimento = await db.recebimento.findUnique({ where: { id: recebimentoId }, select: {
+    empreendimentoId: true,
+    contrato: { select: { id: true, unidadeId: true, locatarioId: true, unidade: { select: { empreendimentoId: true } }, locatario: { select: { pessoaId: true } } } },
+  } });
+  if (!recebimento) throw new ErroOperacaoBoleto("Lançamento não encontrado.");
+  const ativos = await Promise.all([
+    recursoEstaAtivo(db, "CONTA", contaBancariaId),
+    recursoEstaAtivo(db, "CONTRATO", recebimento.contrato.id),
+    recursoEstaAtivo(db, "UNIDADE", recebimento.contrato.unidadeId),
+    recursoEstaAtivo(db, "EMPREENDIMENTO", recebimento.empreendimentoId),
+    recursoEstaAtivo(db, "EMPREENDIMENTO", recebimento.contrato.unidade.empreendimentoId),
+    ...(recebimento.contrato.locatarioId ? [recursoEstaAtivo(db, "LOCATARIO", recebimento.contrato.locatarioId)] : []),
+    ...(recebimento.contrato.locatario?.pessoaId ? [recursoEstaAtivo(db, "PESSOA", recebimento.contrato.locatario.pessoaId)] : []),
+  ]);
+  if (ativos.some(ativo => !ativo)) throw new ErroOperacaoBoleto("A conta ou um cadastro desta cobrança foi excluído. Restaure-o antes de emitir. O histórico e os retornos bancários permanecem preservados.", "REGISTRO_EXCLUIDO");
+}
+
 export async function emitirBoletoSicoob({
   recebimentoId,
   contaBancariaId,
@@ -385,6 +409,7 @@ export async function emitirBoletoSicoob({
   ]);
   if (!recebimento) throw new ErroOperacaoBoleto("Lançamento não encontrado.");
   if (!conta) throw new ErroOperacaoBoleto("Conta bancária não encontrada.");
+  await validarCadastrosParaEmissao(prisma, recebimento.id, conta.id);
   const mesFechado = await prisma.fechamentoMensal.findUnique({
     where: { mesLancamento: recebimento.mesLancamento },
     select: { id: true },
@@ -436,6 +461,9 @@ export async function emitirBoletoSicoob({
   );
   const numeroInterno = seuNumero(chaveIdempotencia);
   const existente = await prisma.boleto.findUnique({ where: { chaveIdempotencia } });
+  if (existente && !await recursoEstaAtivo(prisma, "BOLETO", existente.id)) {
+    throw new ErroOperacaoBoleto("A emissão está excluída da operação. Restaure-a para retomar; a exclusão não cancela a cobrança no banco.", "REGISTRO_EXCLUIDO");
+  }
   if (existente && existente.status !== "ERRO") {
     return { boleto: existente, reutilizado: true };
   }
@@ -514,7 +542,9 @@ export async function emitirBoletoSicoob({
         );
       }
       // A reserva serializa esta leitura com decisões de vínculo e mutações locais.
+      await validarCadastrosParaEmissao(tx, recebimento.id, conta.id);
       await validarUnificacaoParaEmissao(tx, recebimento);
+      if (existente && !await recursoEstaAtivo(tx, "BOLETO", existente.id)) throw new ErroOperacaoBoleto("A emissão foi excluída durante a conferência. Nenhum novo envio será feito.", "REGISTRO_EXCLUIDO");
       const fechamentoAtual = await tx.fechamentoMensal.findUnique({
         where: { mesLancamento: recebimento.mesLancamento },
         select: { id: true },
@@ -1020,6 +1050,16 @@ async function registrarLiquidacaoConfirmada({
       },
     });
     if (!boleto?.nossoNumero) throw new ErroOperacaoBoleto("Boleto sem identificador bancário.");
+    const excluido = !await recursoEstaAtivo(tx, "BOLETO", boleto.id)
+      || !await recursoEstaAtivo(tx, "TITULO", `BRISA:RECEBER:${boleto.recebimentoId}`);
+    if (excluido) {
+      // O fato bancário continua auditável; não recria pagamento nem altera o
+      // título removido da operação por uma decisão administrativa posterior.
+      const mensagem = "Liquidação bancária recebida para registro excluído. Histórico preservado; restaure e revise antes de conciliar.";
+      await tx.boleto.update({ where: { id: boleto.id }, data: { status: "LIQUIDADO", valorPago, liquidadoEm, conciliacaoStatus: "DIVERGENTE", conciliacaoMotivo: "REGISTRO_EXCLUIDO", mensagemErro: mensagem } });
+      await tx.eventoBoleto.update({ where: { id: eventoId }, data: { boletoId: boleto.id, statusProcessamento: "ERRO", erro: mensagem } });
+      return "ERRO" as const;
+    }
     const chavePagamento = `pagamento:${chaveLiquidacao}`;
     let pagamento = await tx.pagamentoRecebimento.findUnique({
       where: { chaveIdempotencia: chavePagamento },

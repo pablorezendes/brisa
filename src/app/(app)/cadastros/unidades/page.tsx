@@ -2,6 +2,7 @@ import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import { podeExibirAcao } from "@/components/acao-autorizada";
 import { filtroGovernanca } from "@/lib/governanca/filtros";
 import Link from "next/link";
+import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 import { LinkGovernanca } from "@/components/link-governanca";
 import type { Prisma } from "@prisma/client";
 import { Badge, Card, PageHeader, btnPrimario, btnSecundario, inputBase } from "@/components/ui";
@@ -66,13 +67,15 @@ export default async function PaginaUnidades({ searchParams }: { searchParams: S
     : "todos";
   const status = sp.status === "inativos" ? "inativos" : sp.status === "ativos" ? "ativos" : "todos";
 
-  const where: Prisma.UnidadeWhereInput = await filtroGovernanca(prisma, "UNIDADE");
+  const unidadesVisiveis = await filtroGovernanca(prisma, "UNIDADE");
+  const contratosVisiveis = await filtroGovernanca(prisma, "CONTRATO");
+  const where: Prisma.UnidadeWhereInput = { ...unidadesVisiveis };
   if (q) {
     const termo = normalizar(q);
     where.OR = [
       { identificacao: { contains: termo } },
       { empreendimento: { nome: { contains: termo } } },
-      { contratos: { some: { locatario: { nomeNorm: { contains: termo } } } } },
+      { contratos: { some: { ...contratosVisiveis, locatario: { nomeNorm: { contains: termo } } } } },
     ];
   }
   if (empreendimentoId !== "todos") where.empreendimentoId = empreendimentoId;
@@ -96,7 +99,7 @@ export default async function PaginaUnidades({ searchParams }: { searchParams: S
       include: {
         empreendimento: true,
         contratos: {
-          where: { status: { not: "encerrado" } },
+          where: { ...contratosVisiveis, status: { not: "encerrado" } },
           select: {
             id: true,
             status: true,
@@ -104,7 +107,7 @@ export default async function PaginaUnidades({ searchParams }: { searchParams: S
           },
           orderBy: [{ status: "desc" }, { id: "asc" }],
         },
-        _count: { select: { contratos: true } },
+        _count: { select: { contratos: { where: contratosVisiveis } } },
       },
       orderBy: [
         { empreendimento: { nome: "asc" } },
@@ -113,7 +116,7 @@ export default async function PaginaUnidades({ searchParams }: { searchParams: S
     }),
     prisma.empreendimento.findMany({ where: await filtroGovernanca(prisma, "EMPREENDIMENTO"), orderBy: { nome: "asc" } }),
     podeEditar && sp.editar
-      ? prisma.unidade.findUnique({ where: { id: sp.editar }, include: { empreendimento: true } })
+      ? prisma.unidade.findFirst({ where: { AND: [{ id: sp.editar }, unidadesVisiveis] }, include: { empreendimento: true } })
       : Promise.resolve(null),
   ]);
 
@@ -321,7 +324,7 @@ export default async function PaginaUnidades({ searchParams }: { searchParams: S
                         </td>
                         <td className="text-right font-mono tabular-nums">{unidade._count.contratos}</td>
                         <td>
-                          <div className="flex justify-end gap-1.5">
+                          <div className="flex flex-wrap items-center justify-end gap-1.5">
                             {podeEditar && <Link
                               href={urlLista({ ...filtros, editar: unidade.id })}
                               className={`${btnSecundario} min-h-8 px-2.5 py-1 text-[11px]`}
@@ -329,6 +332,7 @@ export default async function PaginaUnidades({ searchParams }: { searchParams: S
                               Editar
                             </Link>}
                             <LinkGovernanca tipo="UNIDADE" id={unidade.id} />
+                            <ExcluirRegistroLink tipo="UNIDADE" origemId={unidade.id} />
                             {podeEditar && (unidade.ativo && unidade._count.contratos > 0 ? (
                               <button
                                 type="button"

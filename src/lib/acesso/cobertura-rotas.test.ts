@@ -97,6 +97,7 @@ function validarImportacao(ast: ts.SourceFile, guarda: string) {
 }
 function permissaoEsperada(arquivo: string, nome: string): string {
   if (arquivo === "caixa/actions.ts" && nome === "excluirLancamento") return "governanca.editar";
+  if (arquivo === "temporada/actions.ts" && nome.startsWith("excluir")) return "governanca.editar";
   const modulo = arquivo.split("/")[0];
   const modulos: Record<string, string> = {
     cadastros: "cadastros.editar", contratos: "contratos.editar", caixa: "caixa.editar",

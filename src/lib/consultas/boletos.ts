@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { boletoEstaAtivo, totalDevido } from "@/lib/dominio/boletos";
 import { filtroRecebimentosUnificados } from "@/lib/consultas/filtro-unificacao-nativa";
+import { filtroGovernanca } from "@/lib/governanca/filtros";
 
 const LIMITE_BOLETOS_EXIBIDOS = 150;
 const LIMITE_PAGAMENTOS_EXIBIDOS = 150;
@@ -83,9 +84,10 @@ function criterioAtencao(): Prisma.BoletoWhereInput {
 function criterioFiltroBoletos(
   mes: string,
   filtro: FiltroBoletos,
+  ativos: Prisma.BoletoWhereInput,
 ): Prisma.BoletoWhereInput {
   const competencia: Prisma.BoletoWhereInput = {
-    recebimento: { mesLancamento: mes },
+    AND: [{ recebimento: { mesLancamento: mes } }, ativos],
   };
 
   if (filtro === "abertos") {
@@ -100,8 +102,8 @@ function criterioFiltroBoletos(
   return competencia;
 }
 
-async function listarBoletosPriorizados(mes: string, filtro: FiltroBoletos) {
-  const where = criterioFiltroBoletos(mes, filtro);
+async function listarBoletosPriorizados(mes: string, filtro: FiltroBoletos, ativos: Prisma.BoletoWhereInput) {
+  const where = criterioFiltroBoletos(mes, filtro, ativos);
 
   if (filtro !== "todos") {
     const [boletos, total] = await Promise.all([
@@ -116,7 +118,7 @@ async function listarBoletosPriorizados(mes: string, filtro: FiltroBoletos) {
     return { boletos, total };
   }
 
-  const competencia = criterioFiltroBoletos(mes, "todos");
+  const competencia = criterioFiltroBoletos(mes, "todos", ativos);
   const atencao = {
     AND: [competencia, criterioAtencao()],
   } satisfies Prisma.BoletoWhereInput;
@@ -148,12 +150,13 @@ export async function dadosPaginaBoletos(
   mes: string,
   filtro: FiltroBoletos = "todos",
 ) {
+  const ativos: Prisma.BoletoWhereInput = { ...await filtroGovernanca(prisma, "BOLETO"), recebimento: await filtroRecebimentosUnificados() };
   const competencia: Prisma.BoletoWhereInput = {
-    recebimento: { mesLancamento: mes },
+    AND: [{ recebimento: { mesLancamento: mes } }, ativos],
   };
   const [listagem, recebimentos, contas, fechamento, statusAgrupados, totalAtencao] =
     await Promise.all([
-      listarBoletosPriorizados(mes, filtro),
+      listarBoletosPriorizados(mes, filtro, ativos),
       prisma.recebimento.findMany({
         where: { AND: [{ mesLancamento: mes, recebido: null, origemAgregada: false }, await filtroRecebimentosUnificados()] },
         include: incluirRecebimentoParaBoleto,
@@ -163,7 +166,7 @@ export async function dadosPaginaBoletos(
         ],
       }),
       prisma.contaBancaria.findMany({
-        where: { ativa: true },
+        where: { ativa: true, ...await filtroGovernanca(prisma, "CONTA") },
         orderBy: [{ padrao: "desc" }, { apelido: "asc" }],
       }),
       prisma.fechamentoMensal.findUnique({
@@ -218,9 +221,9 @@ export async function dadosPaginaBoletos(
   };
 }
 
-async function listarPagamentosPriorizados() {
+async function listarPagamentosPriorizados(ativos: Prisma.PagamentoRecebimentoWhereInput) {
   const pendentes = await prisma.pagamentoRecebimento.findMany({
-    where: { conciliadoEm: null },
+    where: { AND: [{ conciliadoEm: null }, ativos] },
     include: incluirPagamentoConciliacao,
     orderBy: { criadoEm: "desc" },
     take: LIMITE_PAGAMENTOS_EXIBIDOS,
@@ -228,7 +231,7 @@ async function listarPagamentosPriorizados() {
   if (pendentes.length >= LIMITE_PAGAMENTOS_EXIBIDOS) return pendentes;
 
   const conciliados = await prisma.pagamentoRecebimento.findMany({
-    where: { conciliadoEm: { not: null } },
+    where: { AND: [{ conciliadoEm: { not: null } }, ativos] },
     include: incluirPagamentoConciliacao,
     orderBy: { criadoEm: "desc" },
     take: LIMITE_PAGAMENTOS_EXIBIDOS - pendentes.length,
@@ -237,6 +240,10 @@ async function listarPagamentosPriorizados() {
 }
 
 export async function dadosPaginaConciliacao() {
+  const boletosAtivos: Prisma.BoletoWhereInput = { ...await filtroGovernanca(prisma, "BOLETO"), recebimento: await filtroRecebimentosUnificados() };
+  const pagamentosAtivos: Prisma.PagamentoRecebimentoWhereInput = {
+    recebimento: await filtroRecebimentosUnificados(), OR: [{ boletoId: null }, { boleto: boletosAtivos }],
+  };
   const eventoPendente: Prisma.EventoBoletoWhereInput = {
     statusProcessamento: { in: ["PENDENTE", "ERRO"] },
   };
@@ -250,7 +257,7 @@ export async function dadosPaginaConciliacao() {
     totalEventosPendentes,
     eventosSemCorrespondencia,
   ] = await Promise.all([
-    listarPagamentosPriorizados(),
+    listarPagamentosPriorizados(pagamentosAtivos),
     prisma.eventoBoleto.findMany({
       where: eventoPendente,
       include: { boleto: true },
@@ -266,10 +273,10 @@ export async function dadosPaginaConciliacao() {
       take: 10,
     }),
     prisma.boleto.count({
-      where: { status: { in: ["PAGAMENTO_REPORTADO", "CANCELAMENTO_REPORTADO"] } },
+      where: { AND: [{ status: { in: ["PAGAMENTO_REPORTADO", "CANCELAMENTO_REPORTADO"] } }, boletosAtivos] },
     }),
-    prisma.pagamentoRecebimento.count({ where: { conciliadoEm: null } }),
-    prisma.pagamentoRecebimento.count({ where: { conciliadoEm: { not: null } } }),
+    prisma.pagamentoRecebimento.count({ where: { AND: [{ conciliadoEm: null }, pagamentosAtivos] } }),
+    prisma.pagamentoRecebimento.count({ where: { AND: [{ conciliadoEm: { not: null } }, pagamentosAtivos] } }),
     prisma.eventoBoleto.count({ where: eventoPendente }),
     prisma.eventoBoleto.count({
       where: { AND: [eventoPendente, { boletoId: null }] },
