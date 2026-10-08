@@ -242,7 +242,7 @@ async function TemporadaDoPeriodo({ periodo }: { periodo: Periodo }) {
           O eixo mostra exatamente os meses cobertos pelas datas escolhidas no
           calendário — escolher 15/03 a 10/05 analisa MAR, ABR e MAI inteiros.
         </p>
-        <div className="mt-3 overflow-x-auto">
+        <div className="mt-3 tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
           <table className="tabela">
             <thead>
               <tr>
@@ -486,7 +486,7 @@ export default async function PaginaPainelTemporada({
               <BarrasMensais valores={a.receitaPorMes} mesSelecionado={0} rotuloAcessivel={`Receita da temporada mês a mês em ${a.ano}`} />
               <details className="mt-2 text-xs text-tinta-suave">
                 <summary className="cursor-pointer select-none">Ver dados</summary>
-                <div className="mt-2 overflow-x-auto">
+                <div className="mt-2 tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
                   <table className="tabela">
                     <thead>
                       <tr>
@@ -525,7 +525,7 @@ export default async function PaginaPainelTemporada({
       {/* ---------- tabela anual ---------- */}
       <Card className="mt-4 p-5">
         <h2 className="mb-2 text-sm font-semibold">Resumo ano a ano</h2>
-        <div className="overflow-x-auto">
+        <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
           <table className="tabela">
             <thead>
               <tr>

@@ -67,6 +67,31 @@ Abra https://brisa.tescod.com — o app pede o login criado no primeiro acesso.
 
 ## 4) Atualizações futuras
 
+### Conferência financeira na própria tela (08/10/2026)
+
+Contas a pagar e contas a receber abrem detalhes, comparação e exclusão em uma
+janela na própria lista. Filtros, paginação e posição são mantidos; as decisões
+continuam exigindo as mesmas permissões, justificativas e verificações de
+concorrência. Fechar um formulário não salvo pede confirmação. A exclusão é
+lógica, restaurável e não cancela operações externas.
+
+As tabelas ajustam texto e espaçamento ao espaço disponível. Nas listas
+financeiras menores, devido, pago e aberto ficam juntos na coluna **Valores**,
+com rótulos individuais. Tabelas mais largas mantêm rolagem interna acessível.
+Esta atualização não altera schema, não importa dados e não executa exclusões.
+
+```bash
+cd /srv/stack/acamargo
+set -e
+git pull --ff-only origin main
+docker compose build brisa
+docker compose up -d brisa
+docker compose logs --tail 60 brisa
+curl --fail --retry 12 --retry-delay 5 --retry-all-errors -I https://brisa.tescod.com/login
+```
+
+Não execute seed nem refaça as importações para aplicar esta atualização.
+
 ### Exclusão administrativa da plataforma (07/10/2026)
 
 As listas de cadastros, contratos, títulos, movimentos, cobrança, boletos,

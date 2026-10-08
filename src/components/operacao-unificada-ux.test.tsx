@@ -27,7 +27,7 @@ function lista(): ListaUnificada {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.perfil.mockResolvedValue("ADMINISTRADOR");
-  mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "ADMINISTRADOR", ativo: true, global: true, regras: [], permissoes: ["cadastros.sensiveis"] });
+  mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "ADMINISTRADOR", ativo: true, global: true, regras: [], permissoes: ["cadastros.sensiveis", "governanca.editar"] });
   mocks.listar.mockResolvedValue(lista());
 });
 
@@ -62,7 +62,7 @@ describe("origem e situação são informações diferentes", () => {
     expect(proxima).toContain("mes=2026-06");
     expect(proxima).toContain("pagina=2");
     expect(html).toContain("estado=PENDENTE&amp;origem=PLANILHA");
-    expect(html).toContain('data-revisao-exclusao="BRISA:RECEBER:r1"');
+    expect(html).toContain('href="/cadastros/governanca?tipo=TITULO&amp;origemId=BRISA%3ARECEBER%3Ar1&amp;modo=excluir"');
     expect(html).not.toContain("consolidação concluída");
   });
   it("não consulta a lista quando o perfil não pode acessar dados globais", async () => {

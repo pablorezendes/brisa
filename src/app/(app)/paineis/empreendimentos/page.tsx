@@ -158,7 +158,7 @@ export default async function PaginaPainelEmpreendimentos({
               Ver resumo de todos os empreendimentos
             </summary>
             <Card className="mt-2 p-4">
-              <div className="overflow-x-auto">
+              <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
                 <table className="tabela">
                   <thead>
                     <tr>

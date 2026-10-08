@@ -1,5 +1,37 @@
 @import "tailwindcss";
 
+.janela-financeira {
+  width: min(1120px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--contorno);
+  border-radius: 18px;
+  background: var(--papel);
+  color: var(--tinta);
+  box-shadow: 0 24px 90px #10282d40;
+  overflow: hidden;
+}
+.janela-financeira[open] { display: flex; flex-direction: column; }
+.janela-financeira::backdrop { background: #10282d85; backdrop-filter: blur(3px); }
+.janela-financeira-cabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-shrink: 0;
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--contorno);
+  background: var(--carta);
+}
+.janela-financeira-conteudo { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 22px; }
+.janela-financeira-rodape { padding: 14px 22px; background: var(--carta); border-top: 1px solid var(--contorno); flex-shrink: 0; }
+@media (max-width: 640px) {
+  .janela-financeira { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); border-radius: 12px; }
+  .janela-financeira-cabecalho, .janela-financeira-conteudo, .janela-financeira-rodape { padding: 14px; }
+}
+
 /* Design system Brisa 2026 — operação imobiliária clara e precisa.
    A navegação escura cria orientação; o plano de trabalho claro preserva
    legibilidade e densidade. Verde-petróleo identifica a marca, enquanto as
@@ -110,10 +142,18 @@ summary {
 .app-content :is(.overflow-x-auto, .tabela-scroll):has(> .tabela) {
   position: relative;
   isolation: isolate;
+  container: brisa-tabela / inline-size;
   width: 100%;
   overflow: auto;
   overscroll-behavior-inline: contain;
-  scroll-padding-inline: 12px 176px;
+  scroll-padding-inline: 12px 192px;
+  /* Sombras de borda indicam conteúdo adicional sem esconder uma coluna. */
+  background:
+    linear-gradient(to right, var(--carta) 35%, transparent) left / 32px 100% local,
+    linear-gradient(to left, var(--carta) 35%, transparent) right / 32px 100% local,
+    linear-gradient(to right, rgba(23, 40, 44, 0.09), transparent) left / 12px 100% scroll,
+    linear-gradient(to left, rgba(23, 40, 44, 0.09), transparent) right / 12px 100% scroll;
+  background-repeat: no-repeat;
 }
 
 .tabela-scroll:focus-visible {
@@ -649,21 +689,52 @@ svg.grafico-executivo {
   }
 }
 
-/* tabelas: sem bordas verticais, réguas horizontais sutis,
-   cabeçalho em serifa (qualidade de "relatório editorial") */
+/* Tabelas fluidas: descrições quebram linha; montantes continuam inteiros.
+   Nenhuma coluna é escondida em notebooks. Só o conteúdo que realmente não
+   cabe exige rolagem, dentro da região focável, nunca da página inteira. */
 .tabela {
   @apply w-full text-[13px];
+  --tabela-espaco-x: 12px;
+  --tabela-espaco-y: 12px;
+  table-layout: auto;
+  line-height: 1.5;
 }
 .tabela th {
-  @apply px-3 py-3 text-left text-[10px] font-bold whitespace-nowrap uppercase tracking-[0.08em];
+  @apply text-left text-[10px] font-bold uppercase tracking-[0.08em];
+  padding: var(--tabela-espaco-y) var(--tabela-espaco-x);
+  white-space: normal;
   font-family: var(--font-public-sans), Arial, sans-serif;
   color: var(--tinta-suave);
   border-bottom: 1px solid var(--contorno);
   background: #f8fafb;
 }
 .tabela td {
-  @apply px-3 py-3 whitespace-nowrap;
+  padding: var(--tabela-espaco-y) var(--tabela-espaco-x);
+  white-space: normal;
+  overflow-wrap: break-word;
+  vertical-align: top;
   border-bottom: 1px solid color-mix(in srgb, var(--contorno) 72%, transparent);
+}
+.tabela :is(td, th) > :is(p, div, strong, a) {
+  overflow-wrap: anywhere;
+}
+.tabela td :is(input, select, textarea) {
+  max-width: 100%;
+}
+.tabela :is(td.font-mono, td.tabular-nums, .numero-dado),
+.tabela td:has(> .sigilo),
+.tabela td:has(> .numero-dado) {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  font-variant-numeric: tabular-nums;
+}
+.tabela .status-badge {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: normal;
+}
+.tabela .status-badge > span {
+  flex-shrink: 0;
 }
 .tabela tbody tr:hover {
   background: #f6f9f9;
@@ -681,8 +752,8 @@ svg.grafico-executivo {
   position: sticky;
   right: 0;
   z-index: 2;
-  min-width: 104px;
-  max-width: min(19rem, 56vw);
+  min-width: 112px;
+  max-width: 12rem;
   background: var(--carta);
   box-shadow: -10px 0 12px -12px rgba(23, 40, 44, 0.6);
   white-space: normal;
@@ -703,8 +774,12 @@ svg.grafico-executivo {
   white-space: normal;
 }
 .tabela--acoes > tbody > tr > td:last-child:not([colspan]) > :is(div, span, details) {
-  max-width: min(19rem, 56vw);
+  max-width: 12rem;
   flex-wrap: wrap;
+}
+.tabela--acoes > tbody > tr > td:last-child:not([colspan]):has(.tabela-configuracao-conta[open]),
+.tabela--acoes > tbody > tr > td:last-child:not([colspan]) > div:has(.tabela-configuracao-conta[open]) {
+  max-width: min(19rem, 70vw);
 }
 .tabela-configuracao-conta {
   width: 8.5rem;
@@ -712,6 +787,83 @@ svg.grafico-executivo {
 }
 .tabela-configuracao-conta[open] {
   width: min(19rem, calc(100vw - 5rem));
+}
+
+/* Em notebooks, três montantes lado a lado competem com a identificação.
+   A versão compacta conserva os três valores, agora rotulados por linha.
+   Apenas uma representação participa do layout e da árvore acessível. */
+.tabela-financeira > :is(thead, tbody) > tr > :is(th, td):nth-child(1) {
+  min-width: 180px;
+}
+.tabela-financeira > :is(thead, tbody) > tr > :is(th, td):nth-child(2) {
+  min-width: 145px;
+}
+.tabela-financeira > :is(thead, tbody) > tr > :is(th, td):nth-child(3) {
+  min-width: 80px;
+}
+.tabela-financeira .tabela-valor-separado {
+  min-width: 125px;
+}
+.tabela-financeira .tabela-valores-agrupados {
+  display: none;
+  min-width: 145px;
+}
+.tabela-valores-financeiros {
+  display: grid;
+  gap: 6px;
+}
+.tabela-valores-financeiros > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.tabela-valores-financeiros dt {
+  font-size: 10px;
+  color: var(--tinta-suave);
+}
+.tabela-valores-financeiros dd {
+  text-align: right;
+  white-space: nowrap;
+}
+.tabela-valores-financeiros > div:last-child dd {
+  font-weight: 600;
+}
+
+/* A largura útil muda também ao recolher a navegação ou abrir um popup.
+   Container queries respondem ao espaço da própria tabela, não ao monitor. */
+@container brisa-tabela (max-width: 64rem) {
+  .tabela {
+    --tabela-espaco-x: 9px;
+    --tabela-espaco-y: 11px;
+    font-size: 12px;
+  }
+  .tabela th {
+    font-size: 9.5px;
+    letter-spacing: 0.055em;
+  }
+  .tabela--acoes > :is(thead, tbody, tfoot) > tr > :is(th, td):last-child:not([colspan]),
+  .tabela--acoes > tbody > tr > td:last-child:not([colspan]) > :is(div, span, details) {
+    max-width: 11rem;
+  }
+}
+
+@container brisa-tabela (max-width: 42rem) {
+  .tabela {
+    --tabela-espaco-x: 8px;
+  }
+  .tabela--acoes > :is(thead, tbody, tfoot) > tr > :is(th, td):last-child:not([colspan]) {
+    min-width: 104px;
+  }
+}
+
+@container brisa-tabela (max-width: 60rem) {
+  .tabela-financeira .tabela-valor-separado {
+    display: none;
+  }
+  .tabela-financeira .tabela-valores-agrupados {
+    display: table-cell;
+  }
 }
 
 @media print {

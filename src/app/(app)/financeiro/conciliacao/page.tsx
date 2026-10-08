@@ -111,7 +111,7 @@ export default async function PaginaConciliacao({
           <div className="px-5 py-10 text-center text-[12px] text-tinta-suave">Nenhuma liquidação bancária importada até agora.</div>
         ) : (
           <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
-            <table className="tabela tabela--acoes min-w-[1120px]">
+            <table className="tabela tabela--acoes">
               <thead><tr><th>Pagador e imóvel</th><th>Data</th><th className="text-right">Banco</th><th className="text-right">Devido</th><th>Conta</th><th>Resultado</th><th>Origem</th><th className="text-right">Ação</th></tr></thead>
               <tbody>
                 {dados.pagamentos.map((pagamento) => {

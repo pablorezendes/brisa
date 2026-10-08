@@ -385,7 +385,7 @@ export default async function PainelCobranca({
             recebidas. Nada a cobrar hoje.
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
             <table className="tabela tabela--acoes">
               <thead>
                 <tr>
@@ -532,7 +532,7 @@ export default async function PainelCobranca({
                 <summary className="cursor-pointer select-none">
                   Ver dados
                 </summary>
-                <div className="mt-2 overflow-x-auto">
+                <div className="mt-2 tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
                   <table className="tabela">
                     <thead>
                       <tr>
@@ -595,7 +595,7 @@ export default async function PainelCobranca({
                 <summary className="cursor-pointer select-none">
                   Ver dados
                 </summary>
-                <div className="mt-2 overflow-x-auto">
+                <div className="mt-2 tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
                   <table className="tabela">
                     <thead>
                       <tr>
@@ -659,7 +659,7 @@ export default async function PainelCobranca({
           mesSelecionado={vm.destaqueSerie}
           rotulos={vm.rotulosSerie}
         />
-        <div className="mt-3 overflow-x-auto">
+        <div className="mt-3 tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
           <table className="tabela">
             <thead>
               <tr>

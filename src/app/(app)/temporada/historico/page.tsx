@@ -34,7 +34,7 @@ export default async function PaginaHistoricoTemporada() {
               <div className="border-b border-contorno px-5 py-3">
                 <h2 className="text-sm font-semibold">Apuração {a.ano}</h2>
               </div>
-              <div className="overflow-x-auto">
+              <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
                 <table className="tabela">
                   <thead>
                     <tr>

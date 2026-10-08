@@ -171,7 +171,7 @@ export default async function PaginaEmpreendimentos({ searchParams }: { searchPa
             />
           ) : (
             <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
-              <table className="tabela tabela--acoes min-w-[720px]">
+              <table className="tabela tabela--acoes">
                 <caption className="sr-only">Empreendimentos cadastrados</caption>
                 <thead>
                   <tr>

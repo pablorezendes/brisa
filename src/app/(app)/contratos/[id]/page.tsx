@@ -219,7 +219,7 @@ export default async function PaginaDetalheContrato({
         <div className="px-4 pb-1 pt-3">
           <h2 className="text-sm font-bold">Histórico de recebimentos</h2>
         </div>
-        <div className="overflow-x-auto">
+        <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
           <table className="tabela tabela--acoes">
             <thead>
               <tr>

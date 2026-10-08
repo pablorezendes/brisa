@@ -300,7 +300,7 @@ export default async function PaginaLocatarios({ searchParams }: { searchParams:
             />
           ) : (
             <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
-              <table className="tabela tabela--acoes min-w-[880px]">
+              <table className="tabela tabela--acoes">
                 <caption className="sr-only">Inquilinos cadastrados</caption>
                 <thead>
                   <tr>

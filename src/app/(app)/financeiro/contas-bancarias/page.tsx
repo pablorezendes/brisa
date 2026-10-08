@@ -1051,7 +1051,7 @@ export default async function PaginaContasBancarias({
           </div>
         ) : (
           <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Contas bancárias — tabela com rolagem horizontal" tabIndex={0}>
-            <table className="tabela tabela--acoes min-w-[1180px]">
+            <table className="tabela tabela--acoes">
               <caption className="sr-only">
                 Contas bancárias, situação cadastral, integração e boletos
               </caption>

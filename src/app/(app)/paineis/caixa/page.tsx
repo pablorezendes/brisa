@@ -289,7 +289,7 @@ export default async function PaginaPainelCaixa({
           Verde é o que entrou; as saídas de todos os centros aparecem empilhadas.
           Mês bom é o verde maior que a pilha.
         </p>
-        <div className="mt-3 overflow-x-auto">
+        <div className="mt-3 tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
           <table className="tabela">
             <thead>
               <tr>
@@ -404,7 +404,7 @@ export default async function PaginaPainelCaixa({
                 <summary className="cursor-pointer select-none">
                   Ver dados por centro
                 </summary>
-                <div className="mt-2 overflow-x-auto">
+                <div className="mt-2 tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
                   <table className="tabela">
                     <thead>
                       <tr>
@@ -496,7 +496,7 @@ export default async function PaginaPainelCaixa({
             Nenhuma saída lançada {naJanela}.
           </p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
             <table className="tabela">
               <thead>
                 <tr>

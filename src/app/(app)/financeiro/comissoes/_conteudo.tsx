@@ -149,7 +149,7 @@ export default async function ComissaoPage({
       ) : null}
 
       <Card>
-        <div className="overflow-x-auto">
+        <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
           <table className="tabela">
             <thead>
               <tr>

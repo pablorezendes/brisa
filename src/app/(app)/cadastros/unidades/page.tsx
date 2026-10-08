@@ -285,7 +285,7 @@ export default async function PaginaUnidades({ searchParams }: { searchParams: S
             />
           ) : (
             <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
-              <table className="tabela tabela--acoes min-w-[900px]">
+              <table className="tabela tabela--acoes">
                 <caption className="sr-only">Imóveis cadastrados</caption>
                 <thead>
                   <tr>

@@ -240,7 +240,7 @@ export default async function PaginaBoletos({
             <div className="px-5 py-9 text-center text-[12px] text-tinta-suave">Nenhum lançamento elegível aguardando boleto neste mês.</div>
           ) : (
             <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
-              <table className="tabela tabela--acoes min-w-[1050px]">
+              <table className="tabela tabela--acoes">
                 <thead>
                   <tr>
                     <th>Pagador e imóvel</th>
@@ -347,7 +347,7 @@ export default async function PaginaBoletos({
           <div className="px-5 py-10 text-center text-[12px] text-tinta-suave">Nenhum boleto neste filtro.</div>
         ) : (
           <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
-            <table className="tabela tabela--acoes min-w-[1120px]">
+            <table className="tabela tabela--acoes">
               <thead>
                 <tr>
                   <th>Pagador e imóvel</th>

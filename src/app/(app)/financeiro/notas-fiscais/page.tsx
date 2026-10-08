@@ -37,7 +37,7 @@ export default async function NotasFiscaisPage({ searchParams }: { searchParams:
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-contorno p-5"><h2 className="text-sm font-semibold text-tinta">Documentos e histórico</h2><form className="flex items-center gap-2"><label className="sr-only" htmlFor="status-fiscal">Situação</label><select id="status-fiscal" name="status" defaultValue={status ?? ""} className="max-w-full rounded-lg border border-contorno bg-carta p-2 text-xs"><option value="">Todas as situações</option>{Object.entries(STATUS_FISCAIS).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select><button className={botaoFiscalSecundario}>Filtrar</button></form></div>
       {!notas.length ? <div className="p-10 text-center"><p className="text-sm font-semibold text-tinta">Nenhuma nota nesta seleção</p><p className="mt-2 text-xs text-tinta-suave">Os dados financeiros não são convertidos em notas automaticamente. Crie um rascunho com o serviço e o tomador conferidos.</p></div> : (
         <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
-          <table className="tabela tabela--acoes min-w-[1000px] w-full">
+          <table className="tabela tabela--acoes w-full">
             <thead><tr><th>Prestação / tomador</th><th>Competência</th><th>Ambiente</th><th>Valor do serviço</th><th>Situação</th><th>Ações</th></tr></thead>
             <tbody>{notas.map((nota) => (
               <tr key={nota.id}>

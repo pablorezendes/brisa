@@ -276,7 +276,7 @@ export default async function PaginaAuditoriaWidesys({
             </div>
           </div>
         </div>
-        <div className="overflow-x-auto">
+        <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
           <table className="tabela">
             <thead>
               <tr>
@@ -356,7 +356,7 @@ export default async function PaginaAuditoriaWidesys({
           <h2 className="text-[15px] font-bold text-tinta">Conferência da captura por escopo</h2>
           <p className="mt-0.5 text-[10px] text-tinta-suave">Contagens preservadas e somas registradas no último lote. As decisões da operação unificada são apresentadas no quadro acima.</p>
         </div>
-        <div className="overflow-x-auto">
+        <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
           <table className="tabela">
             <thead><tr><th>Escopo</th><th className="text-right">Fonte</th><th className="text-right">Atual</th><th className="text-right">Staging</th><th className="text-right">Quarentena</th><th className="text-right">Ausentes</th><th className="text-right">Soma fonte</th><th className="text-right">Soma aceita</th><th className="text-right">Saldo aberto</th></tr></thead>
             <tbody>
@@ -410,7 +410,7 @@ export default async function PaginaAuditoriaWidesys({
         {dados.titulos.itens.length === 0 ? (
           <div className="px-5 py-10 text-center text-[12px] text-tinta-suave">Nenhum título encontrado neste filtro.</div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
             <table className="tabela">
               <thead><tr><th>Título</th><th>Origem</th><th>Natureza</th><th>Vencimento</th><th>Situação</th><th className="text-right">Devido</th><th className="text-right">Pago</th><th className="text-right">Aberto</th><th>Importação</th></tr></thead>
               <tbody>
@@ -453,7 +453,7 @@ export default async function PaginaAuditoriaWidesys({
         {dados.quarentenas.recentes.length === 0 ? (
           <div className="px-5 py-8 text-center text-[12px] text-tinta-suave">Nenhuma quarentena registrada.</div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
             <table className="tabela">
               <thead><tr><th>Escopo</th><th>ID legado</th><th>Ação</th><th>Motivo</th><th>Captura</th><th>Processado em</th></tr></thead>
               <tbody>

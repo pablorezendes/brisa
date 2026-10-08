@@ -620,7 +620,7 @@ export default async function PaginaExecutivo({
             />
             <details className="mt-2 text-xs text-tinta-suave">
               <summary className="cursor-pointer select-none">Ver dados do gráfico</summary>
-              <div className="mt-2 overflow-x-auto">
+              <div className="mt-2 tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
                 <table className="tabela">
                   <thead>
                     <tr>
@@ -712,7 +712,7 @@ export default async function PaginaExecutivo({
             )}
             <details className="mt-2 text-xs text-tinta-suave">
               <summary className="cursor-pointer select-none">Ver dados do caixa</summary>
-              <div className="mt-2 overflow-x-auto">
+              <div className="mt-2 tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
                 <table className="tabela">
                   <thead>
                     <tr>
@@ -766,7 +766,7 @@ export default async function PaginaExecutivo({
           titulo={`Recebimentos por empreendimento — ${periodo ? periodo.rotulo : formatarCompetencia(mes)}`}
           ajuda="Pagamentos registrados por empreendimento na janela selecionada, incluindo aluguel e repasses. O ticket médio divide o recebido pelas cobranças pagas."
         />
-        <div className="overflow-x-auto">
+        <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
           <table className="tabela">
             <thead>
               <tr>
@@ -832,7 +832,7 @@ export default async function PaginaExecutivo({
               {periodo ? "no período" : "neste mês"}.
             </p>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
               <table className="tabela">
                 <thead>
                   <tr>
@@ -882,7 +882,7 @@ export default async function PaginaExecutivo({
               recebidas.
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
               <table className="tabela">
                 <thead>
                   <tr>

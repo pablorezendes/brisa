@@ -42,7 +42,7 @@ describe("layout compartilhado", () => {
 
 describe("tabelas sem recorte de ações", () => {
   const telas = [
-    "src/components/operacao-unificada.tsx",
+    "src/components/tabela-operacao-unificada.tsx",
     "src/app/(app)/financeiro/contas-bancarias/page.tsx",
     "src/app/(app)/financeiro/boletos/page.tsx",
     "src/app/(app)/financeiro/conciliacao/page.tsx",
@@ -57,7 +57,7 @@ describe("tabelas sem recorte de ações", () => {
     "src/app/(app)/recebimentos/page.tsx",
     "src/app/(app)/contratos/page.tsx",
     "src/app/(app)/temporada/page.tsx",
-    "src/app/(app)/unificacao/[chave]/page.tsx",
+    "src/components/conferencia-registro.tsx",
   ];
 
   it.each(telas)("%s mantém ações fixas e scroll acessível por teclado", (arquivo) => {
@@ -65,6 +65,13 @@ describe("tabelas sem recorte de ações", () => {
     expect(codigo).toContain("tabela tabela--acoes");
     expect(codigo).toContain('role="region"');
     expect(codigo).toContain("tabIndex={0}");
+  });
+
+  it("a operação unificada usa a tabela responsiva extraída com DTO explícito", () => {
+    const codigo = ler("src/components/operacao-unificada.tsx");
+    expect(codigo).toContain('from "@/components/tabela-operacao-unificada"');
+    expect(codigo).toContain("<TabelaOperacaoUnificada itens={itensTabela}");
+    expect(codigo).not.toContain("itens={dados.itens}");
   });
 
   it("a Visão geral contém o scroll na própria tabela, sem fixar a coluna de valor", () => {

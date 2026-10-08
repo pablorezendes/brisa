@@ -238,7 +238,7 @@ export default async function PaginaDetalheEmpreendimento({
           </p>
           <details className="mt-2 text-xs text-tinta-suave">
             <summary className="cursor-pointer select-none">Ver dados</summary>
-            <div className="mt-2 overflow-x-auto">
+            <div className="mt-2 tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
               <table className="tabela">
                 <thead>
                   <tr>
@@ -289,7 +289,7 @@ export default async function PaginaDetalheEmpreendimento({
           </p>
           <details className="mt-2 text-xs text-tinta-suave">
             <summary className="cursor-pointer select-none">Ver dados</summary>
-            <div className="mt-2 overflow-x-auto">
+            <div className="mt-2 tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
               <table className="tabela">
                 <thead>
                   <tr>
@@ -335,7 +335,7 @@ export default async function PaginaDetalheEmpreendimento({
             Nenhuma unidade cadastrada neste empreendimento.
           </p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
             <table className="tabela">
               <thead>
                 <tr>
@@ -439,7 +439,7 @@ export default async function PaginaDetalheEmpreendimento({
             {vm.naJanela}.
           </p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
             <table className="tabela">
               <thead>
                 <tr>
