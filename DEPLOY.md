@@ -67,6 +67,43 @@ Abra https://brisa.tescod.com — o app pede o login criado no primeiro acesso.
 
 ## 4) Atualizações futuras
 
+### Organizar dados e diagnosticar Widesys (07/10/2026)
+
+`Financeiro → Organizar dados` separa origem (Excel/Widesys/Brisa sem prova de
+arquivo) de situação (incluído, pendente, inconsistente ou cópia vinculada).
+Não classifica registros antigos como manuais por suposição. As contagens são
+do banco no qual a aplicação está rodando: não são uma consulta ao legado ao vivo.
+Os indicadores do Executivo/locações/livro original preservam a apuração nativa,
+identificada nas telas, e não devem ser somados à visão unificada.
+
+Importações parciais e análises automáticas não significam conciliação financeira
+concluída. Linhas Excel pendentes não participam do caixa; sua aprovação individual
+ainda não está implementada. Exclusões de registros operacionais continuam com
+histórico, motivo e proteção de pagamentos/meses fechados. Nenhuma carga ou exclusão
+é executada ao abrir a central.
+
+Após atualizar o código e reconstruir o container, pode testar a conexão do próprio
+servidor sem importar, emitir cobranças ou gravar dados pessoais. Não coloque a
+senha diretamente no comando/histórico:
+
+```bash
+read -r -p "Usuário Widesys: " WIDESYS_USUARIO
+read -r -s -p "Senha Widesys: " WIDESYS_SENHA
+printf '\n'
+export WIDESYS_USUARIO WIDESYS_SENHA
+docker compose exec -e WIDESYS_USUARIO -e WIDESYS_SENHA brisa \
+  npm run diagnosticar:widesys || true
+unset WIDESYS_USUARIO WIDESYS_SENHA
+```
+
+O JSON separa API, login e cada tela financeira. `OK` confirma somente aquela
+consulta no instante do teste. Totais das telas refletem os filtros padrão do
+legado, não totais globais. O script limita amostras, tempo e tamanho das respostas,
+não imprime senha, cookies ou documentos e não grava banco/arquivos.
+O aplicativo não agenda sincronização Widesys contínua: a conexão disponível
+não é prova de dados atualizados. Captura e importação continuam sendo etapas
+separadas, com deduplicação e conferência antes de uso operacional.
+
 ### Atualização 2026-10-07: usuários, carteiras e governança
 
 Esta versão adiciona **Configurações → Usuários e permissões**, a consulta

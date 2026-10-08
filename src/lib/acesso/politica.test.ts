@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { carteiraIrrestrita, montarPolitica, navegacaoAcesso, permitidoRecurso, pode, podeAbrirRota, podeNavegar, type DadosPolitica } from "./politica";
 const usuario = (u: Partial<DadosPolitica> = {}): DadosPolitica => ({ id: "u", perfil: "FINANCEIRO", ativo: true, acessoGlobal: false, permissoesExtras: "[]", permissoesNegadas: "[]", regrasAcesso: [], ...u });
 describe("permissões e navegação", () => {
+  it("organização global exige permissão de unificação, PII e carteira irrestrita", () => {
+    const base = { acessoGlobal: true, permissoesExtras: '["unificacao.ver","cadastros.sensiveis"]' };
+    expect(podeAbrirRota(montarPolitica(usuario(base)), "/financeiro/dados")).toBe(true);
+    expect(podeAbrirRota(montarPolitica(usuario({ ...base, acessoGlobal: false })), "/financeiro/dados")).toBe(false);
+    expect(podeAbrirRota(montarPolitica(usuario({ ...base, permissoesNegadas: '["cadastros.sensiveis"]' })), "/financeiro/dados")).toBe(false);
+    expect(podeAbrirRota(montarPolitica(usuario({ ...base, perfil: "CONTABILIDADE" })), "/financeiro/dados")).toBe(false);
+  });
   it("administrador sempre vê comissões e tem acesso integral", () => {
     const p = montarPolitica(usuario({ perfil: "ADMINISTRADOR", permissoesNegadas: '["comissoes.ver"]' }));
     expect(pode(p, "comissoes.ver")).toBe(true);

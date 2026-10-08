@@ -7,6 +7,7 @@ import { prisma } from "../db";
 import { normalizar } from "../dominio/normalizacao";
 import { operacaoNaRequisicao } from "./operacao-na-requisicao";
 import { dataOperacionalUnificada, mesOperacionalUnificado } from "../unificacao/periodo";
+import { correspondeOrigem, resumirOrganizacaoFinanceira } from "../unificacao/origens";
 import { DOMINIOS_UNIFICACAO, type FiltrosUnificacao, type LinhaUnificada, type ListaUnificada } from "../unificacao/tipos";
 
 const ler = cache(async () => {
@@ -37,6 +38,7 @@ export async function listarUnificados(filtros: FiltrosUnificacao = {}): Promise
   const universo = linhas.filter(l => {
     if (!perfilPodeVerComissoes(perfil) && parametroReservado(l)) return false;
     if (dominio && l.dominio !== dominio) return false;
+    if (!correspondeOrigem(l, filtros.origem)) return false;
     if (q && !normalizar(`${l.titulo} ${l.descricao} ${Object.values(l.campos).map(c => c.valor).join(" ")}`).includes(q)) return false;
     if (mes && mesOperacionalUnificado(l) !== mes) return false;
     const data = dataOperacionalUnificada(l);
@@ -95,4 +97,26 @@ export async function resumoUnificacao() {
     listarUnificados({ dominio: "RECEBER", porPagina: 1 }), listarUnificados({ dominio: "PAGAR", porPagina: 1 }), listarUnificados({ dominio: "MOVIMENTO", porPagina: 1 }), listarUnificados({ dominio: "PESSOA", porPagina: 1 }), listarUnificados({ dominio: "CONTRATO", porPagina: 1 }),
   ]);
   return { receber: receber.resumo, pagar: pagar.resumo, movimentos: movimentos.resumo, pessoas: pessoas.resumo, contratos: contratos.resumo };
+}
+
+/** Projeção operacional atual e trilha histórica dos lotes, mantidas separadas. */
+export async function organizacaoDosDados() {
+  await exigirPermissaoAcesso("unificacao.ver", { global: true });
+  const { linhas } = await ler();
+  const [planilhas, ultimoWidesys, ultimaAnalise, excluidos] = await Promise.all([
+    prisma.importacaoPlanilhaLinha.groupBy({ by: ["status"], where: { reservado: false }, _count: { _all: true } }),
+    prisma.importacaoLegadoLote.findFirst({ where: { origem: "WIDESYS" }, orderBy: { capturadoEm: "desc" }, select: { capturadoEm: true, concluidoEm: true, status: true } }),
+    prisma.unificacaoDecisao.findFirst({ where: { acao: "ANALISAR" }, orderBy: { criadoEm: "desc" }, select: { criadoEm: true } }),
+    prisma.recursoGovernado.count({ where: { status: { not: "ATIVO" } } }),
+  ]);
+  const ultimoExcel = await prisma.importacaoPlanilhaLote.findFirst({ orderBy: { criadoEm: "desc" }, select: { criadoEm: true } });
+  return {
+    ...resumirOrganizacaoFinanceira(linhas), ultimoWidesys, ultimaAnalise: ultimaAnalise?.criadoEm ?? null,
+    ultimoExcel: ultimoExcel?.criadoEm ?? null, excluidos,
+    planilhas: {
+      importados: planilhas.find(p => p.status === "IMPORTADO")?._count._all ?? 0,
+      existentes: planilhas.find(p => p.status === "JA_EXISTENTE")?._count._all ?? 0,
+      pendentes: planilhas.find(p => p.status === "PENDENTE")?._count._all ?? 0,
+    },
+  };
 }

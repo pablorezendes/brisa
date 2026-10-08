@@ -83,7 +83,7 @@ const ROTAS: Array<[string, PermissaoAcesso]> = [
   ["/financeiro/comissoes", "comissoes.ver"], ["/relatorios/comissao", "comissoes.ver"],
   ["/cadastros/governanca", "governanca.editar"], ["/cadastros/base-unificada", "unificacao.ver"],
   ["/cadastros/contratos-unificados", "contratos.ver"], ["/cadastros", "cadastros.ver"],
-  ["/financeiro/importacoes", "importacoes.ver"], ["/financeiro/migracao-widesys", "importacoes.ver"],
+  ["/financeiro/dados", "unificacao.ver"], ["/financeiro/importacoes", "importacoes.ver"], ["/financeiro/migracao-widesys", "importacoes.ver"],
   ["/financeiro/boletos", "boletos.ver"], ["/financeiro/contas-bancarias", "contas.ver"],
   ["/financeiro/conciliacao", "pagamentos.conciliar"], ["/financeiro/automacoes", "comunicacoes.ver"],
   ["/financeiro/notas-fiscais", "fiscal.ver"], ["/financeiro", "financeiro.ver"],
@@ -96,7 +96,7 @@ export function permissaoDaRota(path: string): PermissaoAcesso | null {
   if (path === "/") return "painel.ver";
   return ROTAS.find(([r]) => path === r || path.startsWith(r + "/"))?.[1] ?? null;
 }
-const ROTAS_SENSIVEIS = ["/cadastros/pessoas", "/cadastros/imoveis-legado", "/cadastros/base-unificada", "/cadastros/contratos-unificados", "/unificacao", "/financeiro/migracao-widesys", "/financeiro/contas-a-pagar", "/financeiro/contas-a-receber", "/financeiro/movimentacoes"];
+const ROTAS_SENSIVEIS = ["/cadastros/pessoas", "/cadastros/imoveis-legado", "/cadastros/base-unificada", "/cadastros/contratos-unificados", "/unificacao", "/financeiro/dados", "/financeiro/migracao-widesys", "/financeiro/contas-a-pagar", "/financeiro/contas-a-receber", "/financeiro/movimentacoes"];
 const requerDadosSensiveis = (path: string) => ROTAS_SENSIVEIS.some(r => path === r || path.startsWith(r + "/"));
 export function podeAbrirRota(p: PoliticaAcesso, path: string): boolean {
   if (path === "/ajuda") return p.ativo;

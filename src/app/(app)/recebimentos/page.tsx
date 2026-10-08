@@ -1,4 +1,5 @@
 import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
+import { BaseFinanceira } from "@/components/base-financeira";
 import { podeExibirAcao } from "@/components/acao-autorizada";
 import { LinkGovernanca } from "@/components/link-governanca";
 import Link from "next/link";
@@ -206,6 +207,7 @@ export default async function PaginaRecebimentos({
         }
       />
 
+      <BaseFinanceira tipo="locacao" />
       {sp.erro ? (
         <div className="mb-4 rounded-md border border-erro/25 bg-erro/5 px-4 py-2.5 text-sm text-erro">
           {sp.erro}

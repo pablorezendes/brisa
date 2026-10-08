@@ -1,5 +1,6 @@
 import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
-import { AcaoAutorizada, podeExibirAcao } from "@/components/acao-autorizada";
+import { BaseFinanceira } from "@/components/base-financeira";
+import { podeExibirAcao } from "@/components/acao-autorizada";
 import { podeAbrirRota, type PermissaoAcesso } from "@/lib/acesso/politica";
 import Link from "next/link";
 import { IconeMenu, type IconeMenuNome } from "@/components/icones-menu";
@@ -317,7 +318,7 @@ export default async function PaginaFinanceiro({
       />
 
       {unificadoReceber && unificadoPagar && unificadoMovimento ? <section className="mb-7" aria-label="Financeiro unificado">
-        <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-bold tracking-tight">Financeiro unificado</h2><p className="mt-1 text-xs text-tinta-suave">Widesys, planilhas e operação · {formatarCompetencia(mes)} · cada ocorrência contabilizada uma vez</p></div><AcaoAutorizada permissao={["unificacao.editar", "pagamentos.conciliar"]} perfis={["ADMINISTRADOR", "FINANCEIRO"]}><Link href="/unificacao?estado=PENDENTE" className={btnSecundario}>Resolver duplicidades</Link></AcaoAutorizada></div>
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-bold tracking-tight">Financeiro unificado · registros aceitos</h2><p className="mt-1 text-xs text-tinta-suave">Widesys e planilhas Excel · {formatarCompetencia(mes)} · pendências não entram nestes totais; revisão ainda necessária</p></div>{podeAbrirRota(acesso, "/financeiro/dados") && <Link href="/financeiro/dados" className={btnSecundario}>Organizar dados e entender origens</Link>}</div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Kpi rotulo="A receber · em aberto" valor={<Dinheiro centavos={unificadoReceber.resumo.aberto} />} detalhe={`${unificadoReceber.resumo.ativos} registros consolidados`} href={`/recebimentos?mes=${mes}`} ajuda="Saldo devido menos recebido dos registros aceitos das fontes unificadas. Correspondências pendentes ficam fora do total." />
           <Kpi rotulo="A pagar · em aberto" valor={<Dinheiro centavos={unificadoPagar.resumo.aberto} />} detalhe={`${unificadoPagar.resumo.ativos} registros consolidados`} href={`/financeiro/contas-a-pagar?mes=${mes}`} ajuda="Saldo das obrigações trazidas para a operação e aceitas na conciliação." />
@@ -328,6 +329,7 @@ export default async function PaginaFinanceiro({
         <div className="mt-3 flex flex-wrap gap-2"><Link href={`/recebimentos?mes=${mes}`} className={btnPrimario}>Contas a receber</Link><Link href={`/financeiro/contas-a-pagar?mes=${mes}`} className={btnSecundario}>Contas a pagar</Link><Link href={`/caixa?mes=${mes}`} className={btnSecundario}>Movimentações</Link></div>
       </section> : null}
 
+      <BaseFinanceira tipo="locacao" />
       <Card
         className="relative mb-5 overflow-hidden border-0 p-0 text-white"
         style={{

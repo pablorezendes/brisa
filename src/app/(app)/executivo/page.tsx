@@ -1,4 +1,5 @@
 import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
+import { BaseFinanceira } from "@/components/base-financeira";
 import Link from "next/link";
 import {
   Ajuda,
@@ -346,6 +347,7 @@ export default async function PaginaExecutivo({
         }
       />
 
+      <BaseFinanceira tipo="executivo" />
       {/* ---------- resumo da janela em linguagem natural ---------- */}
       <Card className="mb-4 px-6 py-4" nivel={nvTaxa}>
         <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.1em] text-tinta-suave">

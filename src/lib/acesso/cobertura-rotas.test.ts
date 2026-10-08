@@ -34,6 +34,7 @@ const PAGINAS = [
   "financeiro/contas-a-receber/page.tsx",
   "financeiro/contas-bancarias/page.tsx",
   "financeiro/importacoes/page.tsx",
+  "financeiro/dados/page.tsx",
   "financeiro/importacoes/[id]/page.tsx",
   "financeiro/migracao-widesys/page.tsx",
   "financeiro/movimentacoes/page.tsx",

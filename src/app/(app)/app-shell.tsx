@@ -62,6 +62,7 @@ const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
         icone: "financeiro",
         itens: [
           { tipo: "link", href: "/financeiro", rotulo: "Visão financeira", correspondencia: "exata" },
+          { tipo: "link", href: "/financeiro/dados", rotulo: "Organizar dados", icone: "integracao", perfis: ["ADMINISTRADOR", "FINANCEIRO"] },
           { tipo: "link", href: "/recebimentos", rotulo: "Contas a receber", icone: "recebimentos" },
           { tipo: "link", href: "/financeiro/contas-a-pagar", rotulo: "Contas a pagar", icone: "financeiro", perfis: ["ADMINISTRADOR", "FINANCEIRO"] },
           { tipo: "link", href: "/financeiro/boletos", rotulo: "Boletos", icone: "boletos" },

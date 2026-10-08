@@ -32,7 +32,7 @@ export type LinhaUnificada = FonteUnificacao & {
 };
 export type FiltrosUnificacao = {
   dominio?: string; estado?: string; q?: string; pagina?: number; porPagina?: number;
-  mes?: string; de?: string; ate?: string; vencidos?: boolean; papel?: string;
+  mes?: string; de?: string; ate?: string; vencidos?: boolean; papel?: string; origem?: string;
 };
 export type ListaUnificada = {
   itens: LinhaUnificada[]; total: number; pagina: number; paginas: number; porPagina: number;

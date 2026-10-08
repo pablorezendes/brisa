@@ -11,6 +11,7 @@
  * continua mensal — o botão "Novo lançamento" leva à competência corrente.
  */
 import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
+import { BaseFinanceira } from "@/components/base-financeira";
 import { AcaoAutorizada } from "@/components/acao-autorizada";
 import { LinkGovernanca } from "@/components/link-governanca";
 import Link from "next/link";
@@ -370,6 +371,7 @@ export default async function PaginaCaixa({
         }
       />
 
+      <BaseFinanceira tipo="livro" />
       {/* ---------- consolidação ----------
            O saldo NÃO é mais um cartão igual aos outros três: ele é o
            resultado deles. Fica em faixa própria, com número maior e a barra
