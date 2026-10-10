@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildListUrl,
   canonicalOperationalDetailUrl,
@@ -13,11 +16,17 @@ import {
   contractParties,
   extractLegacyListRows,
   flattenedFields,
+  fetchDetails,
+  isFatalOperationalError,
+  loadManifest,
   mergeOperationalCheckpointArtifacts,
   nextOperationalPageOffset,
   operationalRecordCheckpointHash,
   operationalRecordCheckpointIsValid,
   operationalManifestIsResumable,
+  operationalManifestIsRetryable,
+  OperationalCaptureError,
+  OperationalSession,
   operationalReferencesForRow,
   paymentRows,
   parseArgs,
@@ -25,12 +34,359 @@ import {
   persistableListRows,
   publicUrl,
   requireReportedTotal,
+  runOperationalModules,
+  SameOriginClient,
   sanitizeManifestErrorMessage,
   shardScopeRecords,
   verifyGlobalOperationalTotal,
   verifiedOperationalTotal,
 } from "./capturar-operacao-widesys";
-import { extractRecord } from "./widesys-parser";
+import { extractRecord, sha256 } from "./widesys-parser";
+import { conteudoHashManifestoOperacao } from "../src/lib/importacao/manifesto-operacao-widesys";
+
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+describe("retomada explicita e falhas fatais da captura operacional", () => {
+  const now = new Date("2026-10-10T14:00:00.000Z");
+  const options = () => parseArgs(["--retry-failed", "--from=2025-01", "--to=2026-10", "--titles-to=2100-12-31", "--delay-ms=0"]);
+  const fixture = () => {
+    const cli = options();
+    const manifest = {
+      version: 2, schemaVersion: 2, baseOrigin: cli.baseUrl.origin, sourceOrigin: cli.baseUrl.origin,
+      captureId: "2026-10-10T10-00-00-000Z", startedAt: "2026-10-10T10:00:00.000Z",
+      completedAt: "2026-10-10T13:00:00.000Z", capturedAt: "2026-10-10T13:00:00.000Z",
+      updatedAt: "2026-10-10T13:00:00.000Z", businessDate: "2026-10-10", timeZone: "America/Sao_Paulo",
+      complete: false, contentHash: "", files: [], artifacts: [], modules: {},
+      errors: [{ at: "2026-10-10T13:00:00.000Z", code: "DETAIL_FETCH_FAILED", message: "HTTP 403", module: "contas-pagar" as const }],
+      options: { captureMode: "resume", delayMs: 250, fromMonth: cli.fromMonth, toMonth: cli.toMonth, titlesTo: cli.titlesTo, limit: 200, maxPages: 10000, modules: cli.modules },
+    };
+    manifest.contentHash = sha256(conteudoHashManifestoOperacao(manifest));
+    return manifest;
+  };
+  async function withCapture(run: (output: string, parent: string) => Promise<void>) {
+    const parent = await mkdtemp(path.join(path.resolve(tmpdir()), "widesys-retry-test-"));
+    const output = path.join(parent, "operacao");
+    await mkdir(output);
+    try { await run(output, parent); }
+    finally {
+      // Somente a pasta temporaria criada por este teste, nunca o workspace.
+      if (path.dirname(parent) !== path.resolve(tmpdir()) || !path.basename(parent).startsWith("widesys-retry-test-")) throw new Error("Pasta temporaria inesperada.");
+      await rm(parent, { recursive: true, force: true });
+    }
+  }
+
+  it("mantem captureMode resume compativel e rejeita modos conflitantes", () => {
+    expect(options()).toMatchObject({ captureMode: "resume", retryFailed: true });
+    expect(parseArgs(["--resume"]).retryFailed).toBe(false);
+    for (const flag of ["--resume", "--refresh", "--no-resume"]) {
+      expect(() => parseArgs(["--retry-failed", flag])).toThrow(/exclusivos/i);
+      expect(() => parseArgs([flag, "--retry-failed"])).toThrow(/exclusivos/i);
+    }
+  });
+
+  it("so reabre encerramento incompleto genuino, no mesmo dia e dentro de 24h", () => {
+    const manifest = fixture();
+    expect(operationalManifestIsRetryable(manifest, now)).toBe(true);
+    expect(operationalManifestIsResumable(manifest, now)).toBe(false);
+    for (const delta of [
+      { complete: true }, { errors: [] }, { completedAt: null, capturedAt: null },
+      { businessDate: "2026-10-09" }, { startedAt: "2026-10-09T09:00:00.000Z" },
+      { startedAt: "2026-10-10T13:30:00.000Z" },
+      { completedAt: "2026-10-10T15:00:00.000Z", capturedAt: "2026-10-10T15:00:00.000Z" },
+      { capturedAt: "2026-10-10T12:00:00.000Z" },
+    ]) expect(operationalManifestIsRetryable({ ...manifest, ...delta }, now)).toBe(false);
+  });
+
+  it("arquiva bytes originais fora de operacao sem mudar captureId ou checkpoints", async () => {
+    await withCapture(async (output, parent) => {
+      const manifest = fixture();
+      const raw = `${JSON.stringify(manifest, null, 2)}\n`;
+      await writeFile(path.join(output, "manifest.json"), raw);
+      const checkpoint = path.join(output, "checkpoint-teste.json");
+      await writeFile(checkpoint, "evidencia-original");
+      const reopened = await loadManifest(options(), output, now);
+      expect(reopened).toMatchObject({ captureId: manifest.captureId, startedAt: manifest.startedAt, businessDate: manifest.businessDate, completedAt: null, capturedAt: null, complete: false, options: { captureMode: "resume" } });
+      expect(reopened.errors).toEqual(manifest.errors);
+      expect(await readFile(checkpoint, "utf8")).toBe("evidencia-original");
+      expect(await readFile(path.join(output, "manifest.json"), "utf8")).toBe(raw);
+      const archives = (await readdir(parent)).filter(name => name.startsWith("operacao-tentativa-"));
+      expect(archives).toHaveLength(1);
+      expect(await readFile(path.join(parent, archives[0], "manifest.json"), "utf8")).toBe(raw);
+    });
+  });
+
+  it("nao inicia captura nova nem arquiva manifesto completo, adulterado ou de outro escopo", async () => {
+    await withCapture(async (output, parent) => {
+      await expect(loadManifest(options(), output, now)).rejects.toThrow(/existente/i);
+      for (const mutate of [
+        (m: ReturnType<typeof fixture>) => { m.complete = true; },
+        (m: ReturnType<typeof fixture>) => { m.sourceOrigin = "https://outra-origem.example"; },
+        (m: ReturnType<typeof fixture>) => { m.options.fromMonth = "2025-02"; },
+        (m: ReturnType<typeof fixture>) => { m.options.modules.reverse(); },
+      ]) {
+        const manifest = fixture(); mutate(manifest);
+        manifest.contentHash = sha256(conteudoHashManifestoOperacao(manifest));
+        await writeFile(path.join(output, "manifest.json"), JSON.stringify(manifest));
+        await expect(loadManifest(options(), output, now)).rejects.toThrow();
+      }
+      const altered = fixture(); altered.contentHash = "0".repeat(64);
+      await writeFile(path.join(output, "manifest.json"), JSON.stringify(altered));
+      await expect(loadManifest(options(), output, now)).rejects.toThrow(/hash/i);
+      expect(await readdir(parent)).toEqual(["operacao"]);
+    });
+  });
+
+  it.each([401, 403, 429, 500, 503])("HTTP %s interrompe sem retentar ou fazer POST", async status => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("Access denied / WAF", { status }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new SameOriginClient();
+    await expect(client.get(options().baseUrl, () => {})).rejects.toMatchObject({ code: `HTTP_${status}` });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1].method).toBe("GET");
+  });
+
+  it("falha fatal no detalhe registra uma vez e nao solicita o proximo detalhe", async () => {
+    const cli = parseArgs(["--refresh", "--delay-ms=0"]);
+    const failure = new OperationalCaptureError("HTTP_403", "Acesso negado.");
+    const client = { get: vi.fn().mockRejectedValue(failure) };
+    const manifest = { errors: [] } as unknown as Parameters<typeof fetchDetails>[2];
+    const state = { detailErrors: 0 } as Parameters<typeof fetchDetails>[4];
+    const records = new Map(["7", "8"].map(id => [id, {
+      row: { legacyId: id, contentHash: `row-${id}` }, sourceWindow: "todos",
+      targets: [{ transport: "locacao.edit", url: canonicalOperationalDetailUrl(`?option=com_widesys&task=locacao.edit&id=${id}`, cli.baseUrl, cli.baseUrl, "contratos", id) }],
+    }])) as unknown as Parameters<typeof fetchDetails>[5];
+    await expect(fetchDetails(client, cli, manifest, "contratos", state, records)).rejects.toBe(failure);
+    expect(client.get).toHaveBeenCalledTimes(1);
+    expect(state.detailErrors).toBe(1);
+    expect(manifest.errors).toHaveLength(1);
+    expect(failure.recordedInManifest).toBe(true);
+  });
+
+  it("falha fatal nao segue para outro modulo, mantendo a falha observavel", async () => {
+    const error = new OperationalCaptureError("SESSION_EXPIRED", "Sessao expirada.");
+    const capture = vi.fn().mockRejectedValue(error);
+    const failed = vi.fn().mockResolvedValue(undefined);
+    await runOperationalModules(["contratos", "contas-pagar"], capture, failed);
+    expect(capture).toHaveBeenCalledTimes(1);
+    expect(failed).toHaveBeenCalledExactlyOnceWith(error, "contratos");
+    expect(isFatalOperationalError(error)).toBe(true);
+    expect(isFatalOperationalError(new Error("Registro isolado invalido."))).toBe(false);
+  });
+
+  it("redirect de detalhe para login para o lote sem seguir salto, detalhe ou modulo", async () => {
+    const cli = parseArgs(["--refresh", "--delay-ms=0"]);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 302, headers: { location: "/administrator/index.php?option=com_login&view=login" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new SameOriginClient();
+    const manifest = { errors: [] } as unknown as Parameters<typeof fetchDetails>[2];
+    const state = { detailErrors: 0 } as Parameters<typeof fetchDetails>[4];
+    const records = new Map(["7", "8"].map(id => [id, {
+      row: { legacyId: id, contentHash: `row-${id}` }, sourceWindow: "todos",
+      targets: [{ transport: "locacao.edit", url: canonicalOperationalDetailUrl(`?option=com_widesys&task=locacao.edit&id=${id}`, cli.baseUrl, cli.baseUrl, "contratos", id) }],
+    }])) as unknown as Parameters<typeof fetchDetails>[5];
+    const capture = vi.fn().mockImplementation(() => fetchDetails(client, cli, manifest, "contratos", state, records));
+    const failure = vi.fn().mockResolvedValue(undefined);
+    await runOperationalModules(["contratos", "contas-pagar"], capture, failure);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1].method).toBe("GET");
+    expect(capture).toHaveBeenCalledTimes(1);
+    expect(failure.mock.calls[0][0]).toMatchObject({ code: "REDIRECT_BLOCKED", recordedInManifest: true });
+    expect(manifest.errors).toHaveLength(1);
+  });
+});
+
+describe("sessao operacional com recuperacao limitada", () => {
+  const interval = 5 * 60 * 1000;
+  const dashboardHtml = '<html><title>Painel de controle</title><a href="/administrator/index.php?option=com_login&amp;task=logout">Sair</a></html>';
+  const detailHtml = "<html><h1>Contrato de teste</h1></html>";
+  const loginHtml = (action = "/administrator/index.php") => `<html><form method="post" action="${action}">
+    <input name="username" value="usuario-do-formulario">
+    <input type="password" name="passwd">
+    <input type="hidden" name="option" value="com_login">
+    <input type="hidden" name="task" value="login">
+    <input type="hidden" name="0123456789abcdef0123456789abcdef" value="1">
+  </form></html>`;
+  const htmlResponse = (html: string, status = 200) => new Response(html, { status, headers: { "content-type": "text/html; charset=utf-8" } });
+
+  function setup(respond: (url: URL, init: RequestInit) => Response | Promise<Response>) {
+    const options = parseArgs(["--refresh", "--delay-ms=0"]);
+    const target = canonicalOperationalDetailUrl("?option=com_widesys&task=locacao.edit&id=7", options.baseUrl, options.baseUrl, "contratos", "7") as URL;
+    let clock = new Date("2026-10-10T14:00:00.000Z").getTime();
+    const calls: Array<{ url: string; method: string; body: string | undefined }> = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      calls.push({ url: url.toString(), method: init.method ?? "GET", body: init.body?.toString() });
+      return respond(url, init);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const passwordProvider = vi.fn().mockResolvedValue("senha-sintetica-sem-acesso-real");
+    const session = new OperationalSession({ client: new SameOriginClient(), options, username: "mesma-conta-inicial", passwordProvider, now: () => clock });
+    const guard = (url: URL, method: "GET" | "POST") => {
+      expect(method).toBe("GET");
+      assertEquivalentOperationalUrl(url, target);
+    };
+    return { session, target, guard, calls, fetchMock, passwordProvider, options, advance: (ms: number) => { clock += ms; } };
+  }
+
+  it("faz keepalive GET a cada cinco minutos sem solicitar senha nem fazer POST", async () => {
+    const test = setup(url => htmlResponse(url.searchParams.has("admin") ? dashboardHtml : detailHtml));
+    await test.session.get(test.target, test.guard);
+    test.advance(interval - 1);
+    await test.session.get(test.target, test.guard);
+    test.advance(1);
+    await test.session.get(test.target, test.guard);
+    expect(test.calls.map(call => [call.method, call.url])).toEqual([
+      ["GET", test.target.toString()],
+      ["GET", test.target.toString()],
+      ["GET", test.options.baseUrl.toString()],
+      ["GET", test.target.toString()],
+    ]);
+    expect(test.passwordProvider).not.toHaveBeenCalled();
+  });
+
+  it.each([401, 403, 200])("confirma formulario real apos HTTP %s e repete o GET exato com a mesma conta", async status => {
+    let operationalGets = 0;
+    const test = setup((url, init) => {
+      if (init.method === "POST") return htmlResponse(dashboardHtml);
+      if (url.searchParams.has("admin")) return htmlResponse(loginHtml());
+      operationalGets += 1;
+      return operationalGets === 1 ? htmlResponse(status === 200 ? loginHtml() : "Acesso negado", status) : htmlResponse(detailHtml);
+    });
+    expect((await test.session.get(test.target, test.guard)).html).toBe(detailHtml);
+    expect(test.calls.map(call => call.method)).toEqual(["GET", "GET", "POST", "GET"]);
+    expect(test.calls.filter(call => call.url === test.target.toString())).toHaveLength(2);
+    expect(test.calls[1].url).toBe(test.options.baseUrl.toString());
+    const form = new URLSearchParams(test.calls[2].body);
+    expect(form.get("username")).toBe("mesma-conta-inicial");
+    expect(form.get("passwd")).toBe("senha-sintetica-sem-acesso-real");
+    expect(form.get("option")).toBe("com_login");
+    expect(form.get("task")).toBe("login");
+    expect(form.get("0123456789abcdef0123456789abcdef")).toBe("1");
+    expect(test.passwordProvider).toHaveBeenCalledTimes(1);
+  });
+
+  it("nao interpreta 403 como expiracao quando o landing continua autenticado", async () => {
+    const test = setup(url => url.searchParams.has("admin") ? htmlResponse(dashboardHtml) : htmlResponse("Acesso negado", 403));
+    await expect(test.session.get(test.target, test.guard)).rejects.toBeInstanceOf(OperationalCaptureError);
+    expect(test.calls.map(call => call.method)).toEqual(["GET", "GET"]);
+    expect(test.passwordProvider).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    '<html><div id="cf-chl-widget">Verificacao</div></html>',
+    '<html><title>Forbidden</title><form>captcha</form></html>',
+  ])("interrompe desafio WAF sem pedir credencial ou fazer POST: %s", async html => {
+    const test = setup(() => htmlResponse(html));
+    await expect(test.session.get(test.target, test.guard)).rejects.toBeInstanceOf(OperationalCaptureError);
+    expect(test.calls.map(call => call.method)).toEqual(["GET"]);
+    expect(test.passwordProvider).not.toHaveBeenCalled();
+  });
+
+  it("um replay ainda negado encerra sem outro login ou terceiro GET operacional", async () => {
+    const test = setup((url, init) => {
+      if (init.method === "POST") return htmlResponse(dashboardHtml);
+      return url.searchParams.has("admin") ? htmlResponse(loginHtml()) : htmlResponse("Acesso negado", 403);
+    });
+    await expect(test.session.get(test.target, test.guard)).rejects.toBeInstanceOf(OperationalCaptureError);
+    expect(test.calls.map(call => call.method)).toEqual(["GET", "GET", "POST", "GET"]);
+    expect(test.passwordProvider).toHaveBeenCalledTimes(1);
+  });
+
+  it("HTTP 403 com desafio WAF explicito para antes de consultar landing", async () => {
+    const test = setup(() => htmlResponse('<html><div id="cf-chl-widget">Verificacao</div></html>', 403));
+    await expect(test.session.get(test.target, test.guard)).rejects.toMatchObject({ code: "ACCESS_CHALLENGE" });
+    expect(test.calls.map(call => call.method)).toEqual(["GET"]);
+    expect(test.passwordProvider).not.toHaveBeenCalled();
+  });
+
+  it("bloqueia uma segunda reautenticacao imediata mesmo diante de formulario real", async () => {
+    let expired = true;
+    const test = setup((url, init) => {
+      if (init.method === "POST") { expired = false; return htmlResponse(dashboardHtml); }
+      if (url.searchParams.has("admin")) return htmlResponse(expired ? loginHtml() : dashboardHtml);
+      return expired ? htmlResponse("Acesso negado", 401) : htmlResponse(detailHtml);
+    });
+    await test.session.get(test.target, test.guard);
+    expired = true;
+    await expect(test.session.get(test.target, test.guard)).rejects.toBeInstanceOf(OperationalCaptureError);
+    expect(test.calls.filter(call => call.method === "POST")).toHaveLength(1);
+    expect(test.passwordProvider).toHaveBeenCalledTimes(1);
+    expect(test.calls.filter(call => call.url === test.target.toString())).toHaveLength(3);
+  });
+
+  it("permite nova expiracao legitima depois do intervalo mantendo a conta inicial", async () => {
+    let expired = true;
+    const test = setup((url, init) => {
+      if (init.method === "POST") { expired = false; return htmlResponse(dashboardHtml); }
+      if (url.searchParams.has("admin")) return htmlResponse(expired ? loginHtml() : dashboardHtml);
+      return expired ? htmlResponse("Acesso negado", 401) : htmlResponse(detailHtml);
+    });
+    await test.session.get(test.target, test.guard);
+    expired = true;
+    test.advance(interval);
+    expect((await test.session.get(test.target, test.guard)).html).toBe(detailHtml);
+    const posts = test.calls.filter(call => call.method === "POST");
+    expect(posts).toHaveLength(2);
+    expect(posts.map(call => new URLSearchParams(call.body).get("username"))).toEqual(["mesma-conta-inicial", "mesma-conta-inicial"]);
+    expect(test.passwordProvider).toHaveBeenCalledTimes(2);
+  });
+
+  it("redirect externo permanece bloqueado sem consulta de landing ou credencial", async () => {
+    const test = setup(() => new Response(null, { status: 302, headers: { location: "https://externo.example/administrator/index.php?option=com_login&view=login" } }));
+    await expect(test.session.get(test.target, test.guard)).rejects.toMatchObject({ code: "REDIRECT_BLOCKED" });
+    expect(test.calls.map(call => call.method)).toEqual(["GET"]);
+    expect(test.passwordProvider).not.toHaveBeenCalled();
+  });
+
+  it("redirect legitimo de login consulta o landing fixo sem seguir Location operacional", async () => {
+    let operationalGets = 0;
+    const test = setup((url, init) => {
+      if (init.method === "POST") return htmlResponse(dashboardHtml);
+      if (url.searchParams.has("admin")) return htmlResponse(loginHtml());
+      operationalGets += 1;
+      return operationalGets === 1
+        ? new Response(null, { status: 302, headers: { location: "/administrator/index.php?option=com_login&view=login" } })
+        : htmlResponse(detailHtml);
+    });
+    expect((await test.session.get(test.target, test.guard)).html).toBe(detailHtml);
+    expect(test.calls.map(call => call.method)).toEqual(["GET", "GET", "POST", "GET"]);
+    expect(test.calls[1].url).toBe(test.options.baseUrl.toString());
+    expect(test.calls.every(call => !call.url.includes("view=login"))).toBe(true);
+  });
+
+  it.each([
+    '<html><form method="post"><input name="username"><input type="password" name="passwd"></form></html>',
+    loginHtml("https://externo.example/roubar"),
+    loginHtml("/administrator/index.php?option=com_widesys&task=save"),
+  ])("nao envia senha quando o landing tem formulario falso ou action nao autorizada: %s", async html => {
+    const test = setup(url => url.searchParams.has("admin") ? htmlResponse(html) : htmlResponse("Acesso negado", 403));
+    await expect(test.session.get(test.target, test.guard)).rejects.toBeInstanceOf(OperationalCaptureError);
+    expect(test.calls.map(call => call.method)).toEqual(["GET", "GET"]);
+    expect(test.passwordProvider).not.toHaveBeenCalled();
+  });
+
+  it("mantem timeout de 30s durante a leitura do corpo HTTP", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+      const response = htmlResponse("corpo ainda nao recebido");
+      vi.spyOn(response, "text").mockImplementation(() => new Promise<string>((_resolve, reject) => {
+        const abort = () => reject(new DOMException("Requisicao abortada", "AbortError"));
+        if (init.signal?.aborted) abort();
+        else init.signal?.addEventListener("abort", abort, { once: true });
+      }));
+      return response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new SameOriginClient();
+    const assertion = expect(client.get(parseArgs([]).baseUrl, () => {})).rejects.toMatchObject({ code: "REQUEST_TIMEOUT" });
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await assertion;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
 
 describe("captura operacional Widesys", () => {
   it("exige que a contagem global independente feche com as janelas", () => {

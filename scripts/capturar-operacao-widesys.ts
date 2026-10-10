@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 
-import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
@@ -29,6 +29,7 @@ const PAGE_LIMIT = 200;
 const DEFAULT_DELAY_MS = 250;
 const DEFAULT_MAX_PAGES = 10_000;
 const REQUEST_TIMEOUT_MS = 30_000;
+const SESSION_MAINTENANCE_MS = 5 * 60 * 1_000;
 const BUSINESS_TIME_ZONE = "America/Sao_Paulo";
 const SCOPE_SHARD_SIZE = 100;
 
@@ -69,6 +70,7 @@ type CliOptions = {
   captureMode: CaptureMode;
   delayMs: number;
   dryRun: boolean;
+  retryFailed: boolean;
   fromMonth: string | null;
   maxPages: number;
   modules: ModuleName[];
@@ -324,6 +326,7 @@ Opções:
   --dry-run                 valida rotas, período e destino sem acessar o legado
   --refresh                 refaz a captura e o manifesto atual (padrão)
   --resume                  retoma detalhes ausentes de uma captura interrompida
+  --retry-failed            reabre captura encerrada incompleta no mesmo dia (<24h)
   --no-resume               falha se já existir manifesto
   --modules=a,b             módulos: ${Object.keys(MODULES).join(", ")}
   --from=AAAA-MM            substitui o início conhecido de todos os módulos mensais
@@ -333,6 +336,12 @@ Opções:
   --delay-ms=250            intervalo entre requisições
   --max-pages=10000         trava de segurança para paginação
   --help                    mostra esta ajuda
+
+Antes de --retry-failed, confirme SOMENTE LEITURA no banco de destino que nao
+existe lote de importacao para origem/captureId (inclusive parcial ou com erro)
+nem marcador de aplicacao em producao. O capturador nao acessa o banco e nao
+substitui esse preflight externo. Captura completa nunca pode ser reaberta.
+O manifesto anterior e seus erros sao arquivados fora da pasta operacao.
 
 Inícios conhecidos sem --from: receber 2025-07, pagar 2025-11 e movimentos 2025-12.
 Receber/pagar são mensais até --to e usam uma janela futura adicional até
@@ -378,6 +387,8 @@ export function parseArgs(argv: string[]): CliOptions {
   let captureMode: CaptureMode = "refresh";
   let delayMs = DEFAULT_DELAY_MS;
   let dryRun = false;
+  let retryFailed = false;
+  let modeFlag: string | undefined;
   let fromMonth: string | null = null;
   let maxPages = DEFAULT_MAX_PAGES;
   let modules = Object.keys(MODULES) as ModuleName[];
@@ -389,9 +400,12 @@ export function parseArgs(argv: string[]): CliOptions {
       console.log(usage());
       process.exit(0);
     } else if (argument === "--dry-run") dryRun = true;
-    else if (argument === "--refresh") captureMode = "refresh";
-    else if (argument === "--resume") captureMode = "resume";
-    else if (argument === "--no-resume") captureMode = "new";
+    else if (["--refresh", "--resume", "--no-resume", "--retry-failed"].includes(argument)) {
+      if (modeFlag && modeFlag !== argument) throw new Error("Modos de captura sao mutuamente exclusivos.");
+      modeFlag = argument;
+      retryFailed = argument === "--retry-failed";
+      captureMode = argument === "--refresh" ? "refresh" : argument === "--no-resume" ? "new" : "resume";
+    }
     else if (argument.startsWith("--base-url=")) baseUrl = new URL(argument.slice("--base-url=".length));
     else if (argument.startsWith("--delay-ms=")) {
       delayMs = parsePositiveInteger(argument.slice("--delay-ms=".length), "--delay-ms");
@@ -431,7 +445,7 @@ export function parseArgs(argv: string[]): CliOptions {
     if (key !== "admin") throw new Error(`Parâmetro não autorizado na URL inicial: ${key}.`);
   }
   baseUrl.hash = "";
-  return { baseUrl, captureMode, delayMs, dryRun, fromMonth, maxPages, modules, titlesTo, toMonth };
+  return { baseUrl, captureMode, delayMs, dryRun, retryFailed, fromMonth, maxPages, modules, titlesTo, toMonth };
 }
 
 function monthSequence(from: string, to: string): string[] {
@@ -506,7 +520,16 @@ function splitSetCookie(header: string): string[] {
 
 type RequestGuard = (url: URL, method: "GET" | "POST") => void;
 
-class SameOriginClient {
+export class OperationalCaptureError extends Error {
+  recordedInManifest = false;
+  constructor(public readonly code: string, message: string, public readonly loginRedirect = false) { super(message); }
+}
+
+export function isFatalOperationalError(error: unknown): error is OperationalCaptureError {
+  return error instanceof OperationalCaptureError;
+}
+
+export class SameOriginClient {
   private readonly cookies = new Map<string, string>();
 
   async get(url: URL, guard: RequestGuard): Promise<{ html: string; url: URL }> {
@@ -539,21 +562,17 @@ class SameOriginClient {
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-      let response: Response;
       try {
-        response = await fetch(url, {
+        const response = await fetch(url, {
           body: method === "POST" ? body : undefined,
           headers,
           method,
           redirect: "manual",
           signal: controller.signal,
         });
-      } finally {
-        clearTimeout(timeout);
-      }
-      this.captureCookies(response.headers);
+        this.captureCookies(response.headers);
 
-      if ([301, 302, 303, 307, 308].includes(response.status)) {
+        if ([301, 302, 303, 307, 308].includes(response.status)) {
         const location = response.headers.get("location");
         if (!location) throw new Error(`Redirecionamento ${response.status} sem destino.`);
         const redirected = new URL(location, url);
@@ -567,18 +586,47 @@ class SameOriginClient {
         }
         // O mesmo contrato de rota vale para cada salto. Um Location apenas
         // same-origin não basta: ele poderia apontar para save/checkout/logout.
-        guard(redirected, redirectedMethod);
+        try { guard(redirected, redirectedMethod); }
+        catch {
+          // Nao presumir expiracao: login, permissao e desvio de rota continuam
+          // bloqueados, mas a negativa nao pode se repetir em todo o lote.
+          let loginRedirect = false;
+          if (initialMethod === "GET") {
+            try {
+              assertLoginRoute(redirected, new URL(initialUrl.pathname, initialUrl.origin), "GET");
+              const option = redirected.searchParams.get("option");
+              loginRedirect = !option || option === "com_login";
+            } catch { /* Desvio de origem, task ou parametros nunca autoriza login. */ }
+          }
+          throw new OperationalCaptureError("REDIRECT_BLOCKED", "Redirecionamento fora do contrato permitido; captura interrompida.", loginRedirect);
+        }
         url = redirected;
         method = redirectedMethod;
         continue;
-      }
+        }
 
-      if (!response.ok) throw new Error(`O legado respondeu HTTP ${response.status}.`);
-      const contentType = (response.headers.get("content-type") || "").toLowerCase();
-      if (contentType && !/(?:text\/html|application\/xhtml\+xml|text\/plain)/.test(contentType)) {
-        throw new Error(`Resposta inesperada do legado (${contentType}).`);
+        if (!response.ok) {
+        if ([401, 403].includes(response.status) && isAccessChallenge(await response.text())) {
+          throw new OperationalCaptureError("ACCESS_CHALLENGE", "Resposta de acesso negado contem desafio ou bloqueio; captura interrompida.");
+        }
+        if ([401, 403, 429].includes(response.status) || response.status >= 500) {
+          throw new OperationalCaptureError(`HTTP_${response.status}`, `O legado respondeu HTTP ${response.status}; captura interrompida sem repetir a negativa.`);
+        }
+        throw new Error(`O legado respondeu HTTP ${response.status}.`);
+        }
+        const contentType = (response.headers.get("content-type") || "").toLowerCase();
+        if (contentType && !/(?:text\/html|application\/xhtml\+xml|text\/plain)/.test(contentType)) {
+          throw new OperationalCaptureError("RESPONSE_TYPE_INVALID", "Resposta do legado fora do tipo permitido.");
+        }
+        return { html: await response.text(), url };
+      } catch (error) {
+        if (controller.signal.aborted) throw new OperationalCaptureError("REQUEST_TIMEOUT", "A leitura do legado excedeu o limite de tempo.");
+        if (error instanceof TypeError) throw new OperationalCaptureError("REQUEST_FAILED", "Falha de transporte ao ler o legado.");
+        throw error;
+      } finally {
+        // Inclui a leitura do corpo, nao somente a chegada dos headers.
+        clearTimeout(timeout);
       }
-      return { html: await response.text(), url };
     }
     throw new Error("O legado excedeu o limite de redirecionamentos.");
   }
@@ -596,6 +644,92 @@ class SameOriginClient {
       const value = firstPart.slice(separator + 1).trim();
       if (value) this.cookies.set(name, value);
       else this.cookies.delete(name);
+    }
+  }
+}
+
+type OperationalReader = Pick<SameOriginClient, "get">;
+type SessionTransport = Pick<SameOriginClient, "get" | "postLogin">;
+
+function isAccessChallenge(html: string): boolean {
+  return /cf-chl-|\/cdn-cgi\/challenge-platform\/|(?:g-recaptcha|h-captcha|captcha-container)|<(?:title|h1)\b[^>]*>\s*(?:403\b|forbidden\b|access denied\b|acesso negado\b|just a moment\b)/i.test(html);
+}
+
+/** Login legitimo na mesma conta; nunca altera a rota operacional para obter acesso. */
+export class OperationalSession implements OperationalReader {
+  private readonly client: SessionTransport;
+  private readonly options: CliOptions;
+  private readonly username: string;
+  private readonly passwordProvider: () => Promise<string>;
+  private readonly now: () => number;
+  private lastLandingCheck: number;
+  private lastReauthentication: number | null = null;
+
+  constructor(input: { client: SessionTransport; options: CliOptions; username: string; passwordProvider: () => Promise<string>; now?: () => number }) {
+    this.client = input.client;
+    this.options = input.options;
+    this.username = input.username;
+    this.passwordProvider = input.passwordProvider;
+    this.now = input.now ?? Date.now;
+    this.lastLandingCheck = this.now();
+  }
+
+  private async checkLanding(): Promise<boolean> {
+    const page = await this.client.get(this.options.baseUrl, (url, method) => assertLoginRoute(url, this.options.baseUrl, method));
+    assertLoginRoute(page.url, this.options.baseUrl, "GET");
+    this.lastLandingCheck = this.now();
+    if (isAccessChallenge(page.html)) throw new OperationalCaptureError("ACCESS_CHALLENGE", "Desafio ou bloqueio de acesso; nenhuma autenticacao automatica sera tentada.");
+    if (!isJoomlaLoginPage(page.html)) return false;
+    // Validar o formulario/acao antes de obter qualquer credencial.
+    const submission = readLoginSubmission(page.html);
+    try { assertLoginRoute(new URL(submission.action, page.url), this.options.baseUrl, "POST"); }
+    catch { throw new OperationalCaptureError("LOGIN_FORM_INVALID", "Formulario de login fora da rota permitida."); }
+    if (this.lastReauthentication !== null && this.now() - this.lastReauthentication < SESSION_MAINTENANCE_MS) {
+      throw new OperationalCaptureError("SESSION_REAUTH_LIMIT", "Nova expiracao logo apos login; captura interrompida sem repetir autenticacao.");
+    }
+    this.lastReauthentication = this.now();
+    let password = "";
+    try {
+      try { password = await this.passwordProvider(); }
+      catch { throw new OperationalCaptureError("LOGIN_CREDENTIAL_UNAVAILABLE", "Credencial indisponivel para renovar a mesma sessao."); }
+      if (!password) throw new OperationalCaptureError("LOGIN_CREDENTIAL_UNAVAILABLE", "Credencial indisponivel para renovar a mesma sessao.");
+      await submitLogin(this.client, this.options, this.username, password, page);
+    } finally { password = ""; }
+    this.lastLandingCheck = this.now();
+    return true;
+  }
+
+  private async getOnce(url: URL, guard: RequestGuard): Promise<{ html: string; url: URL }> {
+    const response = await this.client.get(url, guard);
+    if (isAccessChallenge(response.html)) throw new OperationalCaptureError("ACCESS_CHALLENGE", "Desafio ou bloqueio de acesso; captura interrompida.");
+    if (isJoomlaLoginPage(response.html)) throw new OperationalCaptureError("SESSION_EXPIRED", "O GET operacional devolveu formulario de login.");
+    return response;
+  }
+
+  async get(url: URL, guard: RequestGuard): Promise<{ html: string; url: URL }> {
+    // Validar antes mesmo do GET de manutencao. Nao seguir rotas descobertas novas.
+    guard(url, "GET");
+    if (this.now() - this.lastLandingCheck >= SESSION_MAINTENANCE_MS) await this.checkLanding();
+    try { return await this.getOnce(url, guard); }
+    catch (error) {
+      const mayHaveExpired = isFatalOperationalError(error) && (["HTTP_401", "HTTP_403", "SESSION_EXPIRED"].includes(error.code) || error.loginRedirect);
+      if (!mayHaveExpired || !await this.checkLanding()) throw error;
+      // Um unico replay da URL original com o MESMO guard; nao ha recursao.
+      return this.getOnce(url, guard);
+    }
+  }
+}
+
+export async function runOperationalModules<T>(
+  modules: readonly T[],
+  capture: (module: T) => Promise<void>,
+  failure: (error: unknown, module: T) => Promise<void>,
+): Promise<void> {
+  for (const moduleName of modules) {
+    try { await capture(moduleName); }
+    catch (error) {
+      await failure(error, moduleName);
+      if (isFatalOperationalError(error)) break;
     }
   }
 }
@@ -1091,12 +1225,11 @@ function readLoginSubmission(html: string): LoginSubmission {
   throw new Error("Formulário de login do Widesys não encontrado.");
 }
 
-async function login(client: SameOriginClient, options: CliOptions, username: string, password: string) {
+async function submitLogin(client: SessionTransport, options: CliOptions, username: string, password: string, page: { html: string; url: URL }) {
   const loginGuard: RequestGuard = (url, method) => assertLoginRoute(url, options.baseUrl, method);
-  const page = await client.get(options.baseUrl, loginGuard);
   const submission = readLoginSubmission(page.html);
   const action = new URL(submission.action, page.url);
-  assertAdminUrl(action, options.baseUrl);
+  assertLoginRoute(action, options.baseUrl, "POST");
   if (submission.fields.get("option") !== "com_login" || submission.fields.get("task") !== "login") {
     throw new Error("Formulário de login inesperado.");
   }
@@ -1105,7 +1238,14 @@ async function login(client: SameOriginClient, options: CliOptions, username: st
   const form = new URLSearchParams();
   for (const [name, value] of submission.fields) form.append(name, value);
   const authenticated = await client.postLogin(action, form, loginGuard);
-  if (isJoomlaLoginPage(authenticated.html)) throw new Error("Autenticação recusada pelo Widesys.");
+  if (isAccessChallenge(authenticated.html)) throw new OperationalCaptureError("ACCESS_CHALLENGE", "Login devolveu desafio ou bloqueio de acesso.");
+  if (isJoomlaLoginPage(authenticated.html)) throw new OperationalCaptureError("LOGIN_REJECTED", "Autenticação recusada pelo Widesys.");
+}
+
+async function login(client: SessionTransport, options: CliOptions, username: string, password: string) {
+  const page = await client.get(options.baseUrl, (url, method) => assertLoginRoute(url, options.baseUrl, method));
+  if (isAccessChallenge(page.html)) throw new OperationalCaptureError("ACCESS_CHALLENGE", "A pagina de login devolveu desafio ou bloqueio de acesso.");
+  await submitLogin(client, options, username, password, page);
 }
 
 async function promptSecret(prompt: string): Promise<string> {
@@ -1377,6 +1517,29 @@ export function operationalManifestIsResumable(
   );
 }
 
+export function operationalManifestIsRetryable(
+  manifest: Pick<Manifest, "businessDate" | "capturedAt" | "complete" | "completedAt" | "startedAt" | "errors">,
+  now = new Date(),
+): boolean {
+  const startedAt = new Date(manifest.startedAt).getTime();
+  const completedAt = typeof manifest.completedAt === "string" ? new Date(manifest.completedAt).getTime() : NaN;
+  return manifest.complete === false &&
+    typeof manifest.capturedAt === "string" && manifest.capturedAt === manifest.completedAt &&
+    Number.isFinite(startedAt) && Number.isFinite(completedAt) && startedAt <= completedAt &&
+    completedAt <= now.getTime() && now.getTime() - startedAt <= 24 * 60 * 60 * 1_000 &&
+    manifest.businessDate === businessDateIso(now) && Array.isArray(manifest.errors) && manifest.errors.length > 0;
+}
+
+export async function archiveFailedOperationalManifest(raw: string, outputDirectory = OUTPUT_DIRECTORY): Promise<string> {
+  // Fora de operacao: pruneUnreferencedCaptureFiles nao pode apagar a tentativa anterior.
+  const parent = path.dirname(path.resolve(outputDirectory));
+  await mkdir(parent, { mode: 0o700, recursive: true });
+  const archive = await mkdtemp(path.join(parent, "operacao-tentativa-"));
+  const file = path.join(archive, "manifest.json");
+  await writeFile(file, raw, { encoding: "utf8", mode: 0o600, flag: "wx" });
+  return file;
+}
+
 function newManifest(options: CliOptions): Manifest {
   const now = new Date().toISOString();
   return {
@@ -1410,8 +1573,8 @@ function newManifest(options: CliOptions): Manifest {
   };
 }
 
-async function loadManifest(options: CliOptions): Promise<Manifest> {
-  const manifestPath = path.join(OUTPUT_DIRECTORY, "manifest.json");
+export async function loadManifest(options: CliOptions, outputDirectory = OUTPUT_DIRECTORY, now = new Date()): Promise<Manifest> {
+  const manifestPath = path.join(outputDirectory, "manifest.json");
   try {
     const raw = await readFile(manifestPath, "utf8");
     if (options.captureMode === "refresh") return newManifest(options);
@@ -1429,10 +1592,16 @@ async function loadManifest(options: CliOptions): Promise<Manifest> {
     if (parsed.contentHash !== sha256(conteudoHashManifestoOperacao(parsed))) {
       throw new Error("O hash do manifesto operacional existente diverge; use --refresh para nova captura.");
     }
-    parsed.timeZone = BUSINESS_TIME_ZONE;
-    parsed.businessDate ||= businessDateIso(new Date(parsed.startedAt));
+    if (options.retryFailed && (parsed.sourceOrigin !== options.baseUrl.origin || parsed.timeZone !== BUSINESS_TIME_ZONE)) {
+      throw new Error("--retry-failed exige a origem e o fuso originais intactos.");
+    }
+    if (!options.retryFailed) {
+      parsed.timeZone = BUSINESS_TIME_ZONE;
+      parsed.businessDate ||= businessDateIso(new Date(parsed.startedAt));
+    }
     if (options.captureMode === "resume") {
-      if (!operationalManifestIsResumable(parsed)) {
+      if (options.retryFailed ? !operationalManifestIsRetryable(parsed, now) : !operationalManifestIsResumable(parsed, now)) {
+        if (options.retryFailed) throw new Error("--retry-failed exige captura encerrada incompleta, com erros, no mesmo dia e com menos de 24h; captura completa nunca e reutilizada.");
         throw new Error("--resume aceita apenas captura interrompida; use --refresh após uma captura encerrada.");
       }
       if (
@@ -1441,8 +1610,9 @@ async function loadManifest(options: CliOptions): Promise<Manifest> {
         parsed.options.titlesTo !== options.titlesTo ||
         JSON.stringify(parsed.options.modules) !== JSON.stringify(options.modules)
       ) {
-        throw new Error("--resume exige o mesmo período e a mesma ordem de módulos da captura original.");
+        throw new Error("A retomada exige o mesmo período e a mesma ordem de módulos da captura original.");
       }
+      if (options.retryFailed) await archiveFailedOperationalManifest(raw, outputDirectory);
       parsed.completedAt = null;
       parsed.capturedAt = null;
       parsed.complete = false;
@@ -1453,6 +1623,7 @@ async function loadManifest(options: CliOptions): Promise<Manifest> {
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    if (options.retryFailed) throw new Error("--retry-failed exige manifesto existente; nao inicia uma captura nova.");
   }
   return newManifest(options);
 }
@@ -1540,7 +1711,7 @@ async function saveListArtifacts(
 }
 
 async function fetchGlobalReportedTotal(
-  client: SameOriginClient,
+  client: OperationalReader,
   options: CliOptions,
   manifest: Manifest,
   module: ModuleName,
@@ -1556,7 +1727,7 @@ async function fetchGlobalReportedTotal(
   assertListUrl(response.url, options.baseUrl, module);
   assertEquivalentOperationalUrl(response.url, listUrl);
   if (isJoomlaLoginPage(response.html)) {
-    throw new Error("Sessão do Widesys expirou durante a contagem global.");
+    throw new OperationalCaptureError("SESSION_EXPIRED", "Sessão do Widesys expirou durante a contagem global.");
   }
   const rows = extractLegacyListRows(response.html);
   const total = verifiedOperationalTotal(response.html, rows);
@@ -1565,7 +1736,7 @@ async function fetchGlobalReportedTotal(
 }
 
 async function fetchModuleLists(
-  client: SameOriginClient,
+  client: OperationalReader,
   options: CliOptions,
   manifest: Manifest,
   module: ModuleName,
@@ -1598,7 +1769,7 @@ async function fetchModuleLists(
       });
       assertListUrl(response.url, options.baseUrl, module);
       assertEquivalentOperationalUrl(response.url, listUrl);
-      if (isJoomlaLoginPage(response.html)) throw new Error("Sessão do Widesys expirou durante a listagem.");
+      if (isJoomlaLoginPage(response.html)) throw new OperationalCaptureError("SESSION_EXPIRED", "Sessão do Widesys expirou durante a listagem.");
       const rows = extractLegacyListRows(response.html);
       const reportedTotal = verifiedOperationalTotal(response.html, rows);
       const appliedLimit = effectiveListLimit(response.html);
@@ -2030,8 +2201,8 @@ async function loadRecordCheckpoint(
   }
 }
 
-async function fetchDetails(
-  client: SameOriginClient,
+export async function fetchDetails(
+  client: OperationalReader,
   options: CliOptions,
   manifest: Manifest,
   module: ModuleName,
@@ -2069,7 +2240,7 @@ async function fetchDetails(
             assertEquivalentOperationalUrl(url, target.url);
           });
           if (isJoomlaLoginPage(response.html)) {
-            throw new Error("Sessão do Widesys expirou durante um detalhe.");
+            throw new OperationalCaptureError("SESSION_EXPIRED", "Sessão do Widesys expirou durante um detalhe.");
           }
           if (MODULES[module].mode === "detail") {
             assertDetailResponseUrl(response.url, options.baseUrl, module, legacyId);
@@ -2119,12 +2290,16 @@ async function fetchDetails(
         addManifestError(
           manifest,
           error,
-          "DETAIL_FETCH_FAILED",
+          isFatalOperationalError(error) ? error.code : "DETAIL_FETCH_FAILED",
           module,
           record.sourceWindow,
           record.targets[0]?.url,
           legacyId,
         );
+        if (isFatalOperationalError(error)) {
+          error.recordedInManifest = true;
+          throw error;
+        }
       }
     }
     if (processed % 20 === 0 || processed === records.size) {
@@ -2205,7 +2380,7 @@ async function saveScopeFiles(
 }
 
 async function scrapeModule(
-  client: SameOriginClient,
+  client: OperationalReader,
   options: CliOptions,
   manifest: Manifest,
   module: ModuleName,
@@ -2246,6 +2421,7 @@ async function main(): Promise<void> {
   console.log(`Origem validada: ${options.baseUrl.origin}`);
   console.log(`Módulos: ${options.modules.join(", ")}`);
   console.log(`Destino protegido pelo .gitignore: ${OUTPUT_DIRECTORY}`);
+  if (options.retryFailed) console.log("Retry exige preflight externo sem lote importado/aplicacao iniciada para este captureId; nenhuma consulta ao banco e feita pelo capturador.");
   for (const moduleName of options.modules) {
     console.log(`[${moduleName}] janelas: ${moduleWindows(moduleName, options).map((window) => window.key).join(", ")}`);
   }
@@ -2275,16 +2451,25 @@ async function main(): Promise<void> {
   }
   console.log("Autenticação concluída; todas as leituras operacionais seguintes usam GET.");
 
-  for (const moduleName of options.modules) {
-    try {
+  const session = new OperationalSession({ client, options, username, passwordProvider: async () => {
+    let credential = process.env.WIDESYS_SENHA || process.env.WIDESYS_PASSWORD || "";
+    if (!credential) credential = await promptSecret("Senha Widesys para renovar a mesma sessao (entrada oculta): ");
+    return credential;
+  } });
+
+  await runOperationalModules(options.modules,
+    async (moduleName) => {
       console.log(`[${moduleName}] iniciando captura serial somente leitura.`);
-      await scrapeModule(client, options, manifest, moduleName);
-    } catch (error) {
-      addManifestError(manifest, error, "MODULE_FAILED", moduleName);
+      await scrapeModule(session, options, manifest, moduleName);
+    },
+    async (error, moduleName) => {
+      if (!isFatalOperationalError(error) || !error.recordedInManifest) {
+        addManifestError(manifest, error, isFatalOperationalError(error) ? error.code : "MODULE_FAILED", moduleName);
+      }
       await saveManifest(manifest);
       console.warn(`[${moduleName}] falhou; consulte o manifesto protegido.`);
-    }
-  }
+    },
+  );
 
   const completed = options.modules.filter((moduleName) => manifest.modules[moduleName]?.completed).length;
   manifest.complete = completed === options.modules.length && manifest.errors.length === 0;
