@@ -195,6 +195,94 @@ describe("retomada explicita e falhas fatais da captura operacional", () => {
   });
 });
 
+describe("repeticao limitada de transporte no GET", () => {
+  const target = new URL("https://legado.example/administrator/index.php?option=com_widesys&task=locacao.edit&id=7");
+  const failure = (code?: string) => new TypeError("mensagem privada https://segredo.example/token", { cause: code ? Object.assign(new Error("detalhe privado"), { code }) : undefined });
+
+  it.each(["ECONNRESET", "ETIMEDOUT", "EAI_AGAIN", "UND_ERR_SOCKET", "UND_ERR_CONNECT_TIMEOUT"])("repete somente o mesmo GET com %s em 1s e 3s", async code => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockRejectedValueOnce(failure(code)).mockRejectedValueOnce(failure(code)).mockResolvedValue(new Response("concluido"));
+    vi.stubGlobal("fetch", fetchMock);
+    const guard = vi.fn();
+    const pending = new SameOriginClient().get(target, guard);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(pending).resolves.toMatchObject({ html: "concluido" });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(guard).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls.map(([url, init]) => [url.toString(), init.method])).toEqual(Array.from({ length: 3 }, () => [target.toString(), "GET"]));
+  });
+
+  it("para na terceira tentativa e conserva apenas o codigo permitido", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockRejectedValue(failure("ECONNRESET"));
+    vi.stubGlobal("fetch", fetchMock);
+    const pending = new SameOriginClient().get(target, () => {}).catch(error => error);
+    await vi.runAllTimersAsync();
+    const error = await pending;
+    expect(error).toMatchObject({ code: "REQUEST_FAILED_ECONNRESET", message: "Falha de transporte ao ler o legado." });
+    expect(error.cause).toBeUndefined();
+    expect(JSON.stringify(error)).not.toMatch(/privad|segredo|token/);
+    expect(isFatalOperationalError(error)).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([undefined, "ECONNREFUSED", "CERT_HAS_EXPIRED", "HTTP_403"])("nao repete TypeError sem codigo permitido (%s)", async code => {
+    const fetchMock = vi.fn().mockRejectedValue(failure(code));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(new SameOriginClient().get(target, () => {})).rejects.toMatchObject({ code: "REQUEST_FAILED" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("repete leitura de corpo bem-sucedido interrompida por transporte", async () => {
+    vi.useFakeTimers();
+    const first = new Response("parcial");
+    vi.spyOn(first, "text").mockRejectedValue(failure("UND_ERR_SOCKET"));
+    const fetchMock = vi.fn().mockResolvedValueOnce(first).mockResolvedValue(new Response("completo"));
+    vi.stubGlobal("fetch", fetchMock);
+    const pending = new SameOriginClient().get(target, () => {});
+    await vi.runAllTimersAsync();
+    await expect(pending).resolves.toMatchObject({ html: "completo" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([401, 403])("nao repete corpo de HTTP %s nem tenta login", async status => {
+    const response = new Response("negado", { status });
+    vi.spyOn(response, "text").mockRejectedValue(failure("ECONNRESET"));
+    const fetchMock = vi.fn().mockResolvedValue(response);
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(new SameOriginClient().get(target, () => {})).rejects.toMatchObject({ code: "REQUEST_FAILED" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1].method).toBe("GET");
+  });
+
+  it("nunca repete POST de login por falha permitida de transporte", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(failure("ECONNRESET"));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(new SameOriginClient().postLogin(target, new URLSearchParams(), () => {})).rejects.toMatchObject({ code: "REQUEST_FAILED_ECONNRESET" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+  });
+
+  it("falha de rede esgotada na sessao nao solicita senha nem login", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockRejectedValue(failure("ETIMEDOUT"));
+    vi.stubGlobal("fetch", fetchMock);
+    const passwordProvider = vi.fn();
+    const session = new OperationalSession({ client: new SameOriginClient(), options: parseArgs([]), username: "mesma-conta", passwordProvider });
+    const pending = session.get(target, () => {}).catch(error => error);
+    await vi.runAllTimersAsync();
+    expect(await pending).toMatchObject({ code: "REQUEST_FAILED_ETIMEDOUT" });
+    expect(passwordProvider).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.map(([url, init]) => [url.toString(), init.method])).toEqual(Array.from({ length: 3 }, () => [target.toString(), "GET"]));
+  });
+});
+
 describe("sessao operacional com recuperacao limitada", () => {
   const interval = 5 * 60 * 1000;
   const dashboardHtml = '<html><title>Painel de controle</title><a href="/administrator/index.php?option=com_login&amp;task=logout">Sair</a></html>';

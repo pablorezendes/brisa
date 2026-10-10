@@ -29,6 +29,8 @@ const PAGE_LIMIT = 200;
 const DEFAULT_DELAY_MS = 250;
 const DEFAULT_MAX_PAGES = 10_000;
 const REQUEST_TIMEOUT_MS = 30_000;
+const TRANSPORT_RETRY_DELAYS_MS = [1_000, 3_000] as const;
+const TRANSPORT_RETRY_CODES = ["ECONNRESET", "ETIMEDOUT", "EAI_AGAIN", "UND_ERR_SOCKET", "UND_ERR_CONNECT_TIMEOUT"] as const;
 const SESSION_MAINTENANCE_MS = 5 * 60 * 1_000;
 const BUSINESS_TIME_ZONE = "America/Sao_Paulo";
 const SCOPE_SHARD_SIZE = 100;
@@ -529,11 +531,41 @@ export function isFatalOperationalError(error: unknown): error is OperationalCap
   return error instanceof OperationalCaptureError;
 }
 
+type TransportRetryCode = typeof TRANSPORT_RETRY_CODES[number];
+
+function transportRetryCode(error: unknown): TransportRetryCode | null {
+  const visited = new Set<unknown>();
+  let cause = error;
+  for (let depth = 0; depth < 5 && cause && typeof cause === "object" && !visited.has(cause); depth += 1) {
+    visited.add(cause);
+    const failure = cause as { code?: unknown; cause?: unknown };
+    if (typeof failure.code === "string") {
+      return TRANSPORT_RETRY_CODES.includes(failure.code as TransportRetryCode) ? failure.code as TransportRetryCode : null;
+    }
+    cause = failure.cause;
+  }
+  return null;
+}
+
+class OperationalTransportError extends OperationalCaptureError {
+  constructor(code: TransportRetryCode) {
+    // Somente o codigo permitido chega ao manifesto; nunca a mensagem/cause do fetch.
+    super(`REQUEST_FAILED_${code}`, "Falha de transporte ao ler o legado.");
+  }
+}
+
 export class SameOriginClient {
   private readonly cookies = new Map<string, string>();
 
   async get(url: URL, guard: RequestGuard): Promise<{ html: string; url: URL }> {
-    return this.request(url, "GET", guard);
+    const originalUrl = new URL(url);
+    for (let attempt = 0; ; attempt += 1) {
+      try { return await this.request(new URL(originalUrl), "GET", guard); }
+      catch (error) {
+        if (!(error instanceof OperationalTransportError) || attempt >= TRANSPORT_RETRY_DELAYS_MS.length) throw error;
+        await delay(TRANSPORT_RETRY_DELAYS_MS[attempt]);
+      }
+    }
   }
 
   async postLogin(url: URL, form: URLSearchParams, guard: RequestGuard): Promise<{ html: string; url: URL }> {
@@ -562,6 +594,7 @@ export class SameOriginClient {
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      let transportPhase: "fetch" | "response" | "body" = "fetch";
       try {
         const response = await fetch(url, {
           body: method === "POST" ? body : undefined,
@@ -570,6 +603,7 @@ export class SameOriginClient {
           redirect: "manual",
           signal: controller.signal,
         });
+        transportPhase = "response";
         this.captureCookies(response.headers);
 
         if ([301, 302, 303, 307, 308].includes(response.status)) {
@@ -618,9 +652,12 @@ export class SameOriginClient {
         if (contentType && !/(?:text\/html|application\/xhtml\+xml|text\/plain)/.test(contentType)) {
           throw new OperationalCaptureError("RESPONSE_TYPE_INVALID", "Resposta do legado fora do tipo permitido.");
         }
+        transportPhase = "body";
         return { html: await response.text(), url };
       } catch (error) {
         if (controller.signal.aborted) throw new OperationalCaptureError("REQUEST_TIMEOUT", "A leitura do legado excedeu o limite de tempo.");
+        const retryCode = transportPhase !== "response" ? transportRetryCode(error) : null;
+        if (retryCode) throw new OperationalTransportError(retryCode);
         if (error instanceof TypeError) throw new OperationalCaptureError("REQUEST_FAILED", "Falha de transporte ao ler o legado.");
         throw error;
       } finally {
