@@ -3,7 +3,7 @@
 /** Diagnóstico limitado: login e GETs, sem importação, gravação ou dados pessoais na saída. */
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { assertLoginRoute } from "./capturar-operacao-widesys";
+import { assertLoginRoute, verifiedOperationalTotal } from "./capturar-operacao-widesys";
 import { isJoomlaLoginPage, parseAttributes, parseTotal } from "./widesys-parser";
 
 const ORIGEM = "https://brisaazul.app2.widesys.com.br";
@@ -171,10 +171,14 @@ export async function diagnosticarWidesys({
       url.search = new URLSearchParams({ option: "com_widesys", view, limit: "1", limitstart: "0" }).toString();
       const pagina = await requisitar(url, "GET", false);
       if (isJoomlaLoginPage(pagina.html)) throw new FalhaSegura("CREDENCIAIS_RECUSADAS", pagina.http);
-      const totalInformado = parseTotal(pagina.html);
+      let totalInformado = parseTotal(pagina.html);
       const registrosNaAmostra = [...pagina.html.matchAll(/<input\b([^>]*)>/gi)]
         .map((item) => parseAttributes(item[1]))
         .filter((item) => item.name === "cid[]" && /^\d+$/.test(item.value ?? "")).length;
+      if (!registrosNaAmostra && totalInformado === null) {
+        try { totalInformado = verifiedOperationalTotal(pagina.html, []); }
+        catch { throw new FalhaSegura("RESPOSTA_INESPERADA", pagina.http); }
+      }
       if (!registrosNaAmostra && totalInformado !== 0) throw new FalhaSegura("RESPOSTA_INESPERADA", pagina.http);
       resultado.telasFinanceiras[modulo] = { estado: "OK", http: pagina.http, registrosNaAmostra, totalInformado };
     } catch (error) { resultado.telasFinanceiras[modulo] = resultadoErro(error); }

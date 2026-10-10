@@ -56,6 +56,37 @@ describe("diagnóstico somente leitura do Widesys", () => {
     expect(fetcher.mock.calls.every(([url]) => new URL(String(url)).origin.endsWith("widesys.com.br"))).toBe(true);
   });
 
+  it.each(['id="list_limit"', 'name="list[limit]"', 'name="limit"'])("aceita grade vazia sem total explícito com seletor %s", async (atributo) => {
+    const gradeVazia = `<form><select ${atributo}><option value="1" selected>1</option></select><table><thead><tr><th>Documento</th></tr></thead><tbody></tbody></table></form>`;
+    const fetcher = transport([json(), new Response(login), new Response("Painel"), ...Array.from({ length: 3 }, () => new Response(lista)), new Response(gradeVazia)]);
+    const result = await diagnosticarWidesys({ env: credenciais, fetcher });
+    expect(result.telasFinanceiras.movimentacoes).toEqual({ estado: "OK", http: 200, registrosNaAmostra: 0, totalInformado: 0 });
+    expect(fetcher).toHaveBeenCalledTimes(7);
+    const [url, options] = fetcher.mock.calls.at(-1)!;
+    expect(new URL(String(url)).searchParams.get("limit")).toBe("1");
+    expect(options?.method).toBe("GET");
+    expect(result.escopoTotaisTelas).toBe("FILTROS_PADRAO_DO_LEGADO_NAO_SAO_TOTAIS_GLOBAIS");
+  });
+
+  it.each([
+    "<html><body>Painel</body></html>",
+    "<table><thead><tr><th>Documento</th></tr></thead><tbody></tbody></table>",
+    '<select name="limit"></select><table><tbody></tbody></table>',
+    '<select name="limit"></select><th>Documento</th>',
+  ])("recusa HTML sem evidência completa de lista vazia: %s", async (html) => {
+    const fetcher = transport([json(), new Response(login), new Response("Painel"), ...Array.from({ length: 3 }, () => new Response(lista)), new Response(html)]);
+    const result = await diagnosticarWidesys({ env: credenciais, fetcher });
+    expect(result.telasFinanceiras.movimentacoes).toEqual({ estado: "RESPOSTA_INESPERADA", http: 200 });
+    expect(fetcher).toHaveBeenCalledTimes(7);
+  });
+
+  it("não interpreta retorno à página de login como lista vazia", async () => {
+    const fetcher = transport([json(), new Response(login), new Response("Painel"), ...Array.from({ length: 3 }, () => new Response(lista)), new Response(login)]);
+    const result = await diagnosticarWidesys({ env: credenciais, fetcher });
+    expect(result.telasFinanceiras.movimentacoes).toEqual({ estado: "CREDENCIAIS_RECUSADAS", http: 200 });
+    expect(fetcher).toHaveBeenCalledTimes(7);
+  });
+
   it.each(["https://exemplo.com/", "index.php?option=com_widesys&task=finanlancamento.delete", "index.php?option=com_login&task=logout"])("bloqueia destino de login inseguro: %s", async (location) => {
     const fetcher = transport([json(), new Response(login), new Response(null, { status: 302, headers: { location } })]);
     const result = await diagnosticarWidesys({ env: credenciais, fetcher });
