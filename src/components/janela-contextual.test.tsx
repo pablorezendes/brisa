@@ -1,5 +1,7 @@
-import { isValidElement, type ComponentProps, type FormEvent, type ReactElement, type ReactNode } from "react";
+import { isValidElement, type ComponentProps, type ReactElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+type EventoEnvioDialogo = Parameters<NonNullable<ComponentProps<"dialog">["onSubmitCapture"]>>[0];
 
 const ambiente = vi.hoisted(() => ({
   refs: [] as Array<{ current: unknown }>, indice: 0, aviso: null as "rascunho" | "pendente" | null,
@@ -38,7 +40,7 @@ function renderizar() {
   return elemento as ReactElement<ComponentProps<"dialog">>;
 }
 function evento(form: FormularioFalso) {
-  return { target: form, nativeEvent: { submitter: null }, preventDefault: vi.fn(), stopPropagation: vi.fn() };
+  return { target: form, submitter: null, nativeEvent: { submitter: null }, preventDefault: vi.fn(), stopPropagation: vi.fn() };
 }
 function botao(no: ReactNode, texto: string): ReactElement<ComponentProps<"button">> | null {
   if (Array.isArray(no)) {
@@ -71,7 +73,7 @@ describe("guardas da janela financeira sem DOM ou banco real", () => {
   it("permite buscar sem justificativa pendente e não altera o formulário", () => {
     const busca = new FormularioFalso();
     const e = evento(busca);
-    renderizar().props.onSubmitCapture!(e as unknown as FormEvent<HTMLDialogElement>);
+    renderizar().props.onSubmitCapture!(e as unknown as EventoEnvioDialogo);
     expect(e.preventDefault).not.toHaveBeenCalled();
     expect(e.stopPropagation).not.toHaveBeenCalled();
     expect(ambiente.aviso).toBeNull();
@@ -84,7 +86,7 @@ describe("guardas da janela financeira sem DOM ou banco real", () => {
     const busca = new FormularioFalso();
     busca.campos = new URLSearchParams({ mes: "2026-06", pagina: "3", origem: "WIDESYS", registro: "WIDESYS:PAGAR:t1", painel: "detalhe", buscarDestino: "Pessoa & imóvel" });
     const e = evento(busca);
-    renderizar().props.onSubmitCapture!(e as unknown as FormEvent<HTMLDialogElement>);
+    renderizar().props.onSubmitCapture!(e as unknown as EventoEnvioDialogo);
     expect(e.preventDefault).toHaveBeenCalledOnce();
     expect(e.stopPropagation).toHaveBeenCalledOnce();
     expect(ambiente.aviso).toBe("rascunho");
@@ -105,7 +107,7 @@ describe("guardas da janela financeira sem DOM ou banco real", () => {
 
   it("continuar editando conserva texto e não navega", () => {
     const decisao = new FormularioFalso(); decisao.dataset.alterado = "true"; formularios.push(decisao);
-    renderizar().props.onSubmitCapture!(evento(new FormularioFalso()) as unknown as FormEvent<HTMLDialogElement>);
+    renderizar().props.onSubmitCapture!(evento(new FormularioFalso()) as unknown as EventoEnvioDialogo);
     botao(renderizar(), "Continuar nesta janela")!.props.onClick!({} as never);
     expect(decisao.reset).not.toHaveBeenCalled();
     expect(decisao.texto).toBe("Justificativa preenchida");
@@ -118,7 +120,7 @@ describe("guardas da janela financeira sem DOM ou banco real", () => {
     const form = new FormularioFalso();
     if (tipo === "decisao") form.dataset.operacao = "contextual";
     const e = evento(form);
-    renderizar().props.onSubmitCapture!(e as unknown as FormEvent<HTMLDialogElement>);
+    renderizar().props.onSubmitCapture!(e as unknown as EventoEnvioDialogo);
     expect(e.preventDefault).toHaveBeenCalledOnce();
     expect(e.stopPropagation).toHaveBeenCalledOnce();
     expect(ambiente.aviso).toBe("pendente");
@@ -129,7 +131,7 @@ describe("guardas da janela financeira sem DOM ou banco real", () => {
     const decisao = new FormularioFalso(); decisao.dataset = { operacao: "contextual", alterado: "true" };
     formularios.push(decisao);
     const e = evento(decisao);
-    renderizar().props.onSubmitCapture!(e as unknown as FormEvent<HTMLDialogElement>);
+    renderizar().props.onSubmitCapture!(e as unknown as EventoEnvioDialogo);
     expect(e.preventDefault).not.toHaveBeenCalled();
     expect(e.stopPropagation).not.toHaveBeenCalled();
     expect(ambiente.aviso).toBeNull();
@@ -137,7 +139,7 @@ describe("guardas da janela financeira sem DOM ou banco real", () => {
 
   it("reconfere busy antes de descartar rascunho em uma confirmação já aberta", () => {
     const decisao = new FormularioFalso(); decisao.dataset.alterado = "true"; formularios.push(decisao);
-    renderizar().props.onSubmitCapture!(evento(new FormularioFalso()) as unknown as FormEvent<HTMLDialogElement>);
+    renderizar().props.onSubmitCapture!(evento(new FormularioFalso()) as unknown as EventoEnvioDialogo);
     pendente = decisao;
     clicarDescarte();
     expect(ambiente.aviso).toBe("pendente");
