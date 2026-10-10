@@ -14,6 +14,8 @@ type ItemMenu = {
   icone?: IconeMenuNome;
   correspondencia?: "exata" | "prefixo";
   perfis?: readonly string[];
+  aliases?: readonly string[];
+  grupo?: "banco" | "importacoes";
 };
 
 type ModuloMenu = {
@@ -61,27 +63,21 @@ const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
         rotulo: "Financeiro",
         icone: "financeiro",
         itens: [
-          { tipo: "link", href: "/financeiro", rotulo: "Visão financeira", correspondencia: "exata" },
-          { tipo: "link", href: "/financeiro/dados", rotulo: "Organizar dados", icone: "integracao", perfis: ["ADMINISTRADOR", "FINANCEIRO"] },
-          { tipo: "link", href: "/recebimentos", rotulo: "Contas a receber", icone: "recebimentos" },
+          { tipo: "link", href: "/financeiro", rotulo: "Resumo financeiro", correspondencia: "exata" },
+          { tipo: "link", href: "/financeiro/dados", rotulo: "Conferir dados", icone: "conciliacao", perfis: ["ADMINISTRADOR", "FINANCEIRO"] },
+          { tipo: "link", href: "/recebimentos", rotulo: "Contas a receber", icone: "recebimentos", aliases: ["/financeiro/contas-a-receber"] },
           { tipo: "link", href: "/financeiro/contas-a-pagar", rotulo: "Contas a pagar", icone: "financeiro", perfis: ["ADMINISTRADOR", "FINANCEIRO"] },
-          { tipo: "link", href: "/financeiro/boletos", rotulo: "Boletos", icone: "boletos" },
-          { tipo: "link", href: "/paineis/cobranca", rotulo: "Cobrança e atrasos", icone: "cobranca" },
-          { tipo: "link", href: "/financeiro/automacoes", rotulo: "Central de comunicação", icone: "mensagens", perfis: ["ADMINISTRADOR"] },
-          { tipo: "link", href: "/financeiro/notas-fiscais", rotulo: "Notas fiscais de serviço", icone: "notas-fiscais", perfis: ["ADMINISTRADOR"] },
-          { tipo: "link", href: "/financeiro/contas-bancarias", rotulo: "Contas bancárias", icone: "contas-bancarias" },
-          { tipo: "link", href: "/financeiro/conciliacao", rotulo: "Conciliação bancária", icone: "conciliacao" },
-          {
-            tipo: "link",
-            href: "/financeiro/migracao-widesys",
-            rotulo: "Migração Widesys",
-            icone: "integracao",
-            perfis: ["ADMINISTRADOR", "FINANCEIRO"],
-          },
-          { tipo: "link", href: "/caixa", rotulo: "Movimentações de caixa", icone: "caixa" },
-          { tipo: "link", href: "/unificacao", rotulo: "Resolver duplicidades", icone: "conciliacao", perfis: ["ADMINISTRADOR", "FINANCEIRO"] },
-          { tipo: "link", href: "/financeiro/importacoes", rotulo: "Importações de planilhas", icone: "historico", perfis: ["ADMINISTRADOR"] },
+          { tipo: "link", href: "/caixa", rotulo: "Entradas e saídas", icone: "caixa", aliases: ["/financeiro/movimentacoes"] },
+          { tipo: "link", href: "/paineis/cobranca", rotulo: "Cobranças", icone: "cobranca" },
           { tipo: "link", href: "/financeiro/comissoes", rotulo: "Comissões", icone: "comissoes", perfis: PERFIS_COMISSOES },
+          { tipo: "link", href: "/financeiro/boletos", rotulo: "Boletos", icone: "boletos", grupo: "banco" },
+          { tipo: "link", href: "/financeiro/conciliacao", rotulo: "Conferir pagamentos", icone: "conciliacao", grupo: "banco" },
+          { tipo: "link", href: "/financeiro/contas-bancarias", rotulo: "Contas bancárias", icone: "contas-bancarias", grupo: "banco" },
+          { tipo: "link", href: "/financeiro/automacoes", rotulo: "Mensagens de cobrança", icone: "mensagens", perfis: ["ADMINISTRADOR"], grupo: "banco" },
+          { tipo: "link", href: "/financeiro/notas-fiscais", rotulo: "Notas de serviço", icone: "notas-fiscais", perfis: ["ADMINISTRADOR"], grupo: "banco" },
+          { tipo: "link", href: "/financeiro/importacoes", rotulo: "Planilhas importadas", icone: "historico", perfis: ["ADMINISTRADOR"], grupo: "importacoes" },
+          { tipo: "link", href: "/financeiro/migracao-widesys", rotulo: "Dados do Widesys", icone: "integracao", perfis: ["ADMINISTRADOR", "FINANCEIRO"], grupo: "importacoes" },
+          { tipo: "link", href: "/unificacao", rotulo: "Todos os registros", icone: "integracao", perfis: ["ADMINISTRADOR", "FINANCEIRO"], grupo: "importacoes" },
         ],
       },
       {
@@ -128,10 +124,9 @@ const ITENS_COM_CONTEXTO = MENU.flatMap((grupo) =>
 ).sort((a, b) => b.item.href.length - a.item.href.length);
 
 function rotaAtiva(pathname: string, item: ItemMenu) {
-  if (item.correspondencia === "exata" || item.href === "/") {
-    return pathname === item.href;
-  }
-  return pathname === item.href || pathname.startsWith(`${item.href}/`);
+  return [item.href, ...(item.aliases ?? [])].some((href) =>
+    pathname === href || (item.correspondencia !== "exata" && href !== "/" && pathname.startsWith(`${href}/`)),
+  );
 }
 
 function MarcaBrisa({
@@ -193,7 +188,7 @@ function ItemNav({
       ) : (
         <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full transition-colors ${ativo ? "bg-[#72d3b4]" : "bg-[#50676a] group-hover:bg-[#82999b]"}`} />
       )}
-      <span className={`truncate ${compacto ? "lg:sr-only" : ""}`}>{item.rotulo}</span>
+      <span className={`min-w-0 whitespace-normal leading-snug ${compacto ? "lg:sr-only" : ""}`}>{item.rotulo}</span>
     </Link>
   );
 }
@@ -216,6 +211,11 @@ function ModuloNav({
   const ativo = modulo.itens.some((item) => rotaAtiva(pathname, item));
   const idConteudo = `submenu-${modulo.id}`;
   const submenuVisivel = expandido && !compacto;
+  const grupos = [
+    { id: "banco", rotulo: "Banco e serviços" },
+    { id: "importacoes", rotulo: "Importações e histórico" },
+  ].map((grupo) => ({ ...grupo, itens: modulo.itens.filter((item) => item.grupo === grupo.id) }))
+    .filter((grupo) => grupo.itens.length > 0);
 
   return (
     <div>
@@ -235,7 +235,7 @@ function ModuloNav({
         <span className={`shrink-0 ${ativo ? "text-[#72d3b4]" : "text-[#829698] group-hover:text-[#b3c2c1]"}`}>
           <IconeMenu nome={modulo.icone} />
         </span>
-        <span className={`min-w-0 flex-1 truncate ${compacto ? "lg:sr-only" : ""}`}>{modulo.rotulo}</span>
+        <span className={`min-w-0 flex-1 whitespace-normal leading-snug ${compacto ? "lg:sr-only" : ""}`}>{modulo.rotulo}</span>
         <span className={`text-[#6f8587] transition-transform duration-200 ${expandido ? "rotate-90" : ""} ${compacto ? "lg:hidden" : ""}`}>
           <IconeMenu nome="chevron-direita" className="h-4 w-4" />
         </span>
@@ -253,7 +253,7 @@ function ModuloNav({
       >
         <div className="overflow-hidden">
           <div className="ml-5 mt-1 space-y-0.5 border-l border-white/[0.09] pl-2">
-            {modulo.itens.map((item) => (
+            {modulo.itens.filter((item) => !item.grupo).map((item) => (
               <ItemNav
                 key={item.href}
                 item={item}
@@ -262,6 +262,24 @@ function ModuloNav({
                 compacto={false}
                 submenu
               />
+            ))}
+            {grupos.map((grupo) => (
+              <details
+                key={`${grupo.id}-${pathname}`}
+                id={`${idConteudo}-${grupo.id}`}
+                open={grupo.itens.some((item) => rotaAtiva(pathname, item))}
+                className="group/submenu border-t border-white/[0.08] pt-1"
+              >
+                <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 rounded-lg px-2.5 py-2 text-[12px] font-semibold text-[#9bafb1] transition-colors hover:bg-white/[0.055] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#72d3b4] [&::-webkit-details-marker]:hidden">
+                  <span className="min-w-0 flex-1 whitespace-normal leading-snug">{grupo.rotulo}</span>
+                  <IconeMenu nome="chevron-direita" className="h-3.5 w-3.5 shrink-0 transition-transform group-open/submenu:rotate-90" />
+                </summary>
+                <div className="space-y-0.5 pb-1">
+                  {grupo.itens.map((item) => (
+                    <ItemNav key={item.href} item={item} ativo={rotaAtiva(pathname, item)} aoNavegar={aoNavegar} compacto={false} submenu />
+                  ))}
+                </div>
+              </details>
             ))}
           </div>
         </div>
@@ -329,7 +347,7 @@ export default function AppShell({
 
       const focaveis = Array.from(
         painelMenuRef.current.querySelectorAll<HTMLElement>(
-          'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+          'a[href], button:not([disabled]), input:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
         ),
       ).filter((elemento) => elemento.offsetParent !== null);
       if (focaveis.length === 0) return;

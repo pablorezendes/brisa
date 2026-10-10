@@ -29,7 +29,7 @@ export default async function PaginaImportacoes({ searchParams }: {
   const dados = await listarImportacoesPlanilha(await searchParams);
   const lote = dados.lotes.find(item => item.id === dados.filtros.lote);
   return <div>
-    <PageHeader titulo="Planilhas Excel importadas" descricao="Arquivo, aba e linha de origem. Veja o que foi carregado e o que ficou de fora. Importação não significa conciliação concluída." acoes={<Link href="/financeiro/dados" className={btnSecundario}>Organizar dados</Link>} />
+    <PageHeader titulo="Planilhas importadas" descricao="Arquivo, aba e linha de origem. Veja o que foi carregado e o que ficou de fora. Importação não significa conciliação concluída." acoes={<Link href="/financeiro/dados" className={btnSecundario}>Conferir dados</Link>} />
 
     <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {[

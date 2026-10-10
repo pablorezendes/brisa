@@ -67,6 +67,35 @@ Abra https://brisa.tescod.com — o app pede o login criado no primeiro acesso.
 
 ## 4) Atualizações futuras
 
+### Financeiro simplificado (10/10/2026)
+
+O menu destaca seis tarefas diárias: Resumo financeiro, Conferir dados,
+Contas a receber, Contas a pagar, Entradas e saídas e Cobranças.
+Banco e serviços e Importações e histórico ficam em grupos recolhíveis.
+Comissões continuam separadas, com as mesmas permissões.
+
+**Conferir dados** é o ponto de partida para duplicatas possíveis, decisões a
+revisar e inconsistências. As listas financeiras mostram filtros essenciais
+primeiro; filtros extras e ferramentas ficam recolhidos. Contas a pagar e a
+receber mantêm a conferência em janela na própria lista. Dados de origem,
+histórico, critérios de consolidação e cálculos não foram alterados.
+A abertura pela tabela usa um GET da própria lista, preservando os filtros
+na URL e evitando a transição que apresentou travamento em listas extensas.
+O documento é recarregado nessa abertura; a posição anterior de rolagem não
+é preservada. Comparações e fechamento continuam dentro do fluxo contextual.
+
+```bash
+cd /srv/stack/acamargo
+set -e
+git pull --ff-only origin main
+docker compose build brisa
+docker compose up -d brisa
+docker compose logs --tail 60 brisa
+curl --fail --retry 12 --retry-delay 5 --retry-all-errors -I https://brisa.tescod.com/login
+```
+
+Sem alteração de schema. Não execute seed nem refaça importações.
+
 ### Conferência financeira na própria tela (08/10/2026)
 
 Contas a pagar e contas a receber abrem detalhes, comparação e exclusão em uma

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Children, isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PoliticaAcesso } from "@/lib/acesso/politica";
@@ -16,6 +16,16 @@ vi.mock("@/components/formulario-na-tela", () => ({ FormularioNaTela: ({ childre
 vi.mock("@/components/excluir-registro-link", () => ({ ExcluirUnificadoLink: () => <a href="/cadastros/governanca?modo=excluir">Excluir da plataforma</a> }));
 
 import { ConferenciaRegistro } from "./conferencia-registro";
+import { CamposRegistroConferencia } from "./campos-conferencia";
+
+function camposEnviados(no: ReactNode): unknown {
+  if (!isValidElement<{ children?: ReactNode; campos?: unknown }>(no)) return undefined;
+  if (no.type === CamposRegistroConferencia) return no.props.campos;
+  for (const filho of Children.toArray(no.props.children)) {
+    const campos = camposEnviados(filho);
+    if (campos) return campos;
+  }
+}
 
 function registro(extras: Partial<LinhaUnificada> = {}): LinhaUnificada {
   return { chave: "WIDESYS:PAGAR:t1", dominio: "PAGAR", origem: "WIDESYS", origemId: "t1", titulo: "Fornecedor de teste", descricao: "Despesa de teste", href: "/origem-separada", hash: "hash-1", qualidade: "OK", motivos: [], campos: { pessoa: { rotulo: "Pessoa", valor: "Pessoa permitida" } }, nomeNorm: "FORNECEDOR", estado: "PENDENTE", origens: ["WIDESYS"], fontes: ["WIDESYS:PAGAR:t1"], versao: 2, candidatos: [], avisos: [], contabiliza: false, divergencias: [], ...extras };
@@ -37,6 +47,15 @@ beforeEach(() => {
 });
 
 describe("conferência dentro da lista financeira", () => {
+  it("projeta somente campos visíveis para a apresentação cliente", async () => {
+    const pessoa = { rotulo: "Pessoa", valor: "Pessoa permitida", interno: "SEGREDO_INTERNO" };
+    const principal = registro({ campos: { pessoa, taxa: { rotulo: "Taxa", valor: "SEGREDO_TAXA" } } });
+    mocks.detalhe.mockResolvedValue({ registro: principal, candidatos: [], fontes: [principal], historico: [], baixas: [] });
+    const campos = camposEnviados(await ConferenciaRegistro({ chave: principal.chave, contexto }));
+    expect(campos).toEqual([{ chave: "pessoa", campo: { rotulo: "Pessoa", valor: "Pessoa permitida" } }]);
+    expect(JSON.stringify(campos)).not.toContain("SEGREDO");
+  });
+
   it("preserva filtros na busca, comparação, exclusão e retorno da decisão", async () => {
     const html = renderToStaticMarkup(await ConferenciaRegistro({ chave: "WIDESYS:PAGAR:t1", parametros: { buscarDestino: "fornecedor" }, contexto }));
     expect(html).toContain('action="/financeiro/contas-a-pagar"');

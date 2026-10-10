@@ -1,4 +1,4 @@
-import { Children, isValidElement, type ReactNode } from "react";
+import { Children, isValidElement, type ComponentProps, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DominioUnificacao, LinhaUnificada, ListaUnificada } from "@/lib/unificacao/tipos";
@@ -34,6 +34,7 @@ vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("ACESSO_NE
 
 import { OperacaoUnificada } from "./operacao-unificada";
 import { TabelaOperacaoUnificada, type LinhaTabelaOperacao } from "./tabela-operacao-unificada";
+import { ResumoOperacaoUnificada } from "./resumo-operacao-unificada";
 
 const filtros = {
   q: "Conta com espaço", origem: "WIDESYS", estado: "PENDENTE", mes: "2026-06",
@@ -83,16 +84,86 @@ function linhasEnviadasAoCliente(arvore: ReactNode): LinhaTabelaOperacao[] {
   return [];
 }
 
+function resumoEnviadoAoCliente(arvore: ReactNode): ComponentProps<typeof ResumoOperacaoUnificada> | undefined {
+  for (const filho of Children.toArray(arvore)) {
+    if (!isValidElement<ComponentProps<typeof ResumoOperacaoUnificada> & { children?: ReactNode }>(filho)) continue;
+    if (filho.type === ResumoOperacaoUnificada) return filho.props;
+    const resumo = resumoEnviadoAoCliente(filho.props.children);
+    if (resumo) return resumo;
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.perfil.mockResolvedValue("ADMINISTRADOR");
-  mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "ADMINISTRADOR", ativo: true, global: true, regras: [], permissoes: ["cadastros.sensiveis", "governanca.editar"] });
+  mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "ADMINISTRADOR", ativo: true, global: true, regras: [], permissoes: ["cadastros.sensiveis", "governanca.editar", "financeiro.ver", "unificacao.ver", "caixa.ver"] });
   mocks.listar.mockResolvedValue(lista());
   mocks.conferencia.mockResolvedValue(<p>Conteúdo da conferência</p>);
   mocks.exclusao.mockResolvedValue(<p>Conteúdo da exclusão</p>);
 });
 
 describe("popup financeiro integrado à lista SSR", () => {
+  it("abre detalhes e exclusão por GET na própria lista, sem depender da transição RSC", async () => {
+    const itens = linhasEnviadasAoCliente(await OperacaoUnificada({ dominio: "PAGAR", titulo: "Pagar", base: "/financeiro/contas-a-pagar", parametros: filtros }));
+    const arvore = TabelaOperacaoUnificada({ itens, financeiro: true, exibirDominio: false, exibirValor: false, contextual: true });
+    const tipos: unknown[] = [];
+    function conferir(filhos: ReactNode) {
+      Children.forEach(filhos, filho => {
+        if (!isValidElement<{ href?: string; children?: ReactNode }>(filho)) return;
+        if (filho.props.href?.includes("painel=")) {
+          tipos.push(filho.type);
+          const url = new URL(filho.props.href, "http://brisa.test");
+          expect(url.pathname).toBe("/financeiro/contas-a-pagar");
+          expect(url.searchParams.get("pagina")).toBe("3");
+          expect(url.searchParams.get("q")).toBe(filtros.q);
+        }
+        conferir(filho.props.children);
+      });
+    }
+    conferir(arvore);
+    expect(tipos).toEqual(["a", "a", "a"]);
+  });
+
+  it("mantém navegação financeira curta, sem abas de cadastro", async () => {
+    const html = renderToStaticMarkup(await OperacaoUnificada({ dominio: "PAGAR", titulo: "Pagar", base: "/financeiro/contas-a-pagar" }));
+    const nav = html.match(/<nav aria-label="Listas do financeiro"[^>]*>([\s\S]*?)<\/nav>/)?.[1];
+    expect(nav).toContain("Conferir dados");
+    expect(nav).toContain("Entradas e saídas");
+    expect(nav).not.toContain("Pessoas");
+    expect(nav).not.toContain("Contratos");
+    expect(nav).not.toContain("Resolver duplicidades");
+    expect(nav?.match(/<a /g)).toHaveLength(4);
+  });
+
+  it("filtra também os atalhos pela permissão efetiva, não apenas pelo perfil", async () => {
+    mocks.perfil.mockResolvedValue("FINANCEIRO");
+    mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "FINANCEIRO", ativo: true, global: true, regras: [], permissoes: ["financeiro.ver", "cadastros.sensiveis"] });
+    const html = renderToStaticMarkup(await OperacaoUnificada({ dominio: "PAGAR", titulo: "Pagar", base: "/financeiro/contas-a-pagar" }));
+    const nav = html.match(/<nav aria-label="Listas do financeiro"[^>]*>([\s\S]*?)<\/nav>/)?.[1];
+    expect(nav).toContain("A receber");
+    expect(nav).not.toContain("Conferir dados");
+    expect(nav).not.toContain("Entradas e saídas");
+  });
+
+  it("recolhe ferramentas e filtros opcionais, sem perder campos ou ações", async () => {
+    const html = renderToStaticMarkup(await OperacaoUnificada({ dominio: "PAGAR", titulo: "Pagar", base: "/financeiro/contas-a-pagar" }));
+    expect(html).toMatch(/<details[^>]*><summary[^>]*>Mais filtros<\/summary>/);
+    expect(html).toContain('name="estado"');
+    expect(html).toContain('name="de"');
+    expect(html).toContain('name="ate"');
+    expect(html).toContain('name="vencidos"');
+    expect(html).toMatch(/<details[^>]*><summary[^>]*>Ferramentas de conferência e base original<\/summary>/);
+    expect(html).toContain("Reanalisar correspondências");
+    expect(html).toContain("Entenda a situação");
+  });
+
+  it("mostra filtros avançados aplicados e preserva o filtro de data", async () => {
+    const html = renderToStaticMarkup(await OperacaoUnificada({ dominio: "PAGAR", titulo: "Pagar", base: "/financeiro/contas-a-pagar", parametros: { de: "2026-06-01", vencidos: "1" } }));
+    expect(html).toMatch(/<details[^>]*open=""[^>]*><summary[^>]*>Mais filtros · há filtros aplicados/);
+    expect(html).toContain('value="2026-06-01"');
+    expect(mocks.listar).toHaveBeenCalledWith(expect.objectContaining({ de: "2026-06-01", vencidos: true }));
+  });
+
   it("envia somente o DTO exibido e preserva as 25 linhas da paginação", async () => {
     const dados = lista();
     dados.itens = Array.from({ length: 25 }, (_, indice) => ({
@@ -117,6 +188,21 @@ describe("popup financeiro integrado à lista SSR", () => {
     mocks.listar.mockResolvedValue(dados);
     const itens = linhasEnviadasAoCliente(await OperacaoUnificada({ dominio: "PESSOA", titulo: "Cadastros", base: "/cadastros/base-unificada" }));
     expect(itens[0]).toMatchObject({ valor: null, pago: null, aberto: null, natureza: null });
+  });
+
+  it("a central sem domínio envia apenas as contagens exibidas no resumo", async () => {
+    const dados = lista();
+    dados.resumo = {
+      ...dados.resumo, ativos: 12, vinculados: 3, pendentes: 4, quarentena: 2,
+      devido: 987654, pago: 123456, aberto: 864198, entradas: 765432, saidas: 234567,
+      abertoPendente: 345678, devidoPendente: 456789, pagoPendente: 111111,
+    };
+    mocks.listar.mockResolvedValue(dados);
+    const arvore = await OperacaoUnificada({ titulo: "Todos os registros", base: "/unificacao", central: true });
+    expect(resumoEnviadoAoCliente(arvore)).toEqual({
+      financeiro: false, movimento: false, ativos: 12, vinculados: 3, pendentes: 4, quarentena: 2,
+      devido: 0, pago: 0, aberto: 0, entradas: 0, saidas: 0, abertoPendente: 0,
+    });
   });
 
   it("não envia URL de exclusão a financeiro, mesmo com a permissão extra", async () => {

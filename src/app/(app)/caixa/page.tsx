@@ -321,7 +321,7 @@ export default async function PaginaCaixa({
   await exigirPaginaAcesso("/caixa");
   const sp = await searchParams;
   if (sp.visao !== "livro" && await podeAcessarUnificacao()) {
-    return <OperacaoUnificada dominio="MOVIMENTO" titulo="Movimentações financeiras" base="/caixa" parametros={sp} nativo={{ href: `/caixa?visao=livro${sp.mes ? `&mes=${encodeURIComponent(sp.mes)}` : ""}`, rotulo: "Lançamentos do livro-caixa" }} />;
+    return <OperacaoUnificada dominio="MOVIMENTO" titulo="Entradas e saídas" base="/caixa" parametros={sp} nativo={{ href: `/caixa?visao=livro${sp.mes ? `&mes=${encodeURIComponent(sp.mes)}` : ""}`, rotulo: "Lançamentos do livro-caixa" }} />;
   }
   const periodo = parsePeriodo(sp.de, sp.ate);
   const mes = sp.mes && RE_MES.test(sp.mes) ? sp.mes : await mesMaisRecente();

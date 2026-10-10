@@ -1,172 +1,26 @@
-import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
-import { BaseFinanceira } from "@/components/base-financeira";
-import { podeExibirAcao } from "@/components/acao-autorizada";
-import { podeAbrirRota, type PermissaoAcesso } from "@/lib/acesso/politica";
 import Link from "next/link";
+import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
+import { podeAbrirRota } from "@/lib/acesso/politica";
+import { podeExibirAcao } from "@/components/acao-autorizada";
 import { IconeMenu, type IconeMenuNome } from "@/components/icones-menu";
-import {
-  Card,
-  Dinheiro,
-  Kpi,
-  PageHeader,
-  PainelAlertas,
-  SeletorMes,
-  Sigilo,
-  Selo,
-  btnPrimario,
-  btnSecundario,
-  type ItemAlerta,
-} from "@/components/ui";
-import { dadosExecutivos, mesPadrao } from "@/lib/consultas/executivo";
-import { resumoAtalhoMigracaoWidesys } from "@/lib/consultas/operacao-widesys";
+import { Card, Dinheiro, Kpi, PageHeader, SeletorMes, Sigilo, btnPrimario } from "@/components/ui";
+import { mesPadrao } from "@/lib/consultas/executivo";
 import { listarUnificados } from "@/lib/consultas/unificacao";
-import { formatarBRL } from "@/lib/dominio/dinheiro";
-import { prisma } from "@/lib/db";
-import {
-  formatarCompetencia,
-  parseCompetencia,
-} from "@/lib/dominio/normalizacao";
-import {
-  NIVEL,
-  nivelInadimplencia,
-  nivelSaldo,
-  nivelTarefas,
-  nivelTaxaRecebimento,
-  type Nivel,
-} from "@/lib/dominio/semaforo";
+import { formatarCompetencia } from "@/lib/dominio/normalizacao";
 
-export const metadata = { title: "Financeiro — Brisa" };
+export const metadata = { title: "Resumo financeiro — Brisa" };
 export const dynamic = "force-dynamic";
 
 const RE_MES = /^\d{4}-(0[1-9]|1[0-2])$/;
+const PERFIS_UNIFICACAO = ["ADMINISTRADOR", "FINANCEIRO"];
 
-type IconeFinanceiro = Extract<
-  IconeMenuNome,
-  "recebimentos" | "boletos" | "contas-bancarias" | "integracao" | "cobranca" | "caixa" | "reajustes"
->;
-
-function percentual(valor: number | null): string {
-  if (valor === null) return "—";
-  return new Intl.NumberFormat("pt-BR", {
-    style: "percent",
-    maximumFractionDigits: 1,
-  }).format(valor);
-}
-
-function BarraProgresso({ valor, nivel }: { valor: number | null; nivel: Nivel }) {
-  const exibido = valor === null ? 0 : Math.max(0, Math.min(valor, 1));
-  const aria = Math.round(exibido * 100);
-
-  return (
-    <div
-      className="h-2 overflow-hidden rounded-full bg-[#e9eef0]"
-      role="progressbar"
-      aria-label="Percentual do devido já recebido"
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuetext={valor === null ? "Sem dados" : "Percentual disponível no texto acima"}
-    >
-      <div
-        className="h-full rounded-full transition-[width]"
-        style={{ width: `${aria}%`, backgroundColor: NIVEL[nivel].cor }}
-      />
-    </div>
-  );
-}
-
-function MiniValor({
-  rotulo,
-  valor,
-  destaque = false,
-}: {
-  rotulo: string;
-  valor: React.ReactNode;
-  destaque?: boolean;
-}) {
-  return (
-    <div className="min-w-0">
-      <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-tinta-suave">
-        {rotulo}
-      </div>
-      <div
-        className={`numero-card mt-1 tabular-nums text-tinta ${
-          destaque
-            ? "numero-card--compacto font-bold"
-            : "text-[13px] font-semibold"
-        }`}
-      >
-        <Sigilo>{valor}</Sigilo>
-      </div>
-    </div>
-  );
-}
-
-async function ModuloFinanceiro({
-  icone,
-  titulo,
-  descricao,
-  nivel,
-  status,
-  href,
-  acao,
-  hrefSecundario,
-  acaoSecundaria,
-  permissaoSecundaria,
-  className = "",
-  children,
-}: {
-  icone: IconeFinanceiro;
+type Atalho = {
   titulo: string;
   descricao: string;
-  nivel: Nivel;
-  status: React.ReactNode;
   href: string;
-  acao: string;
-  hrefSecundario?: string;
-  acaoSecundaria?: string;
-  permissaoSecundaria?: PermissaoAcesso;
-  className?: string;
-  children: React.ReactNode;
-}) {
-  const acesso = await acessoAtual();
-  const podeAbrir = podeAbrirRota(acesso, href.split("?")[0]);
-  const podeAbrirSecundario = hrefSecundario && podeAbrirRota(acesso, hrefSecundario.split("?")[0])
-    && (!permissaoSecundaria || podeExibirAcao(acesso, { permissao: permissaoSecundaria }));
-  return (
-    <Card className={`flex h-full flex-col p-5 ${className}`} nivel={nivel}>
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#d7e3e1] bg-[#edf4f2] text-[#315f56]">
-            <IconeMenu nome={icone} tamanho={21} />
-          </span>
-          <div className="min-w-0">
-            <h2 className="text-[15px] font-bold tracking-[-0.02em] text-tinta">
-              {titulo}
-            </h2>
-            <p className="mt-0.5 text-[11px] leading-snug text-tinta-suave">
-              {descricao}
-            </p>
-          </div>
-        </div>
-        <Selo nivel={nivel}>{status}</Selo>
-      </div>
-
-      <div className="mt-5 flex-1">{children}</div>
-
-      <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-contorno pt-4">
-        {podeAbrir && <Link href={href} className={btnPrimario}>
-          {acao}
-          <span aria-hidden="true">→</span>
-        </Link>}
-        {podeAbrirSecundario && hrefSecundario && acaoSecundaria ? (
-          <Link href={hrefSecundario} className={btnSecundario}>
-            {acaoSecundaria}
-          </Link>
-        ) : null}
-      </div>
-    </Card>
-  );
-}
+  icone?: IconeMenuNome;
+  perfis?: string[];
+};
 
 export default async function PaginaFinanceiro({
   searchParams,
@@ -175,552 +29,180 @@ export default async function PaginaFinanceiro({
 }) {
   await exigirPaginaAcesso("/financeiro");
   const [sp, acesso] = await Promise.all([searchParams, acessoAtual()]);
-  const podeConsolidar = podeExibirAcao(acesso, { permissao: "cadastros.sensiveis", perfis: ["ADMINISTRADOR", "FINANCEIRO"] });
-  const podeAuditarMigracao = podeConsolidar && podeAbrirRota(acesso, "/financeiro/migracao-widesys");
   const mes = sp.mes && RE_MES.test(sp.mes) ? sp.mes : await mesPadrao();
-  const [
-    dados,
-    totalBoletos,
-    boletosAtencao,
-    contasBancarias,
-    conciliacoesPendentes,
-    migracaoWidesys,
-    unificadoReceber,
-    unificadoPagar,
-    unificadoMovimento,
-  ] = await Promise.all([
-    dadosExecutivos(mes),
-    prisma.boleto.count({ where: { recebimento: { mesLancamento: mes } } }),
-    prisma.boleto.count({
-      where: {
-        recebimento: { mesLancamento: mes },
-        OR: [
-          { status: { in: ["ERRO", "RESULTADO_DESCONHECIDO", "PAGAMENTO_REPORTADO"] } },
-          { conciliacaoStatus: "DIVERGENTE" },
-        ],
-      },
-    }),
-    prisma.contaBancaria.count({ where: { ativa: true } }),
-    prisma.pagamentoRecebimento.count({ where: { conciliadoEm: null } }),
-    podeAuditarMigracao ? resumoAtalhoMigracaoWidesys() : Promise.resolve(null),
-    podeConsolidar ? listarUnificados({ dominio: "RECEBER", mes, porPagina: 1 }) : Promise.resolve(null),
-    podeConsolidar ? listarUnificados({ dominio: "PAGAR", mes, porPagina: 1 }) : Promise.resolve(null),
-    podeConsolidar ? listarUnificados({ dominio: "MOVIMENTO", mes, porPagina: 1 }) : Promise.resolve(null),
+  const podeConsolidar = podeExibirAcao(acesso, {
+    permissao: "cadastros.sensiveis",
+    perfis: PERFIS_UNIFICACAO,
+  });
+  const abrir = (href: string) => podeAbrirRota(acesso, href.split("?")[0]);
+  const podeConferir = podeConsolidar && abrir("/financeiro/dados");
+  const permitido = (atalho: Atalho) => abrir(atalho.href)
+    && (!atalho.perfis || atalho.perfis.includes(acesso.perfil));
+  const [receber, pagar, movimentos] = await Promise.all([
+    podeConsolidar ? listarUnificados({ dominio: "RECEBER", mes, porPagina: 1 }) : null,
+    podeConsolidar ? listarUnificados({ dominio: "PAGAR", mes, porPagina: 1 }) : null,
+    podeConsolidar ? listarUnificados({ dominio: "MOVIMENTO", mes, porPagina: 1 }) : null,
   ]);
-  const { mes: mesNumero } = parseCompetencia(mes);
-  const linhaAnterior = mesNumero > 1 ? dados.porMes[mesNumero - 2] : null;
-
-  const nivelTaxa = nivelTaxaRecebimento(dados.taxaRecebimento);
-  const nivelInadimplenciaMes = nivelInadimplencia(
-    dados.inadimplentesValor,
-    dados.devidoMes,
-  );
-  const nivelCaixa = dados.caixaMes
-    ? nivelSaldo(dados.saldoCaixaMes)
-    : "neutro";
-  const nivelReajustes = nivelTarefas(dados.reajustesDoMes.length, 5);
-  const nivelMigracao: Nivel = !migracaoWidesys
-    ? "neutro"
-    : migracaoWidesys.status === "FALHOU"
-      ? "critico"
-      : migracaoWidesys.status === "QUARENTENA"
-        ? "atencao"
-        : migracaoWidesys.status === "CONCLUIDO"
-          ? "info"
-          : "atencao";
-  const totalSaidas = dados.caixaMes
-    ? dados.caixaMes.despesaAL + dados.caixaMes.despesaCH + dados.caixaMes.despesaOutros
-    : 0;
-  const baseComparacaoRecebido = linhaAnterior?.recebido ?? null;
-  const variacaoRecebido =
-    baseComparacaoRecebido && baseComparacaoRecebido > 0
-      ? (dados.recebidoMes - baseComparacaoRecebido) / baseComparacaoRecebido
-      : null;
-
-  const statusTitulo = dados.mesFechado
-    ? "Recebimentos fechados para o mês"
-    : dados.devidoMes === 0
-      ? "Mês aguardando cobranças"
-      : dados.inadimplentesQtde > 0
-        ? "Cobranças em acompanhamento"
-        : "Fluxo financeiro em dia";
-
-  const alertas: ItemAlerta[] = [];
-  if (dados.inadimplentesQtde > 0) {
-    alertas.push({
-      nivel: nivelInadimplenciaMes,
-      titulo: "Cobranças em aberto",
-      texto: (
-        <>
-          <Sigilo>{dados.inadimplentesQtde}</Sigilo> título(s) somam{" "}
-          <Sigilo>{formatarBRL(dados.inadimplentesValor)}</Sigilo> de saldo ainda em aberto.
-        </>
-      ),
-      acao: {
-        rotulo: "Abrir cobrança",
-        href: `/paineis/cobranca?mes=${mes}`,
-      },
-    });
-  } else if (dados.taxaRecebimento !== null && dados.taxaRecebimento < 0.8) {
-    alertas.push({
-      nivel: "critico",
-      titulo: "Recebimento abaixo do previsto",
-      texto: (
-        <>
-          Entrou <Sigilo>{percentual(dados.taxaRecebimento)}</Sigilo> do devido. Confira pagamentos parciais e competências antes do fechamento.
-        </>
-      ),
-      acao: {
-        rotulo: "Conferir recebimentos",
-        href: `/recebimentos?visao=locacao&mes=${mes}`,
-      },
-    });
-  }
-  if (dados.caixaMes && dados.saldoCaixaMes < 0) {
-    alertas.push({
-      nivel: "critico",
-      titulo: "Caixa negativo",
-      texto: (
-        <>
-          As saídas superam as entradas em{" "}
-          <Sigilo>{formatarBRL(Math.abs(dados.saldoCaixaMes))}</Sigilo>. Revise centros de custo e lançamentos do mês.
-        </>
-      ),
-      acao: { rotulo: "Revisar caixa", href: `/caixa?visao=livro&mes=${mes}` },
-    });
-  }
-  if (dados.reajustesDoMes.length > 0) {
-    alertas.push({
-      nivel: nivelReajustes,
-      titulo: "Reajustes contratuais",
-      texto: (
-        <>
-          <Sigilo>{dados.reajustesDoMes.length}</Sigilo> contrato(s) fazem aniversário neste mês e precisam de conferência manual.
-        </>
-      ),
-      acao: { rotulo: "Abrir contratos", href: "/contratos?visao=locacao" },
-    });
-  }
+  const tarefas: Atalho[] = [
+    { titulo: "Contas a receber", descricao: "Consulte valores e pagamentos recebidos.", href: `/recebimentos?mes=${mes}`, icone: "recebimentos" },
+    { titulo: "Contas a pagar", descricao: "Confira obrigações e vencimentos.", href: `/financeiro/contas-a-pagar?mes=${mes}`, icone: "financeiro", perfis: PERFIS_UNIFICACAO },
+    { titulo: "Entradas e saídas", descricao: "Veja os movimentos do dinheiro.", href: `/caixa?mes=${mes}`, icone: "caixa" },
+    { titulo: "Cobranças", descricao: "Acompanhe saldos de locação em aberto.", href: `/paineis/cobranca?mes=${mes}`, icone: "cobranca" },
+  ];
+  const ferramentas: { titulo: string; itens: Atalho[] }[] = [
+    {
+      titulo: "Banco e boletos",
+      itens: [
+        { titulo: "Boletos", descricao: "Emissão e acompanhamento no Sicoob.", href: `/financeiro/boletos?mes=${mes}` },
+        { titulo: "Conferir pagamentos", descricao: "Compare pagamentos e confirmações do banco.", href: "/financeiro/conciliacao", perfis: PERFIS_UNIFICACAO },
+        { titulo: "Contas bancárias", descricao: "Consulte as contas usadas na operação.", href: "/financeiro/contas-bancarias" },
+      ],
+    },
+    {
+      titulo: "Documentos e mensagens",
+      itens: [
+        { titulo: "Notas de serviço", descricao: "Consulte e acompanhe notas de serviços.", href: "/financeiro/notas-fiscais", perfis: ["ADMINISTRADOR"] },
+        { titulo: "Mensagens de cobrança", descricao: "Acompanhe os envios e suas configurações.", href: "/financeiro/automacoes", perfis: ["ADMINISTRADOR"] },
+      ],
+    },
+    {
+      titulo: "Arquivos importados",
+      itens: [
+        { titulo: "Planilhas importadas", descricao: "Veja arquivo, aba e histórico de cada carga.", href: "/financeiro/importacoes", perfis: ["ADMINISTRADOR"] },
+        { titulo: "Dados do Widesys", descricao: "Confira os lotes trazidos do sistema anterior.", href: "/financeiro/migracao-widesys", perfis: PERFIS_UNIFICACAO },
+      ],
+    },
+  ];
+  const gruposVisiveis = ferramentas
+    .map(grupo => ({ ...grupo, itens: grupo.itens.filter(permitido) }))
+    .filter(grupo => grupo.itens.length > 0);
+  const gestao: Atalho[] = [
+    { titulo: "Executivo", descricao: "Indicadores de gestão", href: `/executivo?mes=${mes}` },
+    { titulo: "Recebimentos de locação", descricao: "Base de locações", href: `/recebimentos?visao=locacao&mes=${mes}` },
+    { titulo: "Livro-caixa original", descricao: "Base do livro-caixa", href: `/caixa?visao=livro&mes=${mes}` },
+    { titulo: "Contratos e reajustes", descricao: "Contratos de locação", href: "/contratos?visao=locacao" },
+  ].filter(permitido);
 
   return (
     <div>
       <PageHeader
-        titulo="Financeiro"
-        descricao="Uma central para acompanhar recebimentos, priorizar cobranças e manter caixa e reajustes sob controle."
-        acoes={
-          <>
-            <Link href={`/executivo?mes=${mes}`} className={btnSecundario}>
-              Dashboard executivo
+        titulo="Resumo financeiro"
+        descricao="Escolha a tarefa do dia ou comece pela conferência dos dados."
+        acoes={<SeletorMes base="/financeiro" mes={mes} />}
+      />
+
+      {podeConferir && (
+        <Card className="mb-6 p-5 sm:p-6" nivel="info">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="max-w-2xl">
+              <h2 className="text-lg font-bold tracking-tight text-tinta">Comece pelo que precisa conferir</h2>
+              <p className="mt-1 text-sm leading-relaxed text-tinta-suave">
+                Veja as pendências e a origem dos registros antes de tomar uma decisão.
+              </p>
+            </div>
+            <Link href="/financeiro/dados" className={btnPrimario}>
+              Conferir dados <span aria-hidden="true">→</span>
             </Link>
-            <SeletorMes base="/financeiro" mes={mes} />
-          </>
-        }
-      />
+          </div>
+          <ol className="mt-5 grid gap-3 border-t border-contorno pt-4 text-xs leading-relaxed text-tinta-suave sm:grid-cols-3">
+            <li><strong className="text-tinta">1. Encontre a pendência.</strong> Escolha o que precisa de revisão.</li>
+            <li><strong className="text-tinta">2. Abra o registro.</strong> Em contas a pagar e receber, a conferência abre sobre a lista.</li>
+            <li><strong className="text-tinta">3. Confirme a decisão.</strong> Indique se é o mesmo registro ou se são registros diferentes.</li>
+          </ol>
+        </Card>
+      )}
 
-      {unificadoReceber && unificadoPagar && unificadoMovimento ? <section className="mb-7" aria-label="Financeiro unificado">
-        <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-bold tracking-tight">Financeiro unificado · registros aceitos</h2><p className="mt-1 text-xs text-tinta-suave">Widesys e planilhas Excel · {formatarCompetencia(mes)} · pendências não entram nestes totais; revisão ainda necessária</p></div>{podeAbrirRota(acesso, "/financeiro/dados") && <Link href="/financeiro/dados" className={btnSecundario}>Organizar dados e entender origens</Link>}</div>
+      <section className="mb-6" aria-labelledby="tarefas-financeiras">
+        <h2 id="tarefas-financeiras" className="mb-3 text-base font-bold text-tinta">O que você precisa fazer?</h2>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Kpi rotulo="A receber · em aberto" valor={<Dinheiro centavos={unificadoReceber.resumo.aberto} />} detalhe={`${unificadoReceber.resumo.ativos} registros consolidados`} href={`/recebimentos?mes=${mes}`} ajuda="Saldo devido menos recebido dos registros aceitos das fontes unificadas. Correspondências pendentes ficam fora do total." />
-          <Kpi rotulo="A pagar · em aberto" valor={<Dinheiro centavos={unificadoPagar.resumo.aberto} />} detalhe={`${unificadoPagar.resumo.ativos} registros consolidados`} href={`/financeiro/contas-a-pagar?mes=${mes}`} ajuda="Saldo das obrigações trazidas para a operação e aceitas na conciliação." />
-          <Kpi rotulo="Saldo de movimentos" valor={<Dinheiro centavos={unificadoMovimento.resumo.entradas - unificadoMovimento.resumo.saidas} />} detalhe="Entradas menos saídas consolidadas" href={`/caixa?mes=${mes}`} ajuda="Movimentos aceitos na unificação. Uma cópia vinculada não é somada novamente e títulos não são adicionados ao caixa." />
-          <Kpi rotulo="Correspondências a resolver" valor={unificadoReceber.resumo.pendentes + unificadoPagar.resumo.pendentes + unificadoMovimento.resumo.pendentes} nivel="atencao" detalhe="Valores suspensos da consolidação" href="/unificacao?estado=PENDENTE" ajuda="Abra as correspondências para conferir contrato, competência e identidade; depois vincule ao principal ou confirme que é um registro distinto." />
+          {tarefas.filter(permitido).map(tarefa => (
+            <Link
+              key={tarefa.href}
+              href={tarefa.href}
+              className="group rounded-xl border border-contorno bg-carta p-4 transition-colors hover:border-oliva hover:bg-[#f8faf9] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oliva/30"
+            >
+              <div className="flex items-center gap-2 text-oliva-escura">
+                {tarefa.icone && <IconeMenu nome={tarefa.icone} tamanho={19} />}
+                <h3 className="text-sm font-bold">{tarefa.titulo}</h3>
+                <span aria-hidden="true" className="ml-auto">→</span>
+              </div>
+              <p className="mt-2 text-xs leading-relaxed text-tinta-suave">{tarefa.descricao}</p>
+            </Link>
+          ))}
         </div>
-        {unificadoReceber.resumo.abertoPendente > 0 || unificadoPagar.resumo.abertoPendente > 0 ? <Card nivel="atencao" className="mt-3 flex flex-wrap items-center justify-between gap-3 px-4 py-3"><p className="text-xs text-tinta-suave">Saldo a conferir · fora dos totais consolidados</p><div className="flex flex-wrap gap-4 text-xs"><span>A receber: <Sigilo><Dinheiro centavos={unificadoReceber.resumo.abertoPendente} /></Sigilo></span><span>A pagar: <Sigilo><Dinheiro centavos={unificadoPagar.resumo.abertoPendente} /></Sigilo></span></div></Card> : null}
-        <div className="mt-3 flex flex-wrap gap-2"><Link href={`/recebimentos?mes=${mes}`} className={btnPrimario}>Contas a receber</Link><Link href={`/financeiro/contas-a-pagar?mes=${mes}`} className={btnSecundario}>Contas a pagar</Link><Link href={`/caixa?mes=${mes}`} className={btnSecundario}>Movimentações</Link></div>
-      </section> : null}
+      </section>
 
-      <BaseFinanceira tipo="locacao" />
-      <Card
-        className="relative mb-5 overflow-hidden border-0 p-0 text-white"
-        style={{
-          background:
-            "linear-gradient(132deg, #102f33 0%, #183f3d 58%, #2d5c4e 100%)",
-        }}
-      >
-        <span className="pointer-events-none absolute -right-16 -top-24 h-72 w-72 rounded-full border border-white/10" />
-        <span className="pointer-events-none absolute -bottom-32 right-28 h-56 w-56 rounded-full bg-white/[0.035]" />
-        <div className="relative grid gap-7 px-6 py-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:px-7">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#9ec9bf]">
-                Locações administradas · {formatarCompetencia(mes)}
-              </span>
-              <span className="rounded-md border border-white/15 bg-white/[0.08] px-2 py-1 text-[9px] font-bold uppercase tracking-[0.09em] text-white/80">
-                {dados.mesFechado ? "mês fechado" : "em andamento"}
-              </span>
-            </div>
-            <h2 className="mt-3 text-[25px] font-bold leading-tight tracking-[-0.035em] text-white sm:text-[30px]">
-              {statusTitulo}
-            </h2>
-            <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-white/70">
-              Entrou <Sigilo>{formatarBRL(dados.recebidoMes)}</Sigilo> de{" "}
-              <Sigilo>{formatarBRL(dados.devidoMes)}</Sigilo> devido.
-              {dados.inadimplentesQtde > 0
-                ? <>{" "}Ainda há <Sigilo>{dados.inadimplentesQtde}</Sigilo> cobrança(s) esperando baixa.</>
-                : " Não há saldo de cobrança pendente na competência."}
-            </p>
-            <div className="mt-5 max-w-2xl">
-              <div className="mb-2 flex items-center justify-between text-[10px] font-semibold text-white/60">
-                <span>Recebido sobre o devido</span>
-                <span className="font-mono text-white"><Sigilo>{percentual(dados.taxaRecebimento)}</Sigilo></span>
-              </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-                <div
-                  className="h-full rounded-full bg-[#72d3b4]"
-                  style={{
-                    width: `${Math.round(Math.max(0, Math.min(dados.taxaRecebimento ?? 0, 1)) * 100)}%`,
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 border-t border-white/10 pt-5 sm:grid-cols-3 lg:min-w-[430px] lg:border-l lg:border-t-0 lg:pl-7 lg:pt-0">
-            <div>
-              <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/70">
-                Recebido
-              </div>
-              <div className="numero-card numero-card--compacto mt-1 font-bold text-white">
-                <Sigilo><Dinheiro centavos={dados.recebidoMes} destaque /></Sigilo>
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/70">
-                Em aberto
-              </div>
-              <div className="numero-card numero-card--compacto mt-1 font-bold text-white">
-                <Sigilo><Dinheiro centavos={dados.inadimplentesValor} destaque /></Sigilo>
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/70">
-                Saldo caixa
-              </div>
-              <div className="numero-card numero-card--compacto mt-1 font-bold text-white">
-                <Sigilo><Dinheiro centavos={dados.saldoCaixaMes} destaque /></Sigilo>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      <PainelAlertas
-        itens={alertas}
-        ajuda="Reúne apenas situações que já podem ser tratadas nos módulos existentes: cobrança, caixa e contratos."
-        vazio="Nenhum saldo de cobrança pendente, caixa negativo ou reajuste na mesa para este mês."
-      />
-
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
-        <Kpi
-          rotulo="Recebido no mês"
-          valor={<Dinheiro centavos={dados.recebidoMes} destaque />}
-          detalhe={
-            variacaoRecebido === null
-              ? "sem base no mês anterior"
-              : <Sigilo>{`${variacaoRecebido >= 0 ? "+" : ""}${(variacaoRecebido * 100).toFixed(1).replace(".", ",")}% vs mês anterior`}</Sigilo>
-          }
-          href={`/recebimentos?visao=locacao&mes=${mes}`}
-          ajuda="Soma dos pagamentos registrados nesta competência, incluindo os repasses de IPTU e condomínio."
-        />
-        <Kpi
-          rotulo="Taxa de recebimento"
-          valor={percentual(dados.taxaRecebimento)}
-          detalhe={<Sigilo>{`${formatarBRL(dados.recebidoMes)} de ${formatarBRL(dados.devidoMes)}`}</Sigilo>}
-          nivel={nivelTaxa}
-          selo={dados.taxaRecebimento === null ? undefined : "do devido"}
-          href={`/recebimentos?visao=locacao&mes=${mes}`}
-          ajuda="Total recebido dividido pelo total devido. Acima de 100% pode indicar quitação de competências anteriores."
-        />
-        <Kpi
-          rotulo="Cobranças em aberto"
-          valor={<Dinheiro centavos={dados.inadimplentesValor} destaque />}
-          detalhe={<Sigilo>{`${dados.inadimplentesQtde} lançamento(s) com saldo`}</Sigilo>}
-          nivel={nivelInadimplenciaMes}
-          selo={dados.inadimplentesQtde === 0 ? "em dia" : "cobrar"}
-          href={`/paineis/cobranca?mes=${mes}`}
-          ajuda="Saldo dos lançamentos desta competência após descontar pagamentos parciais já registrados."
-        />
-        <Kpi
-          rotulo="Saldo de caixa"
-          valor={<Dinheiro centavos={dados.saldoCaixaMes} destaque />}
-          detalhe={
-            dados.caixaMes
-              ? <Sigilo>{`${formatarBRL(dados.caixaMes.receita)} entrou · ${formatarBRL(totalSaidas)} saiu`}</Sigilo>
-              : "sem movimentações no mês"
-          }
-          nivel={nivelCaixa}
-          selo={dados.caixaMes ? (dados.saldoCaixaMes >= 0 ? "positivo" : "negativo") : undefined}
-          href={`/caixa?visao=livro&mes=${mes}`}
-          ajuda="Entradas menos as saídas AL e CH no livro-caixa. Recebimentos em espécie ficam fora desse saldo."
-        />
-      </div>
-
-      <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <div className="text-[9px] font-bold uppercase tracking-[0.17em] text-oliva">
-            Módulos financeiros
-          </div>
-          <h2 className="mt-1 text-xl font-bold tracking-[-0.03em] text-tinta">
-            Um caminho claro para cada tarefa
-          </h2>
-        </div>
-        <p className="text-[11px] text-tinta-suave">
-          Dados reais da competência selecionada, sem duplicar lançamentos.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
-        <ModuloFinanceiro
-          icone="recebimentos"
-          titulo="Contas a receber"
-          descricao="Administre os lançamentos das locações e consulte as cobranças de todas as origens."
-          nivel={nivelTaxa}
-          status={dados.mesFechado ? "fechado" : "operacional"}
-          href={`/recebimentos?visao=locacao&mes=${mes}`}
-          acao="Gerenciar locações"
-          hrefSecundario={`/recebimentos?mes=${mes}`}
-          acaoSecundaria="Consulta unificada"
-          className="xl:col-span-4"
-        >
-          <div className="grid grid-cols-2 gap-4">
-            <MiniValor rotulo="Devido · locações" valor={<Dinheiro centavos={dados.devidoMes} />} />
-            <MiniValor
-              rotulo="Recebido · locações"
-              valor={<Dinheiro centavos={dados.recebidoMes} />}
-              destaque
+      {receber && pagar && movimentos && (
+        <section className="mb-6" aria-labelledby="valores-financeiros">
+          <h2 id="valores-financeiros" className="text-base font-bold text-tinta">Valores do mês · {formatarCompetencia(mes)}</h2>
+          <p className="mb-3 mt-1 text-xs leading-relaxed text-tinta-suave">
+            Base unificada: registros aceitos das fontes. Pendências ficam fora dos totais; inclusão não significa conferência concluída.
+          </p>
+          <div className="grid gap-3 md:grid-cols-3">
+            <Kpi
+              rotulo="A receber em aberto"
+              valor={<Dinheiro centavos={receber.resumo.aberto} />}
+              detalhe={<Sigilo>{receber.resumo.ativos} registros aceitos</Sigilo>}
+              href={abrir("/recebimentos") ? `/recebimentos?mes=${mes}` : undefined}
+              ajuda="Valor devido menos o que já foi recebido nos registros aceitos. Possíveis repetições pendentes não entram neste total."
+            />
+            <Kpi
+              rotulo="A pagar em aberto"
+              valor={<Dinheiro centavos={pagar.resumo.aberto} />}
+              detalhe={<Sigilo>{pagar.resumo.ativos} registros aceitos</Sigilo>}
+              href={abrir("/financeiro/contas-a-pagar") ? `/financeiro/contas-a-pagar?mes=${mes}` : undefined}
+              ajuda="Saldo das obrigações aceitas na visão unificada. Registros que ainda precisam de decisão ficam fora deste total."
+            />
+            <Kpi
+              rotulo="Saldo de entradas e saídas"
+              valor={<Dinheiro centavos={movimentos.resumo.entradas - movimentos.resumo.saidas} />}
+              detalhe="Entradas menos saídas aceitas"
+              href={abrir("/caixa") ? `/caixa?mes=${mes}` : undefined}
+              ajuda="Saldo dos movimentos aceitos. Cópias vinculadas não somam novamente; contas a receber e a pagar não são somadas ao caixa."
             />
           </div>
-          <div className="mt-4">
-            <div className="mb-2 flex items-center justify-between text-[10px] text-tinta-suave">
-              <span>Avanço da arrecadação</span>
-              <strong className="font-mono text-tinta">
-                <Sigilo>{percentual(dados.taxaRecebimento)}</Sigilo>
-              </strong>
-            </div>
-            <BarraProgresso valor={dados.taxaRecebimento} nivel={nivelTaxa} />
-          </div>
-        </ModuloFinanceiro>
+        </section>
+      )}
 
-        <ModuloFinanceiro
-          icone="boletos"
-          titulo="Boletos Sicoob"
-          descricao="Emita, consulte o banco e acompanhe cada etapa até a baixa."
-          nivel={boletosAtencao > 0 ? "atencao" : totalBoletos > 0 ? "info" : "neutro"}
-          status={boletosAtencao > 0 ? `${boletosAtencao} a revisar` : `${totalBoletos} no mês`}
-          href={`/financeiro/boletos?mes=${mes}`}
-          acao="Abrir central"
-          hrefSecundario="/financeiro/conciliacao"
-          acaoSecundaria="Ver conciliação"
-          className="xl:col-span-4"
-        >
-          <div className="grid grid-cols-2 gap-4">
-            <MiniValor rotulo="Títulos no mês" valor={totalBoletos} destaque />
-            <MiniValor rotulo="Exigem atenção" valor={boletosAtencao} />
+      {gruposVisiveis.length > 0 && (
+        <details className="mb-5 rounded-xl border border-contorno bg-carta">
+          <summary className="cursor-pointer px-5 py-4 text-sm font-bold text-tinta focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oliva/30">
+            Outras ferramentas
+          </summary>
+          <div className="grid gap-6 border-t border-contorno p-5 md:grid-cols-3">
+            {gruposVisiveis.map(grupo => (
+              <section key={grupo.titulo}>
+                <h2 className="mb-3 text-xs font-bold text-tinta">{grupo.titulo}</h2>
+                <ul className="space-y-3">
+                  {grupo.itens.map(item => (
+                    <li key={item.href}>
+                      <Link href={item.href} className="text-sm font-semibold text-oliva-escura hover:underline">
+                        {item.titulo} <span aria-hidden="true">→</span>
+                      </Link>
+                      <p className="mt-0.5 text-xs leading-relaxed text-tinta-suave">{item.descricao}</p>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
           </div>
-          <p className="mt-4 border-t border-contorno pt-3 text-[11px] leading-relaxed text-tinta-suave">
-            Aviso de pagamento e liquidação são estados separados; a baixa só entra depois da confirmação autenticada.
+        </details>
+      )}
+
+      {gestao.length > 0 && (
+        <aside className="border-t border-contorno pt-4" aria-label="Base de gestão de locações">
+          <p className="text-xs leading-relaxed text-tinta-suave">
+            <strong className="text-tinta">Gestão de locações e livro original.</strong> Estas consultas mantêm uma base própria. Seus valores não devem ser somados aos da visão unificada.
           </p>
-        </ModuloFinanceiro>
-
-        <ModuloFinanceiro
-          icone="cobranca"
-          titulo="Cobrança"
-          descricao="Priorize quem ainda mantém saldo, inclusive após pagamento parcial."
-          nivel={nivelInadimplenciaMes}
-          status={
-            dados.inadimplentesQtde === 0
-              ? "fila limpa"
-              : <><Sigilo>{dados.inadimplentesQtde}</Sigilo> na fila</>
-          }
-          href={`/paineis/cobranca?mes=${mes}`}
-          acao="Abrir painel"
-          hrefSecundario={`/relatorios/inadimplencia?mes=${mes}`}
-          acaoSecundaria="Lista completa"
-          className="xl:col-span-4"
-        >
-          {dados.pendentesDoMes.length === 0 ? (
-            <div className="rounded-lg border border-contorno bg-[#f8faf9] px-4 py-4 text-[13px] leading-relaxed text-tinta-suave">
-              Nenhuma cobrança com saldo pendente nesta competência.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {dados.pendentesDoMes.slice(0, 3).map((item, indice) => (
-                <div
-                  key={`${item.empreendimento}-${item.localizacao}-${indice}`}
-                  className="flex items-center justify-between gap-4 border-b border-contorno/70 pb-3 last:border-0 last:pb-0"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate text-[12px] font-semibold text-tinta">
-                      {item.locatario}
-                    </div>
-                    <div className="mt-0.5 truncate text-[10px] text-tinta-suave">
-                      {item.empreendimento} · {item.localizacao}
-                      {item.diasAtraso ? <> · <Sigilo>{item.diasAtraso} dias</Sigilo></> : ""}
-                    </div>
-                  </div>
-                  <div className="shrink-0 text-[12px] font-semibold text-tinta">
-                    <Sigilo><Dinheiro centavos={item.saldoAberto} /></Sigilo>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </ModuloFinanceiro>
-
-        <ModuloFinanceiro
-          icone="contas-bancarias"
-          titulo="Contas e conciliação"
-          descricao="Configure contas emissoras e trate divergências bancárias."
-          nivel={conciliacoesPendentes > 0 ? "critico" : contasBancarias > 0 ? "otimo" : "atencao"}
-          status={conciliacoesPendentes > 0 ? `${conciliacoesPendentes} pendente(s)` : `${contasBancarias} conta(s)`}
-          href="/financeiro/contas-bancarias"
-          acao="Gerenciar contas"
-          hrefSecundario="/financeiro/conciliacao"
-          acaoSecundaria="Conciliar"
-          className="xl:col-span-6"
-        >
-          <div className="grid grid-cols-2 gap-4">
-            <MiniValor rotulo="Contas ativas" valor={contasBancarias} destaque />
-            <MiniValor rotulo="Divergências" valor={conciliacoesPendentes} />
+          <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2">
+            {gestao.map(item => (
+              <Link key={item.href} href={item.href} className="text-xs font-semibold text-oliva-escura hover:underline">
+                {item.titulo} <span aria-hidden="true">→</span>
+              </Link>
+            ))}
           </div>
-          <p className="mt-4 border-t border-contorno pt-3 text-[11px] leading-relaxed text-tinta-suave">
-            Certificado, token e segredos permanecem fora do banco e do navegador.
-          </p>
-        </ModuloFinanceiro>
-
-        <ModuloFinanceiro
-          icone="caixa"
-          titulo="Movimentações e caixa"
-          descricao="Registre entradas e saídas por centro de custo."
-          nivel={nivelCaixa}
-          status={
-            dados.caixaMes
-              ? dados.saldoCaixaMes >= 0
-                ? "saldo positivo"
-                : "saldo negativo"
-              : "sem movimento"
-          }
-          href={`/caixa?visao=livro&mes=${mes}`}
-          acao="Abrir caixa"
-          hrefSecundario={`/caixa/novo?mes=${mes}`}
-          acaoSecundaria="Novo lançamento"
-          permissaoSecundaria="caixa.editar"
-          className="xl:col-span-6"
-        >
-          {dados.caixaMes ? (
-            <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-3">
-              <MiniValor
-                rotulo="Entradas"
-                valor={<Dinheiro centavos={dados.caixaMes.receita} />}
-              />
-              <MiniValor rotulo="Saídas" valor={<Dinheiro centavos={totalSaidas} />} />
-              <MiniValor
-                rotulo="Saldo"
-                valor={<Dinheiro centavos={dados.saldoCaixaMes} />}
-                destaque
-              />
-            </div>
-          ) : (
-            <div className="rounded-lg border border-contorno bg-[#f8faf9] px-4 py-4 text-[13px] leading-relaxed text-tinta-suave">
-              Ainda não há entradas ou saídas no livro-caixa desta competência.
-            </div>
-          )}
-        </ModuloFinanceiro>
-
-        {podeAuditarMigracao ? (
-          <ModuloFinanceiro
-            icone="integracao"
-            titulo="Unificação Widesys e planilhas"
-            descricao="Trabalhe os registros importados na operação e resolva correspondências entre as fontes."
-            nivel={nivelMigracao}
-            status={
-              !migracaoWidesys
-                ? "aguardando lote"
-                : migracaoWidesys.status === "CONCLUIDO"
-                  ? "captura validada"
-                  : migracaoWidesys.status.toLocaleLowerCase("pt-BR")
-            }
-            href="/unificacao"
-            acao="Resolver correspondências"
-            hrefSecundario="/financeiro/migracao-widesys"
-            acaoSecundaria="Conferir captura"
-            className="xl:col-span-12"
-          >
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <MiniValor
-                rotulo="Processados"
-                valor={migracaoWidesys?.totalProcessado ?? 0}
-                destaque
-              />
-              <MiniValor
-                rotulo="Em quarentena"
-                valor={migracaoWidesys?.totalQuarentena ?? 0}
-              />
-              <MiniValor
-                rotulo="Última captura"
-                valor={
-                  migracaoWidesys?.capturadoEm
-                    ? new Intl.DateTimeFormat("pt-BR", {
-                        dateStyle: "short",
-                        timeStyle: "short",
-                        timeZone: "America/Sao_Paulo",
-                      }).format(migracaoWidesys.capturadoEm)
-                    : "—"
-                }
-              />
-            </div>
-            <p className="mt-4 border-t border-contorno pt-3 text-[11px] leading-relaxed text-tinta-suave">
-              Os registros aceitos alimentam as consultas unificadas. Possíveis duplicidades ficam sinalizadas; vínculos preservam a origem e os valores do registro principal.
-            </p>
-          </ModuloFinanceiro>
-        ) : null}
-
-        <ModuloFinanceiro
-          icone="reajustes"
-          titulo="Reajustes"
-          descricao="Veja os contratos que fazem aniversário nesta competência."
-          nivel={nivelReajustes}
-          status={
-            dados.reajustesDoMes.length === 0
-              ? "agenda limpa"
-              : <><Sigilo>{dados.reajustesDoMes.length}</Sigilo> a revisar</>
-          }
-          href="/contratos?visao=locacao"
-          acao="Abrir contratos"
-          className="xl:col-span-6"
-        >
-          {dados.reajustesDoMes.length === 0 ? (
-            <div className="rounded-lg border border-contorno bg-[#f8faf9] px-4 py-4 text-[13px] leading-relaxed text-tinta-suave">
-              Nenhum contrato faz aniversário de reajuste em {formatarCompetencia(mes)}.
-            </div>
-          ) : (
-            <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
-              {dados.reajustesDoMes.slice(0, 4).map((item, indice) => (
-                <div
-                  key={`${item.empreendimento}-${item.localizacao}-${indice}`}
-                  className="flex items-center justify-between gap-3 border-b border-contorno/70 pb-3"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate text-[12px] font-semibold text-tinta">
-                      {item.locatario}
-                    </div>
-                    <div className="mt-0.5 truncate text-[10px] text-tinta-suave">
-                      {item.empreendimento} · {item.localizacao}
-                    </div>
-                  </div>
-                  <span className="shrink-0 font-mono text-[10px] font-semibold text-tinta">
-                    <Sigilo>{formatarBRL(item.valorBase)}</Sigilo>
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </ModuloFinanceiro>
-      </div>
-
-      <p className="mt-5 text-[10px] leading-relaxed text-tinta-suave/70">
-        O hub consolida recebimentos, livro-caixa e contratos já registrados no Brisa. Valores de IPTU e condomínio são repasses.
-      </p>
+        </aside>
+      )}
     </div>
   );
 }

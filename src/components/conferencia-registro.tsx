@@ -14,9 +14,12 @@ import { origensDoRegistro } from "@/lib/unificacao/origens";
 import { ImpactoConsolidacao } from "@/components/situacao-consolidacao";
 import { carteiraIrrestrita, pode } from "@/lib/acesso/politica";
 import { FormularioNaTela } from "@/components/formulario-na-tela";
+import { CamposRegistroConferencia, ComparacaoCamposConferencia } from "@/components/campos-conferencia";
 
 const CAMPOS_RESERVADOS = new Set(["taxa", "administracao", "composicao"]);
 const campoVisivel = (chave: string) => !CAMPOS_RESERVADOS.has(chave);
+// Projeção explícita: não enviar objetos do DAL nem campos reservados ao cliente.
+const campoProjetado = (campo: CampoFonte): CampoFonte => ({ rotulo: campo.rotulo, valor: campo.valor, ...(campo.tipo ? { tipo: campo.tipo } : {}) });
 type ContextoConferencia = { retorno: string; hrefDetalhe: string; hrefExcluir?: string };
 function Campo({ campo }: { campo?: CampoFonte }) {
   if (!campo || campo.valor === null || campo.valor === "") return <span className="text-tinta-suave">Não informado</span>;
@@ -30,14 +33,7 @@ function Comparacao({ registro, destino }: { registro: FonteUnificacao; destino:
       <div className="min-w-0"><p className="mb-2 break-words text-xs font-semibold">Este registro · {registro.titulo}</p><OrigensUnificadas origens={origensDoRegistro(registro)} /></div>
       <div className="min-w-0"><p className="mb-2 break-words text-xs font-semibold">Principal que será mantido · {destino.titulo}</p><OrigensUnificadas origens={origensDoRegistro(destino)} /></div>
     </div>
-    <dl className="divide-y divide-contorno">{campos.map((chave) => {
-      const a = registro.campos[chave]; const b = destino.campos[chave];
-      const diverge = a?.valor != null && b?.valor != null && String(a.valor) !== String(b.valor);
-      return <div key={chave} className={`min-w-0 p-4 ${diverge ? "bg-amber-50/50" : ""}`}>
-        <dt className="mb-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-tinta-suave">{a?.rotulo ?? b?.rotulo}{diverge ? <span className="text-[10px] text-amber-800">Valores diferentes</span> : null}</dt>
-        <dd className="grid min-w-0 gap-3 text-xs sm:grid-cols-2"><div className="min-w-0 break-words"><span className="mb-1 block text-[10px] text-tinta-suave sm:sr-only">Este registro</span><Campo campo={a} /></div><div className="min-w-0 break-words"><span className="mb-1 block text-[10px] text-tinta-suave sm:sr-only">Principal</span><Campo campo={b} /></div></dd>
-      </div>;
-    })}</dl>
+    <ComparacaoCamposConferencia campos={campos.map(chave => ({ chave, a: registro.campos[chave] ? campoProjetado(registro.campos[chave]) : null, b: destino.campos[chave] ? campoProjetado(destino.campos[chave]) : null }))} />
   </div>;
 }
 function FormularioDecisao({ registro, acao, destino, contexto }: { registro: LinhaUnificada; acao: "VINCULAR" | "DISTINTO" | "REABRIR"; destino?: LinhaUnificada; contexto?: ContextoConferencia }) {
@@ -95,7 +91,7 @@ export async function ConferenciaRegistro({ chave, parametros: sp = {}, contexto
     <Card className="mb-5 p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="mb-2 text-xs font-semibold text-tinta-suave">De onde veio</h2><OrigensUnificadas origens={origensDoRegistro(registro)} /></div><div><h2 className="mb-2 text-xs font-semibold text-tinta-suave">Situação atual</h2><EstadoUnificado item={registro} /></div></div><ImpactoConsolidacao item={registro} className="mt-4" /><p className="mt-2 text-xs text-tinta-suave">A situação acima é o tratamento atual na consulta, não um comprovante de pagamento nem de auditoria manual. Para verificar conferências anteriores, consulte o histórico abaixo.</p>{registro.avisos.length || registro.divergencias.length ? <ul className="mt-3 space-y-1 text-xs text-amber-800">{[...new Set([...registro.avisos, ...registro.divergencias])].map((aviso) => <li key={aviso}>{motivoUnificacao(aviso)}</li>)}</ul> : null}</Card>
     {registro.origem === "WIDESYS" && ["RECEBER", "PAGAR"].includes(registro.dominio) ? <Card nivel="atencao" className="mb-5 p-4"><h2 className="text-sm font-bold">Conferência antes de emissão bancária</h2><p className="mt-1 text-xs leading-relaxed text-tinta-suave">Confira o contrato, o saldo, os dados do pagador e a conta emissora. A unificação deste título não emite boletos automaticamente.</p></Card> : null}
     <div className="mb-5 grid gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-      <Card className="p-5"><h2 className="text-sm font-bold">1. Confira este registro</h2><dl className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-2">{Object.entries(registro.campos).filter(([chaveCampo]) => campoVisivel(chaveCampo)).map(([chaveCampo, campo]) => <div key={chaveCampo} className="min-w-0 border-b border-contorno pb-3"><dt className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-tinta-suave">{campo.rotulo}</dt><dd className="text-xs"><Campo campo={campo} /></dd></div>)}</dl></Card>
+      <Card className="p-5"><h2 className="text-sm font-bold">1. Confira este registro</h2><CamposRegistroConferencia campos={Object.entries(registro.campos).filter(([chave]) => campoVisivel(chave)).map(([chave, campo]) => ({ chave, campo: campoProjetado(campo) }))} /></Card>
       <Card className="min-w-0 p-5"><h2 className="text-sm font-bold">Qual decisão tomar?</h2><ol className="mt-3 list-decimal space-y-3 pl-4 text-xs leading-relaxed text-tinta-suave"><li>Compare a identificação, a referência do imóvel ou contrato, a competência e os valores das duas fontes.</li><li>Se for a mesma ocorrência, escolha o registro principal e confirme o vínculo. Os valores atuais do principal prevalecem.</li><li>Se as evidências mostrarem ocorrências diferentes, confirme “registro distinto”. Nome e valor, sozinhos, não comprovam identidade.</li></ol>{registro.qualidade !== "OK" ? <p className="mt-4 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">Este registro tem uma inconsistência ou ausência na origem. Confira a captura e corrija a origem antes de incluí-lo no consolidado.</p> : null}{podeDistinguir ? <details className="mt-4 border-t border-contorno pt-4"><summary className="cursor-pointer text-xs font-semibold text-oliva-escura">Conferi: é um registro independente</summary><FormularioDecisao registro={registro} acao="DISTINTO" contexto={contexto} /></details> : null}{podeEditar && (registro.estado === "VINCULADO" || historico.length) ? <details className="mt-4 border-t border-contorno pt-4"><summary className="cursor-pointer text-xs font-semibold text-tinta-suave">Reabrir decisão anterior</summary><FormularioDecisao registro={registro} acao="REABRIR" contexto={contexto} /></details> : null}</Card>
     </div>
     {origensDoRegistro(registro).includes("BRISA") ? <Card className="mb-5 p-4"><h2 className="text-sm font-bold">Inclusão no Brisa: origem ainda a confirmar</h2><p className="mt-2 text-xs leading-relaxed text-tinta-suave">Há uma fonte sem evidência suficiente para identificar como entrou no sistema. Não a classificamos como manual: cadastros e lançamentos antigos também podem ter vindo das planilhas iniciais.</p></Card> : null}
