@@ -62,9 +62,16 @@ export function avaliarFonte(f: FonteUnificacao, candidatos: CandidatoUnificacao
   // ordenem antes dele. Assim uma nova captura não ativa outra cópia do fato.
   const principalExistente = (chave: string) => {
     const d = decisoes.get(chave);
-    return d?.status === "ATIVO" && !d.destinoChave && (d.decisao === "MANUAL" || anterior?.status !== "ATIVO" || anterior.hashFonte !== f.hash);
+    const atual = fontes.get(chave);
+    // Todas as fontes sao avaliadas contra a mesma fotografia anterior. Um
+    // principal que mudou pode deixar de ser ATIVO nesta propria passagem;
+    // sua precedencia antiga nao deve adiar a classificacao das candidatas.
+    if (!d || d.status !== "ATIVO" || d.destinoChave || !atual || atual.qualidade !== "OK" || atual.dominio !== f.dominio || d.hashFonte !== atual.hash) return false;
+    const alvo = atual.vinculoExplicito ? fontes.get(atual.vinculoExplicito) : null;
+    if (d.decisao !== "MANUAL" && alvo?.qualidade === "OK" && alvo.dominio === atual.dominio) return false;
+    return d.decisao === "MANUAL" || anterior?.status !== "ATIVO" || anterior.hashFonte !== f.hash;
   };
-  if (f.origem === "BRISA" && (anterior?.status !== "ATIVO" || anterior.hashFonte !== f.hash) && candidatos.some(c => c.chave.startsWith("WIDESYS:") && decisoes.get(c.chave)?.status === "ATIVO")) {
+  if (f.origem === "BRISA" && (anterior?.status !== "ATIVO" || anterior.hashFonte !== f.hash) && candidatos.some(c => c.chave.startsWith("WIDESYS:") && principalExistente(c.chave))) {
     return { status: "PENDENTE", destinoChave: null, motivos: ["POSSIVEL_DUPLICIDADE"] };
   }
   const anteriores = candidatos.filter(c => c.chave.startsWith("BRISA:") && (principalExistente(c.chave) || c.chave < f.chave));

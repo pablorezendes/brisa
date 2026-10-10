@@ -103,6 +103,29 @@ describe("serviço transacional de unificação", () => {
     expect(await prisma.unificacaoDecisao.count()).toBe(1);
   });
 
+  it("PAGAR novo nao depende de segunda analise quando o principal anterior mudou de hash", async () => {
+    const anterior: FonteUnificacao = { ...fonte("WIDESYS", "02"), chave: "WIDESYS:PAGAR:02", dominio: "PAGAR" };
+    await prisma.unificacaoRegistro.create({ data: {
+      chave: anterior.chave, dominio: anterior.dominio, origem: anterior.origem, origemId: anterior.origemId,
+      status: "ATIVO", hashFonte: anterior.hash, decisao: "AUTOMATICA",
+    } });
+    const alterada = { ...anterior, hash: "WIDESYS-02-v2", pago: 40000, aberto: 60000 };
+    const nova = { ...alterada, chave: "WIDESYS:PAGAR:01", origemId: "01", hash: "WIDESYS-01-v1" };
+    fontes = [nova, alterada];
+    const valoresAntes = structuredClone(fontes);
+    await expect(analisarUnificacao(prisma, "teste")).resolves.toMatchObject({ criados: 1, atualizados: 1, estados: { ATIVO: 1, PENDENTE: 1 } });
+    const primeira = await prisma.unificacaoRegistro.findMany({ orderBy: { chave: "asc" } });
+    expect(primeira.map(d => d.status)).toEqual(["ATIVO", "PENDENTE"]);
+    await expect(analisarUnificacao(prisma, "teste", true)).resolves.toMatchObject({ criados: 0, atualizados: 0, inalterados: 2, ausentes: 0 });
+    expect(await prisma.unificacaoRegistro.findMany({ orderBy: { chave: "asc" } })).toEqual(primeira);
+    expect(await prisma.unificacaoDecisao.count()).toBe(1);
+    expect(fontes).toEqual(valoresAntes);
+    const { linhas } = await lerOperacaoUnificada(prisma);
+    expect(linhas.filter(l => l.contabiliza)).toHaveLength(1);
+    expect(linhas.find(l => l.chave === nova.chave)).toMatchObject({ valor: 100000, pago: 40000, aberto: 60000 });
+    expect(linhas.every(l => l.fontes.length === 1)).toBe(true);
+  });
+
   it("vínculo manual contabiliza somente o principal e sobrevive à reanálise", async () => {
     await analisarUnificacao(prisma, "teste");
     await decidirUnificacao(prisma, await entrada("VINCULAR"), "teste");

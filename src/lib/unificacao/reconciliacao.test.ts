@@ -27,6 +27,83 @@ function vinculo(f: FonteUnificacao, alvo: FonteUnificacao): DecisaoUnificacao {
 
 const mapa = (fontes: FonteUnificacao[]) => new Map(fontes.map(f => [f.chave, f]));
 
+// Fotografia imutavel de decisoes anteriores, como analisarUnificacao; sem banco.
+function reanalisar(fontes: FonteUnificacao[], anteriores: DecisaoUnificacao[]): DecisaoUnificacao[] {
+  const porChave = mapa(fontes);
+  const decisoes = new Map(anteriores.map(d => [d.chave, d]));
+  const destinos = new Map<string, string>();
+  for (const f of fontes) if (f.vinculoExplicito) destinos.set(f.chave, f.vinculoExplicito);
+  for (const d of anteriores) if (d.status === "VINCULADO" && d.destinoChave && porChave.get(d.chave)?.hash === d.hashFonte && porChave.get(d.destinoChave)?.hash === d.hashDestino) destinos.set(d.chave, d.destinoChave);
+  return fontes.map(f => {
+    const anterior = decisoes.get(f.chave);
+    const candidatos = candidatosPara(f, fontes, destinos);
+    const resultado = avaliarFonte(f, candidatos, porChave, anterior, decisoes);
+    return { ...(anterior ?? decisao(f, { decisao: "AUTOMATICA" })), ...resultado,
+      hashFonte: f.hash, hashDestino: resultado.destinoChave ? porChave.get(resultado.destinoChave)?.hash ?? null : null,
+      candidatos: JSON.stringify(candidatos), motivos: JSON.stringify(resultado.motivos), proveniencia: JSON.stringify(f.proveniencia ?? {}) };
+  });
+}
+
+describe("precedencia valida na primeira reanalise", () => {
+  it.each(["AUTOMATICA", "MANUAL"])("nao usa principal %s com hash antigo para adiar a decisao ate outra passagem", tipo => {
+    const a = fonte("WIDESYS:PARAMETRO:01", { dominio: "PARAMETRO" });
+    const b = fonte("WIDESYS:PARAMETRO:02", { dominio: "PARAMETRO" });
+    const fontes = [a, { ...b, hash: "hash-alterado" }];
+    const anteriores = [decisao(a, { status: "PENDENTE", decisao: "AUTOMATICA" }), decisao(b, { decisao: tipo })];
+    const primeira = reanalisar(fontes, anteriores);
+    expect(primeira.map(d => d.status)).toEqual(["ATIVO", tipo === "MANUAL" ? "REVISAR" : "PENDENTE"]);
+    expect(reanalisar(fontes, primeira)).toEqual(primeira);
+    expect(primeira.every(d => d.destinoChave === null)).toBe(true);
+  });
+
+  it.each(["AUTOMATICA", "MANUAL"])("nativo nao herda precedencia Widesys %s desatualizada", tipo => {
+    const valores = { dominio: "MOVIMENTO" as const, data: "2026-06-10", valor: 100, natureza: "SAIDA" };
+    const nativo = fonte("BRISA:MOVIMENTO:01", valores);
+    const legado = fonte("WIDESYS:MOVIMENTO:02", valores);
+    const fontes = [nativo, { ...legado, hash: "hash-alterado" }];
+    const primeira = reanalisar(fontes, [decisao(nativo, { status: "PENDENTE", decisao: "AUTOMATICA" }), decisao(legado, { decisao: tipo })]);
+    expect(primeira.map(d => d.status)).toEqual(["ATIVO", tipo === "MANUAL" ? "REVISAR" : "PENDENTE"]);
+    expect(reanalisar(fontes, primeira)).toEqual(primeira);
+  });
+
+  it.each(["AUTOMATICA", "MANUAL"])("preserva principal %s inalterado mesmo que a nova candidata ordene antes", tipo => {
+    const nova = fonte("WIDESYS:PARAMETRO:01", { dominio: "PARAMETRO" });
+    const principal = fonte("WIDESYS:PARAMETRO:02", { dominio: "PARAMETRO" });
+    const fontes = [nova, principal];
+    const primeira = reanalisar(fontes, [decisao(principal, { decisao: tipo })]);
+    expect(primeira.map(d => d.status)).toEqual(["PENDENTE", "ATIVO"]);
+    expect(reanalisar(fontes, primeira)).toEqual(primeira);
+  });
+
+  it("principal automatico agora vinculado nao conserva precedencia antiga", () => {
+    const a = fonte("WIDESYS:PARAMETRO:01", { dominio: "PARAMETRO" });
+    const b = fonte("WIDESYS:PARAMETRO:02", { dominio: "PARAMETRO", vinculoExplicito: a.chave });
+    const fontes = [a, b];
+    const primeira = reanalisar(fontes, [decisao(a, { status: "PENDENTE", decisao: "AUTOMATICA" }), decisao(b, { decisao: "AUTOMATICA" })]);
+    expect(primeira.map(d => d.status)).toEqual(["ATIVO", "VINCULADO"]);
+    expect(primeira[1].destinoChave).toBe(a.chave);
+    expect(reanalisar(fontes, primeira)).toEqual(primeira);
+  });
+
+  it("decisao manual valida prevalece sobre vinculo explicito da fonte", () => {
+    const a = fonte("WIDESYS:PARAMETRO:01", { dominio: "PARAMETRO" });
+    const b = fonte("WIDESYS:PARAMETRO:02", { dominio: "PARAMETRO", vinculoExplicito: a.chave });
+    const fontes = [a, b];
+    const primeira = reanalisar(fontes, [decisao(b, { decisao: "MANUAL", motivos: '["REGISTRO_DISTINTO_CONFIRMADO"]' })]);
+    expect(primeira.map(d => d.status)).toEqual(["PENDENTE", "ATIVO"]);
+    expect(primeira[1]).toMatchObject({ destinoChave: null, decisao: "MANUAL", motivos: '["REGISTRO_DISTINTO_CONFIRMADO"]' });
+    expect(reanalisar(fontes, primeira)).toEqual(primeira);
+  });
+
+  it.each(["QUARENTENA", "AUSENTE"] as const)("qualidade %s nunca concede precedencia a uma decisao ATIVO antiga", qualidade => {
+    const a = fonte("BRISA:MOVIMENTO:01", { dominio: "MOVIMENTO" });
+    const b = fonte("WIDESYS:MOVIMENTO:02", { dominio: "MOVIMENTO", qualidade });
+    const antigas = new Map([[b.chave, decisao(b, { decisao: "AUTOMATICA" })]]);
+    // Mesmo um candidato previamente armazenado nao autoriza usar a fonte invalida.
+    expect(avaliarFonte(a, [{ chave: b.chave, motivos: ["DATA_VALOR_NATUREZA"] }], mapa([a, b]), undefined, antigas).status).toBe("ATIVO");
+  });
+});
+
 describe("reconciliação entre fontes sem duplicar a operação", () => {
   it("caixas explicitamente diferentes não são sugeridos como o mesmo movimento", () => {
     const valores = { dominio: "MOVIMENTO" as const, data: "2026-09-20", natureza: "SAIDA", valor: 50000 };
