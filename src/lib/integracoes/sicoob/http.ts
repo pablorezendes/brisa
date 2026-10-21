@@ -3,6 +3,7 @@ import "server-only";
 import { request, type RequestOptions } from "node:https";
 
 import type { ConfiguracaoSicoob } from "./configuracao";
+import { destinoHttpSicoobPermitido } from "./destinos";
 
 const MAX_RESPOSTA_BYTES = 5 * 1024 * 1024;
 const MAX_RESPOSTA_ABSOLUTO_BYTES = 48 * 1024 * 1024;
@@ -54,9 +55,9 @@ export function requisicaoHttpsJson(
     maxRespostaBytes?: number;
   },
 ): Promise<RespostaHttp> {
-  if (url.protocol !== "https:") {
+  if (!destinoHttpSicoobPermitido(url, configuracao.ambiente)) {
     return Promise.reject(
-      new ErroApiSicoob("A integração Sicoob exige HTTPS.", {
+      new ErroApiSicoob("A integração Sicoob exige um destino HTTPS oficial do ambiente configurado.", {
         codigo: "SICOOB_URL_INSEGURA",
       }),
     );

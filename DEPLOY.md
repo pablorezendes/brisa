@@ -67,6 +67,104 @@ Abra https://brisa.tescod.com — o app pede o login criado no primeiro acesso.
 
 ## 4) Atualizações futuras
 
+### Menu Integrações e preparação Sicoob (21/10/2026)
+
+O novo menu **Integrações** (`/integracoes`) reúne conexões externas em uma
+área administrativa própria. **Integrações → Sicoob** (`/integracoes/sicoob`)
+concentra instalação das credenciais, diagnóstico de autenticação, convênio,
+regras dos novos boletos e preparação dos retornos. **Financeiro → Contas
+bancárias** continua sendo o cadastro simples das contas; a operação de
+boletos e a conferência dos pagamentos permanecem no Financeiro.
+
+Esta entrega não requer migração de schema nova, seed, recaptura ou
+reimportação. Não copie o banco local sobre o banco da produção. Atualize o
+código e a imagem sem redefinir os dados:
+
+```bash
+cd /srv/stack/acamargo
+set -e
+git pull --ff-only origin main
+docker compose build brisa
+docker compose up -d brisa
+docker compose ps
+curl --fail --retry 12 --retry-delay 5 --retry-all-errors -I https://brisa.tescod.com/login
+```
+
+Se o Git informar alterações locais ou divergência, pare e revise: não use
+`reset --hard` nem force o pull. Os passos de seed e migrações históricas
+documentados abaixo não fazem parte desta atualização.
+
+#### Instalação privada antes de ativar
+
+O responsável informou que já possui o certificado e o Client ID, mas ainda
+precisa instalá-los no Brisa. A presença do layout Widesys no cadastro não
+substitui essa instalação, nem comprova conexão homologada.
+
+1. No servidor, prepare `/srv/stack/acamargo/auth/sicoob` com permissão `700`.
+   Envie o PFX original por SFTP/SSH para `auth/sicoob/client.pfx`, com
+   permissão `600`. O Compose monta essa pasta somente para leitura em
+   `/run/secrets/sicoob`.
+2. Edite o `.env` existente no próprio servidor, mantendo permissão `600`.
+   Preserve `AUTH_SECRET` e as demais chaves existentes; não sobrescreva o
+   arquivo nem duplique variáveis. Use `.env.sicoob.example` apenas como
+   referência de nomes, nunca como fonte de credenciais reais.
+3. Configure `SICOOB_CLIENT_ID`, `SICOOB_PFX_PATH` e
+   `SICOOB_PFX_PASSPHRASE` privadamente. Em produção, deixe
+   `SICOOB_ACCESS_TOKEN` vazio; ao usar PFX, deixe vazias as alternativas PEM
+   (`SICOOB_CERT_PATH`, `SICOOB_KEY_PATH`, `SICOOB_CERT_PASSPHRASE`).
+   Use Client Secret somente se a aplicação autorizada pelo banco exigir.
+   Valores com `$` ou `#` exigem cuidado com as aspas do arquivo; se houver
+   aspas dentro da senha, solicite apoio técnico para preservar o valor exato.
+4. Recrie o serviço após editar o ambiente:
+   `docker compose up -d --force-recreate brisa`. Não basta atualizar a
+   página para que um container antigo receba novas variáveis.
+5. Entre como administrador em **Integrações → Sicoob**, confira a instalação
+   e use **Testar autenticação sem emitir boleto**, com a confirmação explícita
+   do ambiente. O resultado não habilita a conta automaticamente.
+
+Nunca envie PFX, senha, Client ID, token, conteúdo do `.env` ou logs de
+autenticação ao Git, chat ou ticket. Não publique a saída de
+`docker compose config`, pois ela pode expandir segredos.
+
+#### O que o teste confirma — e o que ainda falta
+
+Abrir a tela não faz chamadas bancárias. O diagnóstico autorizado verifica a
+configuração local e, no modo OAuth, solicita somente um token ao Sicoob. Não
+consulta cobranças, não emite/cancela boleto, não baixa pagamentos e não
+altera o convênio. O resultado vale para o instante do teste; repita-o após
+alterar as credenciais. Autenticação bem-sucedida não homologa a emissão.
+
+Confira com a cooperativa o cliente Sisbr, a conta API, a espécie e a
+**modalidade do convênio**. A modalidade estava vazia na referência Widesys:
+**carteira 1 não comprova modalidade 1**. Não transforme um campo no outro
+por suposição. Este release mantém um único perfil de credenciais; somente
+a conta autorizada pelo banco pode ser integrada nesse perfil.
+
+Os destinos de autenticação e API passam por uma lista explícita de
+endereços oficiais permitidos:
+
+| Uso | Endereço permitido |
+| --- | --- |
+| API de produção | `https://api.sicoob.com.br/cobranca-bancaria/v3` |
+| API sandbox | `https://sandbox.sicoob.com.br/sicoob/sandbox/cobranca-bancaria/v3` |
+| OAuth | `https://auth.sicoob.com.br/auth/realms/cooperado/protocol/openid-connect/token` |
+
+Não configure proxy, host alternativo ou URL fornecida por terceiros nesses
+campos: a aplicação recusa destinos fora dessa lista para não encaminhar
+certificado ou token a outro serviço.
+
+O retorno financeiro continua sendo o arquivo **tipo 5 / LIQUI**; o webhook
+**tipo 7** é apenas um aviso opcional. Esta atualização **não instala cron,
+não cadastra webhook e não comprova que já estejam funcionando**. Após
+validar acesso e convênio, confira primeiro o retorno manual no Financeiro;
+o responsável pela infraestrutura deve instalar e acompanhar o agendamento
+protegido descrito na seção Sicoob abaixo. Ter `SICOOB_SYNC_SECRET` preenchido
+não prova a execução do agendador.
+
+Não substitua o callback do Widesys sem planejar a virada de operação e
+preservar o acompanhamento dos boletos antigos. Registrar um webhook é uma
+alteração no banco, separada do teste OAuth, e exige os escopos próprios.
+
 ### Financeiro simplificado (10/10/2026)
 
 O menu destaca seis tarefas diárias: Resumo financeiro, Conferir dados,
@@ -254,7 +352,7 @@ agência 3299) sem habilitar a API:
 
 As credenciais da API formam **um único perfil global** neste release. Por
 segurança, o sistema impede que mais de uma conta tenha a integração ativa ao
-mesmo tempo. Em **Financeiro → Contas bancárias**, habilite somente a conta
+mesmo tempo. Em **Integrações → Sicoob** (`/integracoes/sicoob`), habilite somente a conta
 explicitamente autorizada no aplicativo Sicoob e confirme com o banco o número
 de cliente Sisbr, a conta do convênio, a modalidade, o contrato (quando houver)
 e a espécie documental. As outras quatro contas permanecem cadastradas para a
@@ -346,8 +444,8 @@ Antes de reconstruir o container, preencha no `.env` do servidor o
 `SICOOB_PFX_PASSPHRASE`, que está vazio no exemplo. O bloco acima omite a senha
 de propósito para que ela nunca seja copiada da documentação.
 
-Depois, reconstrua o container e confira as contas. Cadastre o webhook pela
-própria tela somente se os três escopos opcionais tiverem sido autorizados e
+Depois, reconstrua o container e confira as contas em **Integrações → Sicoob**.
+Cadastre o webhook nessa tela somente se os três escopos opcionais tiverem sido autorizados e
 incluídos explicitamente em `SICOOB_SCOPES`:
 
 ```bash
@@ -367,7 +465,8 @@ data e valor antes de conciliar.
 
 A mesma rota protegida de sincronização consulta a carteira e executa o fluxo
 assíncrono do LIQUI (solicitar, consultar disponibilidade e baixar/processar).
-Agende-a a cada 15 minutos; podem ser necessárias execuções sucessivas até o
+Depois de validar a conexão e o convênio, o responsável pelo servidor pode
+agendá-la a cada 15 minutos; podem ser necessárias execuções sucessivas até o
 arquivo solicitado ficar disponível:
 
 ```bash

@@ -8,6 +8,7 @@ export {
   type EstadoConfiguracaoSicoob,
 } from "./configuracao";
 export { ClienteSicoob, criarClienteSicoob } from "./cliente";
+export { diagnosticarAutenticacaoSicoob, type DiagnosticoAutenticacaoSicoob } from "./diagnostico";
 export { ErroApiSicoob } from "./http";
 export {
   chaveIdempotenciaLiquidacaoSicoob,

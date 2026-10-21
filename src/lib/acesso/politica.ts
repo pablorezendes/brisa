@@ -31,6 +31,7 @@ export const PERMISSOES_ACESSO = {
   "unificacao.editar": "Resolver correspondências globais",
   "governanca.editar": "Excluir logicamente, mesclar, descartar e restaurar",
   "importacoes.ver": "Auditar importações globais",
+  "integracoes.gerenciar": "Administrar conexões externas (somente administrador)",
   "acessos.gerenciar": "Administrar usuários, funções e abrangências",
 } as const;
 export type PermissaoAcesso = keyof typeof PERMISSOES_ACESSO;
@@ -66,7 +67,7 @@ export function montarPolitica(u: DadosPolitica): PoliticaAcesso {
   const negadas = new Set(lerPermissoes(u.permissoesNegadas));
   const somenteLeitura = ["SOCIO", "CONTABILIDADE", "CONSULTA"].includes(u.perfil);
   const permissoes = [...new Set([...base, ...(u.papelAcesso && !u.papelAcesso.ativo ? [] : lerPermissoes(u.permissoesExtras))])].filter(p =>
-    !negadas.has(p) && !["comissoes.ver", "acessos.gerenciar"].includes(p) && (!somenteLeitura || p.endsWith(".ver") || p === "relatorios.exportar" || p === "cadastros.sensiveis"));
+    !negadas.has(p) && !["comissoes.ver", "acessos.gerenciar", "integracoes.gerenciar"].includes(p) && (!somenteLeitura || p.endsWith(".ver") || p === "relatorios.exportar" || p === "cadastros.sensiveis"));
   return { usuarioId: u.id, perfil: u.perfil, ativo: true, global: u.acessoGlobal, permissoes, regras: u.regrasAcesso };
 }
 export const pode = (p: PoliticaAcesso, acao: string) => p.ativo && p.permissoes.includes(acao as PermissaoAcesso);
@@ -79,6 +80,7 @@ export function permitidoRecurso(p: PoliticaAcesso, tipo: TipoEscopo, id: string
   return p.global || heranca || regras.some(r => r.efeito === "PERMITIR");
 }
 const ROTAS: Array<[string, PermissaoAcesso]> = [
+  ["/integracoes", "integracoes.gerenciar"],
   ["/configuracoes/acessos", "acessos.gerenciar"], ["/carteira", "carteira.ver"],
   ["/financeiro/comissoes", "comissoes.ver"], ["/relatorios/comissao", "comissoes.ver"],
   ["/cadastros/governanca", "governanca.editar"], ["/cadastros/base-unificada", "unificacao.ver"],

@@ -15,8 +15,19 @@ describe("permissões e navegação", () => {
     expect(podeAbrirRota(p, "/financeiro/comissoes")).toBe(true);
   });
   it.each(["SOCIO", "CONTABILIDADE", "CONSULTA", "FINANCEIRO", "OPERADOR"])("%s nunca ganha comissões ou gestão por exceções", perfil => {
-    const p = montarPolitica(usuario({ perfil, permissoesExtras: '["comissoes.ver","acessos.gerenciar"]' }));
+    const p = montarPolitica(usuario({ perfil, permissoesExtras: '["comissoes.ver","acessos.gerenciar","integracoes.gerenciar"]' }));
     expect(pode(p, "comissoes.ver")).toBe(false); expect(pode(p, "acessos.gerenciar")).toBe(false);
+    expect(pode(p, "integracoes.gerenciar")).toBe(false);
+  });
+  it.each(["/integracoes", "/integracoes/sicoob"])("%s restringe configuração de conexões ao administrador no servidor e na navegação", rota => {
+    const admin = montarPolitica(usuario({ perfil: "ADMINISTRADOR" }));
+    expect(podeAbrirRota(admin, rota)).toBe(true);
+    expect(podeNavegar(navegacaoAcesso(admin), rota)).toBe(true);
+    for (const perfil of ["FINANCEIRO", "OPERADOR", "SOCIO", "CONTABILIDADE", "CONSULTA"]) {
+      const p = montarPolitica(usuario({ perfil, acessoGlobal: true, permissoesExtras: '["integracoes.gerenciar"]', papelAcesso: { ativo: true, permissoes: '["integracoes.gerenciar"]' } }));
+      expect(podeAbrirRota(p, rota)).toBe(false);
+      expect(podeNavegar(navegacaoAcesso(p), rota)).toBe(false);
+    }
   });
   it.each(["SOCIO", "CONTABILIDADE", "CONSULTA"])("%s fica na consulta mesmo global e com função editora", perfil => {
     const p = montarPolitica(usuario({ perfil, acessoGlobal: true, papelAcesso: { ativo: true, permissoes: '["carteira.ver","financeiro.ver","cadastros.editar","caixa.editar"]' } }));

@@ -42,15 +42,20 @@ describe("menu financeiro por tarefa", () => {
     expect(grupo(html, "importacoes")).not.toMatch(/^<details[^>]*\bopen=/);
   });
 
-  it("preserva os oito destinos secundários dentro dos dois grupos", () => {
+  it("mantém operação bancária e histórico local no financeiro sem duplicar integrações", () => {
     const html = renderizar();
     expect([...grupo(html, "banco")!.matchAll(/href="([^"]+)"/g)].map((link) => link[1])).toEqual([
       "/financeiro/boletos", "/financeiro/conciliacao", "/financeiro/contas-bancarias",
-      "/financeiro/automacoes", "/financeiro/notas-fiscais",
+      "/financeiro/notas-fiscais",
     ]);
     expect([...grupo(html, "importacoes")!.matchAll(/href="([^"]+)"/g)].map((link) => link[1])).toEqual([
-      "/financeiro/importacoes", "/financeiro/migracao-widesys", "/unificacao",
+      "/financeiro/importacoes", "/unificacao",
     ]);
+    for (const href of ["/financeiro/automacoes", "/financeiro/migracao-widesys", "/integracoes/sicoob"]) {
+      expect(grupo(html, "banco")).not.toContain(`href="${href}"`);
+      expect(grupo(html, "importacoes")).not.toContain(`href="${href}"`);
+      expect([...html.matchAll(new RegExp(`href="${href}"`, "g"))]).toHaveLength(1);
+    }
   });
 
   it.each([
@@ -108,5 +113,35 @@ describe("menu financeiro por tarefa", () => {
     expect(html).not.toContain('id="submenu-financeiro"');
     expect(grupo(html, "banco")).toBeUndefined();
     expect(grupo(html, "importacoes")).toBeUndefined();
+  });
+
+  it.each([
+    ["/integracoes", "Central de integrações"],
+    ["/integracoes/sicoob", "Sicoob"],
+    ["/financeiro/migracao-widesys", "Capturas do Widesys"],
+    ["/financeiro/automacoes", "E-mail e WhatsApp"],
+    ["/financeiro/notas-fiscais/configuracao", "Configuração NFS-e"],
+  ])("mantém a rota %s apenas no contexto Integrações", (pathname, rotulo) => {
+    mocks.pathname.mockReturnValue(pathname);
+    const html = renderizar();
+    expect(html).toContain('aria-expanded="true" aria-controls="submenu-integracoes"');
+    expect(html).toContain('aria-expanded="false" aria-controls="submenu-financeiro"');
+    expect(html).toContain('<span class="font-medium">Integrações</span>');
+    expect(html).toContain(`<span class="font-semibold text-[#25383b]">${rotulo}</span>`);
+    expect([...html.matchAll(/aria-current="page"/g)]).toHaveLength(1);
+  });
+
+  it("o financeiro autorizado conserva somente o acesso às capturas, não ganha configuração de conectores", () => {
+    const html = renderizar({ perfil: "FINANCEIRO", permissoesExtras: '["importacoes.ver","cadastros.sensiveis","integracoes.gerenciar"]' });
+    expect(html).toContain('id="submenu-integracoes"');
+    expect(html).toContain('href="/financeiro/migracao-widesys"');
+    for (const href of ["/integracoes", "/integracoes/sicoob", "/financeiro/automacoes", "/financeiro/notas-fiscais/configuracao"]) {
+      expect(html).not.toContain(`href="${href}"`);
+    }
+  });
+
+  it("oculta Integrações quando não há destino autorizado", () => {
+    const html = renderizar({ perfil: "FINANCEIRO" });
+    expect(html).not.toContain('id="submenu-integracoes"');
   });
 });

@@ -47,6 +47,7 @@ function revalidarFinanceiro() {
   revalidatePath("/financeiro");
   revalidatePath("/financeiro/boletos");
   revalidatePath("/financeiro/contas-bancarias");
+  revalidatePath("/integracoes/sicoob");
   revalidatePath("/financeiro/conciliacao");
   revalidatePath("/recebimentos");
   revalidatePath("/executivo");
@@ -184,14 +185,18 @@ export async function vincularEmissaoInconclusiva(formData: FormData): Promise<v
 
 export async function registrarWebhook(formData: FormData): Promise<void> {
   await exigirPermissaoAcesso("boletos.configurar", { global: true });
+  await exigirPermissaoAcesso("integracoes.gerenciar", { global: true });
   const sessao = await exigirPermissaoFinanceira("GERENCIAR_CONTAS");
   const contaId = campo(formData, "contaBancariaId");
-  if (!RE_ID.test(contaId)) voltar("", { erro: "Conta bancária inválida." });
+  const retorno = campo(formData, "retorno") === "/integracoes/sicoob"
+    ? "/integracoes/sicoob"
+    : "/financeiro/contas-bancarias";
+  if (!RE_ID.test(contaId)) redirect(`${retorno}?erro=Conta+banc%C3%A1ria+inv%C3%A1lida.`);
   try {
     await registrarWebhookDaConta(contaId, sessao.sub);
   } catch (erro) {
-    redirect(`/financeiro/contas-bancarias?erro=${encodeURIComponent(mensagemSegura(erro))}`);
+    redirect(`${retorno}?erro=${encodeURIComponent(mensagemSegura(erro))}`);
   }
   revalidarFinanceiro();
-  redirect("/financeiro/contas-bancarias?ok=Webhook+cadastrado.+Aguarde+a+valida%C3%A7%C3%A3o+do+Sicoob.");
+  redirect(`${retorno}?ok=Webhook+cadastrado.+Aguarde+a+valida%C3%A7%C3%A3o+do+Sicoob.`);
 }

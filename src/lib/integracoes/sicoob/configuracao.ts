@@ -1,14 +1,15 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import type { SecureContextOptions } from "node:tls";
+import { createSecureContext, type SecureContextOptions } from "node:tls";
 
 import type { AmbienteSicoob } from "./tipos";
-
-const BASES_PADRAO: Record<AmbienteSicoob, string> = {
-  sandbox: "https://sandbox.sicoob.com.br/sicoob/sandbox/cobranca-bancaria/v3",
-  producao: "https://api.sicoob.com.br/cobranca-bancaria/v3",
-};
+import {
+  BASES_OFICIAIS_SICOOB,
+  validarBaseOficialSicoob,
+  validarTokenUrlOficialSicoob,
+} from "./destinos";
 
 const ESCOPO_PADRAO =
   "boletos_inclusao boletos_consulta boletos_alteracao";
@@ -65,17 +66,15 @@ function possuiEscoposWebhookExplicitos(env: NodeJS.ProcessEnv): boolean {
   return ESCOPOS_WEBHOOK.every((escopo) => escopos.has(escopo));
 }
 
-function urlHttps(valor: string, nome: string): string {
-  let url: URL;
+function validarMaterialMtls(tls: SecureContextOptions): boolean {
   try {
-    url = new URL(valor);
+    // Abre o PFX/PEM e confere chave/senha localmente, sem conexão externa.
+    // Não atesta vigência, autorização no banco ou titularidade do convênio.
+    createSecureContext(tls);
+    return true;
   } catch {
-    throw new ErroConfiguracaoSicoob([`${nome} deve ser uma URL válida`]);
+    return false;
   }
-  if (url.protocol !== "https:") {
-    throw new ErroConfiguracaoSicoob([`${nome} deve usar HTTPS`]);
-  }
-  return url.toString().replace(/\/$/, "");
 }
 
 function caminhosMtls(env: NodeJS.ProcessEnv): {
@@ -89,6 +88,14 @@ function caminhosMtls(env: NodeJS.ProcessEnv): {
   const keyPath = env.SICOOB_KEY_PATH?.trim();
   const pendencias: string[] = [];
 
+  if (pfxPath && (certPath || keyPath || env.SICOOB_CERT_PASSPHRASE)) {
+    return {
+      configurado: false,
+      pendencias: ["Configure somente PFX ou CERT + KEY, nunca os dois formatos"],
+      tls: {},
+    };
+  }
+
   if (pfxPath) {
     if (!existsSync(pfxPath)) pendencias.push("SICOOB_PFX_PATH não encontrado");
     if (!pfxPassphrase?.trim()) pendencias.push("SICOOB_PFX_PASSPHRASE");
@@ -100,15 +107,14 @@ function caminhosMtls(env: NodeJS.ProcessEnv): {
         pendencias.push("SICOOB_PFX_PATH não pode ser lido");
       }
     }
+    const tls = pfx ? { pfx, passphrase: pfxPassphrase } : {};
+    if (pendencias.length === 0 && !validarMaterialMtls(tls)) {
+      pendencias.push("Certificado PFX ou senha inválidos para mTLS");
+    }
     return {
       configurado: pendencias.length === 0,
       pendencias,
-      tls: pendencias.length || !pfx
-        ? {}
-        : {
-            pfx,
-            passphrase: pfxPassphrase,
-          },
+      tls: pendencias.length ? {} : tls,
     };
   }
 
@@ -131,19 +137,22 @@ function caminhosMtls(env: NodeJS.ProcessEnv): {
         pendencias.push("certificado mTLS não pode ser lido");
       }
     }
+    const tls: SecureContextOptions = cert && key
+      ? {
+          cert,
+          key,
+          ...(env.SICOOB_CERT_PASSPHRASE
+            ? { passphrase: env.SICOOB_CERT_PASSPHRASE }
+            : {}),
+        }
+      : {};
+    if (pendencias.length === 0 && !validarMaterialMtls(tls)) {
+      pendencias.push("Certificado PEM, chave ou senha inválidos para mTLS");
+    }
     return {
       configurado: pendencias.length === 0,
       pendencias,
-      tls:
-        pendencias.length || !cert || !key
-          ? {}
-          : {
-              cert,
-              key,
-              ...(env.SICOOB_CERT_PASSPHRASE
-                ? { passphrase: env.SICOOB_CERT_PASSPHRASE }
-                : {}),
-            },
+      tls: pendencias.length ? {} : tls,
     };
   }
 
@@ -155,8 +164,8 @@ function inspecionar(env: NodeJS.ProcessEnv): {
   tls: SecureContextOptions;
 } {
   const amb = ambiente(env);
-  const baseInformada = env.SICOOB_API_BASE_URL?.trim() || BASES_PADRAO[amb];
-  let baseUrl = BASES_PADRAO[amb];
+  const baseInformada = env.SICOOB_API_BASE_URL?.trim() || BASES_OFICIAIS_SICOOB[amb];
+  let baseUrl = BASES_OFICIAIS_SICOOB[amb];
   const clientId = env.SICOOB_CLIENT_ID?.trim();
   const tokenEstatico = env.SICOOB_ACCESS_TOKEN?.trim();
   const tokenUrl = env.SICOOB_TOKEN_URL?.trim();
@@ -164,10 +173,9 @@ function inspecionar(env: NodeJS.ProcessEnv): {
   const pendencias = [...mtls.pendencias];
 
   try {
-    baseUrl = urlHttps(baseInformada, "SICOOB_API_BASE_URL");
-  } catch (erro) {
-    if (erro instanceof ErroConfiguracaoSicoob) pendencias.push(...erro.pendencias);
-    else pendencias.push("SICOOB_API_BASE_URL inválida");
+    baseUrl = validarBaseOficialSicoob(baseInformada, amb);
+  } catch {
+    pendencias.push("SICOOB_API_BASE_URL deve usar o endereço oficial do ambiente selecionado");
   }
 
   if (!clientId) pendencias.push("SICOOB_CLIENT_ID");
@@ -182,10 +190,9 @@ function inspecionar(env: NodeJS.ProcessEnv): {
   }
   if (tokenUrl) {
     try {
-      urlHttps(tokenUrl, "SICOOB_TOKEN_URL");
-    } catch (erro) {
-      if (erro instanceof ErroConfiguracaoSicoob) pendencias.push(...erro.pendencias);
-      else pendencias.push("SICOOB_TOKEN_URL inválida");
+      validarTokenUrlOficialSicoob(tokenUrl);
+    } catch {
+      pendencias.push("SICOOB_TOKEN_URL deve usar o endereço oficial de autenticação Sicoob");
     }
   }
 
@@ -225,18 +232,34 @@ export function carregarConfiguracaoSicoob(
   const clientId = env.SICOOB_CLIENT_ID!.trim();
   const scopes =
     env.SICOOB_SCOPES?.trim() || ESCOPO_PADRAO;
+  const clientSecret = env.SICOOB_CLIENT_SECRET?.trim() || null;
+  const tokenAuth = env.SICOOB_TOKEN_AUTH?.trim().toLowerCase() === "basic" ? "basic" : "body";
+  // Rotacionar certificado/chave/senha/segredo muda a identidade do cache.
+  // Somente o hash permanece na chave em memória; nunca vai para o DTO da UI.
+  const identidade = createHash("sha256")
+    .update(JSON.stringify({
+      ambiente: estado.ambiente,
+      baseUrl: estado.baseUrl,
+      clientId,
+      clientSecret,
+      tokenUrl,
+      tokenAuth,
+      scopes,
+      tls,
+    }))
+    .digest("hex");
 
   return {
     ambiente: estado.ambiente,
     baseUrl: estado.baseUrl,
-    tokenUrl: tokenUrl ? urlHttps(tokenUrl, "SICOOB_TOKEN_URL") : null,
+    tokenUrl: tokenUrl ? validarTokenUrlOficialSicoob(tokenUrl) : null,
     clientId,
-    clientSecret: env.SICOOB_CLIENT_SECRET?.trim() || null,
-    tokenAuth: env.SICOOB_TOKEN_AUTH?.trim().toLowerCase() === "basic" ? "basic" : "body",
+    clientSecret,
+    tokenAuth,
     scopes,
     accessTokenEstatico: env.SICOOB_ACCESS_TOKEN?.trim() || null,
     timeoutMs,
     tls,
-    cacheTokenId: `${estado.ambiente}:${clientId}:${tokenUrl ?? "estatico"}:${scopes}`,
+    cacheTokenId: identidade,
   };
 }

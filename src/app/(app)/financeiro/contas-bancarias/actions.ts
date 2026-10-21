@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { exigirPermissaoFinanceira } from "@/lib/autorizacao";
 import { prisma } from "@/lib/db";
+import { filtroGovernanca, recursoEstaAtivo } from "@/lib/governanca/filtros";
 
 const ROTA = "/financeiro/contas-bancarias";
 const RE_UUID =
@@ -41,11 +42,11 @@ function inteiroNoIntervalo(
 ): number {
   const valor = campo(formData, nome);
   if (!/^\d{1,3}$/.test(valor)) {
-    voltar({ erro: `${rotulo} deve ser um número inteiro.` });
+    voltar(formData, { erro: `${rotulo} deve ser um número inteiro.` });
   }
   const numero = Number.parseInt(valor, 10);
   if (numero < minimo || numero > maximo) {
-    voltar({ erro: `${rotulo} deve ficar entre ${minimo} e ${maximo}.` });
+    voltar(formData, { erro: `${rotulo} deve ficar entre ${minimo} e ${maximo}.` });
   }
   return numero;
 }
@@ -54,26 +55,32 @@ function mensagensCobranca(formData: FormData): string[] {
   const valor = formData.get("mensagensCobranca");
   const texto = typeof valor === "string" ? valor : "";
   if (texto.length > 1_000) {
-    voltar({ erro: "As instruções do boleto excedem o limite permitido." });
+    voltar(formData, { erro: "As instruções do boleto excedem o limite permitido." });
   }
   const mensagens = texto
     .split(/\r?\n/)
     .map((mensagem) => mensagem.trim())
     .filter(Boolean);
   if (mensagens.length > 5) {
-    voltar({ erro: "Use no máximo cinco linhas de instrução no boleto." });
+    voltar(formData, { erro: "Use no máximo cinco linhas de instrução no boleto." });
   }
   if (mensagens.some((mensagem) => mensagem.length > 40)) {
-    voltar({ erro: "Cada instrução do boleto pode ter no máximo 40 caracteres." });
+    voltar(formData, { erro: "Cada instrução do boleto pode ter no máximo 40 caracteres." });
   }
   return mensagens;
 }
 
-function voltar(aviso: { ok?: string; erro?: string }): never {
+function voltar(formData: FormData, aviso: { ok?: string; erro?: string }): never {
   const params = new URLSearchParams();
   if (aviso.ok) params.set("ok", aviso.ok);
   if (aviso.erro) params.set("erro", aviso.erro);
-  redirect(`${ROTA}?${params.toString()}`);
+  // Nunca redireciona para destinos externos ou parâmetros livres enviados pelo cliente.
+  const retorno = campo(formData, "retorno") === "/integracoes/sicoob"
+    ? "/integracoes/sicoob"
+    : ROTA;
+  const id = campo(formData, "id") || campo(formData, "contaBancariaId");
+  const ancora = retorno === "/integracoes/sicoob" && RE_UUID.test(id) ? `#conta-${id}` : "";
+  redirect(`${retorno}?${params.toString()}${ancora}`);
 }
 
 /**
@@ -83,21 +90,23 @@ function voltar(aviso: { ok?: string; erro?: string }): never {
  */
 export async function atualizarContaBancaria(formData: FormData): Promise<void> {
   await exigirPermissaoAcesso("contas.editar", { global: true });
+  await exigirPermissaoAcesso("integracoes.gerenciar", { global: true });
+  await exigirPermissaoAcesso("boletos.configurar", { global: true });
   const sessao = await exigirPermissaoFinanceira("GERENCIAR_CONTAS");
 
   const id = campo(formData, "id");
   if (id.length > 64 || !RE_UUID.test(id)) {
-    voltar({ erro: "Conta bancária inválida." });
+    voltar(formData, { erro: "Conta bancária inválida." });
   }
 
   const apelido = campo(formData, "apelido");
   if (!apelido || apelido.length > 80) {
-    voltar({ erro: "Informe um apelido com até 80 caracteres." });
+    voltar(formData, { erro: "Informe um apelido com até 80 caracteres." });
   }
 
   const finalidade = campo(formData, "finalidade");
   if (!FINALIDADES.has(finalidade)) {
-    voltar({ erro: "Finalidade da conta inválida." });
+    voltar(formData, { erro: "Finalidade da conta inválida." });
   }
 
   const numeroClienteInformado = campo(formData, "numeroCliente");
@@ -107,7 +116,7 @@ export async function atualizarContaBancaria(formData: FormData): Promise<void> 
       Number(numeroClienteInformado) <= 0 ||
       Number(numeroClienteInformado) > 2_147_483_647)
   ) {
-    voltar({
+    voltar(formData, {
       erro: "O número do cliente Sicoob deve ser um inteiro positivo de até 2.147.483.647.",
     });
   }
@@ -123,7 +132,7 @@ export async function atualizarContaBancaria(formData: FormData): Promise<void> 
       Number(contaCorrenteApiInformada) <= 0 ||
       Number(contaCorrenteApiInformada) > 2_147_483_647)
   ) {
-    voltar({
+    voltar(formData, {
       erro: "A conta do convênio deve ser um inteiro positivo de até 2.147.483.647, sem o dígito.",
     });
   }
@@ -136,7 +145,7 @@ export async function atualizarContaBancaria(formData: FormData): Promise<void> 
       Number(contratoCobrancaInformado) <= 0 ||
       !Number.isSafeInteger(Number(contratoCobrancaInformado)))
   ) {
-    voltar({ erro: "O contrato de cobrança deve conter de 1 a 15 dígitos." });
+    voltar(formData, { erro: "O contrato de cobrança deve conter de 1 a 15 dígitos." });
   }
   const numeroContratoCobranca = contratoCobrancaInformado || null;
 
@@ -148,12 +157,12 @@ export async function atualizarContaBancaria(formData: FormData): Promise<void> 
     codigoEspecieDocumentoInformado &&
     !ESPECIES_DOCUMENTO_SICOOB.has(codigoEspecieDocumentoInformado)
   ) {
-    voltar({ erro: "Selecione uma espécie documental aceita pelo Sicoob." });
+    voltar(formData, { erro: "Selecione uma espécie documental aceita pelo Sicoob." });
   }
   const codigoEspecieDocumento = codigoEspecieDocumentoInformado || null;
 
   const ambiente = campo(formData, "ambiente").toUpperCase();
-  if (!AMBIENTES.has(ambiente)) voltar({ erro: "Ambiente Sicoob inválido." });
+  if (!AMBIENTES.has(ambiente)) voltar(formData, { erro: "Ambiente Sicoob inválido." });
 
   const modalidadeInformada = campo(formData, "codigoModalidade");
   const codigoModalidade = modalidadeInformada
@@ -165,7 +174,7 @@ export async function atualizarContaBancaria(formData: FormData): Promise<void> 
       codigoModalidade === null ||
       !MODALIDADES_SICOOB.has(codigoModalidade))
   ) {
-    voltar({ erro: "Selecione uma modalidade de cobrança aceita pelo Sicoob." });
+    voltar(formData, { erro: "Selecione uma modalidade de cobrança aceita pelo Sicoob." });
   }
 
   const ativa = marcado(formData, "ativa");
@@ -175,12 +184,12 @@ export async function atualizarContaBancaria(formData: FormData): Promise<void> 
   const confirmarProducao = marcado(formData, "confirmarProducao");
 
   if (!ativa && (padrao || integracaoHabilitada || boletosHabilitados)) {
-    voltar({
+    voltar(formData, {
       erro: "Uma conta inativa não pode ser padrão nem operar a integração ou boletos.",
     });
   }
   if (boletosHabilitados && !integracaoHabilitada) {
-    voltar({
+    voltar(formData, {
       erro: "Habilite a integração com a API antes de habilitar boletos.",
     });
   }
@@ -191,7 +200,7 @@ export async function atualizarContaBancaria(formData: FormData): Promise<void> 
       !codigoEspecieDocumento ||
       codigoModalidade === null)
   ) {
-    voltar({
+    voltar(formData, {
       erro: "Informe cliente, conta do convênio, modalidade e espécie do documento antes de habilitar a integração ou os boletos.",
     });
   }
@@ -374,34 +383,36 @@ export async function atualizarContaBancaria(formData: FormData): Promise<void> 
     };
   });
 
-  if ("erroGovernanca" in resultado && resultado.erroGovernanca) voltar({ erro: "Para inativar ou restaurar a conta, use Revisar e resolver. Essa ação exige conferir os títulos e registra auditoria." });
+  if ("erroGovernanca" in resultado && resultado.erroGovernanca) voltar(formData, { erro: "Para inativar ou restaurar a conta, use Revisar e resolver. Essa ação exige conferir os títulos e registra auditoria." });
   if (!resultado.encontrado) {
-    voltar({ erro: "Conta bancária não encontrada." });
+    voltar(formData, { erro: "Conta bancária não encontrada." });
   }
   if (resultado.erroPadrao) {
-    voltar({
+    voltar(formData, {
       erro: "Escolha outra conta padrão antes de desmarcar a atual.",
     });
   }
   if (resultado.erroAmbiente) {
-    voltar({
+    voltar(formData, {
       erro: "Não é possível trocar identificadores/ambiente ou desligar o retorno enquanto existem títulos ativos, incertos ou divergentes nesta conta.",
     });
   }
   if (resultado.erroProducao) {
-    voltar({
+    voltar(formData, {
       erro: "Confirme conscientemente a ativação em produção antes de salvar.",
     });
   }
   if (resultado.erroPerfilCredencial) {
-    voltar({
+    voltar(formData, {
       erro: "Este servidor usa um único perfil de credencial Sicoob. Desabilite a conta atualmente integrada antes de autorizar outra.",
     });
   }
 
   revalidatePath(ROTA);
+  revalidatePath("/integracoes");
+  revalidatePath("/integracoes/sicoob");
   revalidatePath("/financeiro");
-  voltar({ ok: "Configuração da conta atualizada com segurança." });
+  voltar(formData, { ok: "Configuração da conta atualizada com segurança." });
 }
 
 /**
@@ -412,15 +423,17 @@ export async function atualizarPoliticaCobrancaSicoob(
   formData: FormData,
 ): Promise<void> {
   await exigirPermissaoAcesso("contas.editar", { global: true });
+  await exigirPermissaoAcesso("integracoes.gerenciar", { global: true });
+  await exigirPermissaoAcesso("boletos.configurar", { global: true });
   const sessao = await exigirPermissaoFinanceira("GERENCIAR_CONTAS");
   const contaBancariaId = campo(formData, "contaBancariaId");
   if (contaBancariaId.length > 64 || !RE_UUID.test(contaBancariaId)) {
-    voltar({ erro: "Conta bancária inválida." });
+    voltar(formData, { erro: "Conta bancária inválida." });
   }
 
   const aceite = campo(formData, "aceite").toUpperCase();
   if (!ACEITES.has(aceite)) {
-    voltar({ erro: "Selecione uma opção válida para o aceite do boleto." });
+    voltar(formData, { erro: "Selecione uma opção válida para o aceite do boleto." });
   }
   const toleranciaPagamentoDias = inteiroNoIntervalo(
     formData,
@@ -464,9 +477,56 @@ export async function atualizarPoliticaCobrancaSicoob(
   });
 
   if (!atualizado) {
-    voltar({ erro: "A política de cobrança desta conta não foi encontrada." });
+    voltar(formData, { erro: "A política de cobrança desta conta não foi encontrada." });
   }
   revalidatePath(ROTA);
+  revalidatePath("/integracoes");
+  revalidatePath("/integracoes/sicoob");
   revalidatePath("/financeiro/boletos");
-  voltar({ ok: "Política de novos boletos atualizada." });
+  voltar(formData, { ok: "Política de novos boletos atualizada." });
+}
+
+/** Cadastro simples: não recebe nem altera campos de integração, credenciais ou identidade bancária. */
+export async function atualizarCadastroContaBancaria(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("contas.editar", { global: true });
+  const sessao = await exigirPermissaoFinanceira("GERENCIAR_CONTAS");
+  const id = campo(formData, "id");
+  if (!RE_UUID.test(id)) voltar(formData, { erro: "Conta bancária inválida." });
+  const apelido = campo(formData, "apelido");
+  if (!apelido || apelido.length > 80) voltar(formData, { erro: "Informe um apelido com até 80 caracteres." });
+  const finalidade = campo(formData, "finalidade");
+  if (!FINALIDADES.has(finalidade)) voltar(formData, { erro: "Finalidade da conta inválida." });
+  const padrao = marcado(formData, "padrao");
+
+  const resultado = await prisma.$transaction(async (tx) => {
+    if (!await recursoEstaAtivo(tx, "CONTA", id)) {
+      return "Esta conta foi excluída ou inativada. Confira a lixeira antes de editar o cadastro.";
+    }
+    const atual = await tx.contaBancaria.findUnique({ where: { id }, select: { id: true, ativa: true } });
+    if (!atual) return "A conta bancária não foi encontrada.";
+    if (padrao && !atual.ativa) return "Uma conta inativa não pode ser padrão.";
+    if (!padrao) {
+      const outraPadrao = await tx.contaBancaria.findFirst({
+        where: {
+          AND: [{ id: { not: id }, padrao: true, ativa: true }, await filtroGovernanca(tx, "CONTA")],
+        },
+        select: { id: true },
+      });
+      if (!outraPadrao) return "Escolha outra conta padrão antes de desmarcar a atual.";
+    } else {
+      await tx.contaBancaria.updateMany({ where: { id: { not: id }, padrao: true }, data: { padrao: false } });
+    }
+    await tx.contaBancaria.update({
+      where: { id },
+      data: { apelido, finalidade, padrao, atualizadoPorUsuarioId: sessao.sub },
+    });
+    return null;
+  });
+  if (resultado) voltar(formData, { erro: resultado });
+  revalidatePath(ROTA);
+  revalidatePath("/integracoes");
+  revalidatePath("/integracoes/sicoob");
+  revalidatePath("/financeiro/boletos");
+  revalidatePath("/financeiro");
+  voltar(formData, { ok: "Cadastro atualizado. A configuração da integração foi preservada." });
 }

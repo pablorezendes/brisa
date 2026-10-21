@@ -10,7 +10,7 @@ import { salvarAcesso } from "./actions";
 export const metadata = { title: "Usuários e acessos — Brisa" };
 const ROTA = "/configuracoes/acessos";
 const ROTULOS: Record<string, string> = { ADMINISTRADOR: "Administrador", SOCIO: "Sócio · somente leitura", CONTABILIDADE: "Contabilidade · somente leitura", FINANCEIRO: "Financeiro", OPERADOR: "Operador", CONSULTA: "Consulta · somente leitura" };
-const permissoes = Object.entries(PERMISSOES_ACESSO).filter(([chave]) => !["comissoes.ver", "acessos.gerenciar"].includes(chave));
+const permissoes = Object.entries(PERMISSOES_ACESSO).filter(([chave]) => !["comissoes.ver", "acessos.gerenciar", "integracoes.gerenciar"].includes(chave));
 const permissoesDaCarteira = new Set(["carteira.ver", "cadastros.ver", "cadastros.sensiveis", "contratos.ver", "financeiro.ver", "relatorios.exportar"]);
 const valor = (v: string | string[] | undefined) => Array.isArray(v) ? v[0] : v;
 const classeRotulo = "block text-xs font-semibold text-tinta";

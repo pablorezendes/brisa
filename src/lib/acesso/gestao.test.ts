@@ -95,6 +95,8 @@ describe("gestão transacional de acessos", () => {
 
   it("não aceita permissões reservadas, desconhecidas ou conflitantes", async () => {
     await expect(gerirAcesso(db, ator, salvar({ permissoesExtras: ["comissoes.ver"] }))).rejects.toMatchObject({ codigo: "PERMISSAO_RESTRITA" });
+    await expect(gerirAcesso(db, ator, salvar({ permissoesExtras: ["integracoes.gerenciar"] }))).rejects.toMatchObject({ codigo: "PERMISSAO_RESTRITA" });
+    await expect(gerirAcesso(db, ator, novaFuncao({ permissoes: ["integracoes.gerenciar"] }))).rejects.toMatchObject({ codigo: "PERMISSAO_RESTRITA" });
     await expect(gerirAcesso(db, ator, salvar({ permissoesExtras: ["tudo.admin"] }))).rejects.toMatchObject({ codigo: "PERMISSAO_INVALIDA" });
     await expect(gerirAcesso(db, ator, salvar({ permissoesExtras: ["financeiro.ver"], permissoesNegadas: ["financeiro.ver"] }))).rejects.toMatchObject({ codigo: "PERMISSOES_CONFLITANTES" });
   });

@@ -141,6 +141,21 @@ export class ClienteSicoob {
     this.configuracao = configuracao;
   }
 
+  /**
+   * Autentica somente no OAuth, sem consultar títulos ou movimentar cobranças.
+   * Força credencial nova: um token em cache não comprova senha/certificado atuais.
+   * Não confirma o convênio e não habilita emissão ou retorno de pagamentos.
+   */
+  async testarAutenticacao(): Promise<void> {
+    if (this.configuracao.accessTokenEstatico) {
+      throw new ErroApiSicoob("Token estático do sandbox não possui teste OAuth.", {
+        codigo: "SICOOB_TESTE_OAUTH_INDISPONIVEL",
+      });
+    }
+    invalidarToken(this.configuracao);
+    await solicitarToken(this.configuracao);
+  }
+
   private async chamarComResposta(
     metodo: "GET" | "POST" | "PATCH" | "DELETE",
     caminho: string,

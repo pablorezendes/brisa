@@ -26,6 +26,8 @@ const PAGINAS = [
   "contratos/[id]/editar/page.tsx",
   "contratos/[id]/page.tsx",
   "executivo/page.tsx",
+  "integracoes/page.tsx",
+  "integracoes/sicoob/page.tsx",
   "financeiro/automacoes/page.tsx",
   "financeiro/boletos/page.tsx",
   "financeiro/comissoes/page.tsx",
@@ -60,6 +62,7 @@ const PAGINAS = [
   "unificacao/[chave]/page.tsx"
 ];
 const ACTIONS = [
+  "integracoes/sicoob/actions.ts",
   "cadastros/actions.ts",
   "caixa/actions.ts",
   "contratos/actions.ts",
@@ -96,6 +99,7 @@ function validarImportacao(ast: ts.SourceFile, guarda: string) {
     && n.importClause.namedBindings.elements.some(e => e.name.text === guarda));
 }
 function permissaoEsperada(arquivo: string, nome: string): string {
+  if (arquivo === "integracoes/sicoob/actions.ts") return "integracoes.gerenciar";
   if (arquivo === "caixa/actions.ts" && nome === "excluirLancamento") return "governanca.editar";
   if (arquivo === "temporada/actions.ts" && nome.startsWith("excluir")) return "governanca.editar";
   const modulo = arquivo.split("/")[0];

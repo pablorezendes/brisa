@@ -37,7 +37,7 @@ function senhaValida(senha: string) {
 }
 function permissoesValidas(permissoes: string[], perfil?: string): PermissaoAcesso[] {
   if (!Array.isArray(permissoes) || permissoes.length > 100 || permissoes.some(p => typeof p !== "string" || !Object.hasOwn(PERMISSOES_ACESSO, p))) negar("PERMISSAO_INVALIDA", "Há uma permissão desconhecida na configuração.");
-  if (permissoes.some(p => ["comissoes.ver", "acessos.gerenciar"].includes(p))) negar("PERMISSAO_RESTRITA", "Comissões e gestão de acessos são exclusivas de administradores.");
+  if (permissoes.some(p => ["comissoes.ver", "acessos.gerenciar", "integracoes.gerenciar"].includes(p))) negar("PERMISSAO_RESTRITA", "Comissões, gestão de acessos e gestão de integrações são exclusivas de administradores.");
   if (perfil && ["SOCIO", "CONTABILIDADE", "CONSULTA"].includes(perfil) && permissoes.some(p => !p.endsWith(".ver") && p !== "relatorios.exportar" && p !== "cadastros.sensiveis")) negar("SOMENTE_LEITURA", "Sócios, contabilidade e consulta não podem receber permissões de alteração.");
   return [...new Set(permissoes)].sort() as PermissaoAcesso[];
 }

@@ -15,6 +15,7 @@ type ItemMenu = {
   correspondencia?: "exata" | "prefixo";
   perfis?: readonly string[];
   aliases?: readonly string[];
+  exceto?: readonly string[];
   grupo?: "banco" | "importacoes";
 };
 
@@ -73,11 +74,22 @@ const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
           { tipo: "link", href: "/financeiro/boletos", rotulo: "Boletos", icone: "boletos", grupo: "banco" },
           { tipo: "link", href: "/financeiro/conciliacao", rotulo: "Conferir pagamentos", icone: "conciliacao", grupo: "banco" },
           { tipo: "link", href: "/financeiro/contas-bancarias", rotulo: "Contas bancárias", icone: "contas-bancarias", grupo: "banco" },
-          { tipo: "link", href: "/financeiro/automacoes", rotulo: "Mensagens de cobrança", icone: "mensagens", perfis: ["ADMINISTRADOR"], grupo: "banco" },
-          { tipo: "link", href: "/financeiro/notas-fiscais", rotulo: "Notas de serviço", icone: "notas-fiscais", perfis: ["ADMINISTRADOR"], grupo: "banco" },
+          { tipo: "link", href: "/financeiro/notas-fiscais", rotulo: "Notas de serviço", icone: "notas-fiscais", perfis: ["ADMINISTRADOR"], grupo: "banco", exceto: ["/financeiro/notas-fiscais/configuracao"] },
           { tipo: "link", href: "/financeiro/importacoes", rotulo: "Planilhas importadas", icone: "historico", perfis: ["ADMINISTRADOR"], grupo: "importacoes" },
-          { tipo: "link", href: "/financeiro/migracao-widesys", rotulo: "Dados do Widesys", icone: "integracao", perfis: ["ADMINISTRADOR", "FINANCEIRO"], grupo: "importacoes" },
           { tipo: "link", href: "/unificacao", rotulo: "Todos os registros", icone: "integracao", perfis: ["ADMINISTRADOR", "FINANCEIRO"], grupo: "importacoes" },
+        ],
+      },
+      {
+        tipo: "modulo",
+        id: "integracoes",
+        rotulo: "Integrações",
+        icone: "integracao",
+        itens: [
+          { tipo: "link", href: "/integracoes", rotulo: "Central de integrações", correspondencia: "exata", perfis: ["ADMINISTRADOR"] },
+          { tipo: "link", href: "/integracoes/sicoob", rotulo: "Sicoob", icone: "contas-bancarias", perfis: ["ADMINISTRADOR"] },
+          { tipo: "link", href: "/financeiro/migracao-widesys", rotulo: "Capturas do Widesys", icone: "historico", perfis: ["ADMINISTRADOR", "FINANCEIRO"] },
+          { tipo: "link", href: "/financeiro/automacoes", rotulo: "E-mail e WhatsApp", icone: "mensagens", perfis: ["ADMINISTRADOR"] },
+          { tipo: "link", href: "/financeiro/notas-fiscais/configuracao", rotulo: "Configuração NFS-e", icone: "notas-fiscais", perfis: ["ADMINISTRADOR"] },
         ],
       },
       {
@@ -124,6 +136,7 @@ const ITENS_COM_CONTEXTO = MENU.flatMap((grupo) =>
 ).sort((a, b) => b.item.href.length - a.item.href.length);
 
 function rotaAtiva(pathname: string, item: ItemMenu) {
+  if (item.exceto?.some((href) => pathname === href || pathname.startsWith(`${href}/`))) return false;
   return [item.href, ...(item.aliases ?? [])].some((href) =>
     pathname === href || (item.correspondencia !== "exata" && href !== "/" && pathname.startsWith(`${href}/`)),
   );

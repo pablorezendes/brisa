@@ -107,7 +107,7 @@ export default async function PaginaBoletos({
   const permiteSincronizar = podeExibirAcao(acesso, { permissao: "boletos.sincronizar", perfis: perfisBanco });
   const permiteConciliar = podeExibirAcao(acesso, { permissao: "pagamentos.conciliar", perfis: ["ADMINISTRADOR", "FINANCEIRO"] });
   const permiteEditarCadastro = podeExibirAcao(acesso, { permissao: ["cadastros.editar", "cadastros.sensiveis"] });
-  const permiteConfigurar = podeExibirAcao(acesso, { permissao: "contas.editar", perfis: ["ADMINISTRADOR"] });
+  const permiteConfigurar = podeExibirAcao(acesso, { permissao: ["integracoes.gerenciar", "boletos.configurar", "contas.editar"], perfis: ["ADMINISTRADOR"] });
   const sp = await searchParams;
   const mes = sp.mes && RE_MES.test(sp.mes)
     ? sp.mes
@@ -212,7 +212,7 @@ export default async function PaginaBoletos({
                 Falta habilitar ao menos uma conta com cliente Sisbr, conta do convênio, modalidade e espécie documental confirmados.
               </p>
             </div>
-            {permiteConfigurar && <Link href="/financeiro/contas-bancarias" className={btnPrimario}>Concluir configuração</Link>}
+            {permiteConfigurar && <Link href="/integracoes/sicoob" className={btnPrimario}>Concluir configuração</Link>}
           </div>
         </Card>
       ) : null}
