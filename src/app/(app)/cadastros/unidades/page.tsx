@@ -165,6 +165,7 @@ export default async function PaginaUnidades({ searchParams }: { searchParams: S
               <select
                 id="empreendimento-unidade"
                 name="empreendimentoId"
+                aria-describedby={editando ? "orientacao-troca-empreendimento" : undefined}
                 required
                 defaultValue={editando?.empreendimentoId ?? ""}
                 className={`${inputBase} mt-1.5 block w-full`}
@@ -209,9 +210,10 @@ export default async function PaginaUnidades({ searchParams }: { searchParams: S
               </select>
             </label>
             {editando ? (
-              <p className="rounded-lg bg-[#f5f7f7] px-3 py-2 text-[11px] leading-relaxed text-tinta-suave md:col-span-full 2xl:mt-3.5">
-                Imóveis com contratos podem mudar de nome e tipo, mas não de empreendimento. Isso preserva o histórico financeiro.
-              </p>
+              <div id="orientacao-troca-empreendimento" className="space-y-2 rounded-lg bg-[#f5f7f7] px-3 py-2 text-[11px] leading-relaxed text-tinta-suave md:col-span-full 2xl:mt-3.5">
+                <p>Você pode trocar o empreendimento mesmo com contratos. Contratos e recebimentos, inclusive anteriores, acompanharão o imóvel, sem duplicar cadastros ou alterar valores.</p>
+                <p>O acesso seguirá as permissões da carteira de destino. Fechamentos já concluídos não serão alterados. Correspondências conciliadas podem precisar de nova conferência.</p>
+              </div>
             ) : null}
             <div className="flex flex-wrap gap-2 pt-0.5 xl:self-end 2xl:mt-3.5">
               <button type="submit" className={btnPrimario}>

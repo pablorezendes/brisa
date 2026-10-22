@@ -67,6 +67,38 @@ Abra https://brisa.tescod.com — o app pede o login criado no primeiro acesso.
 
 ## 4) Atualizações futuras
 
+### Troca de empreendimento de imóveis com contratos (22/10/2026)
+
+Em **Cadastros → Imóveis e unidades → Editar**, agora é possível escolher
+outro empreendimento mesmo quando o imóvel já possui contratos. Não é
+necessário criar outro cadastro nem registrar um histórico de transferência.
+A operação mantém os mesmos IDs e, em uma única transação, atualiza o
+empreendimento do imóvel e de todos os recebimentos vinculados aos seus
+contratos, inclusive anteriores. Valores, taxas, pagamentos e boletos não
+são alterados. A identificação precisa continuar única no destino.
+
+O acesso por carteira passa a seguir o empreendimento escolhido; permissões
+específicas por imóvel continuam válidas. Fechamentos concluídos permanecem
+como estavam. Correspondências manuais da unificação podem pedir nova
+conferência quando a mudança altera os dados usados na conciliação.
+
+Esta atualização não move nenhum imóvel automaticamente, não modifica o
+schema e não exige seed ou reimportação. Para publicar:
+
+```bash
+cd /srv/stack/acamargo
+set -e
+git pull --ff-only origin main
+docker compose build brisa
+docker compose up -d brisa
+docker compose ps
+curl --fail --retry 12 --retry-delay 5 --retry-all-errors -I https://brisa.tescod.com/login
+```
+
+Se o Git apontar divergência ou alterações locais, pare e revise antes de
+continuar; não force a atualização. Não substitua o banco do servidor pelo
+banco local.
+
 ### Menu Integrações e preparação Sicoob (21/10/2026)
 
 O novo menu **Integrações** (`/integracoes`) reúne conexões externas em uma

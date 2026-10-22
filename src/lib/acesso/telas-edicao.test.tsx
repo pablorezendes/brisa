@@ -78,4 +78,27 @@ describe("cadastros em modo de consulta", () => {
     expect(html).not.toContain("Excluir da plataforma");
     expect(html).not.toContain("modo=excluir");
   });
+
+  it("permite escolher outro empreendimento ao editar imóvel com contratos", async () => {
+    conceder(["cadastros.editar"]);
+    const comContratos = { ...unidade, _count: { contratos: 2 } };
+    mocks.unidades.mockResolvedValue([comContratos]);
+    mocks.editarUnidade.mockResolvedValue(comContratos);
+    mocks.empreendimentos.mockResolvedValue([
+      empreendimento,
+      { ...empreendimento, id: "destino", nome: "Outro empreendimento" },
+    ]);
+
+    const html = renderToStaticMarkup(await PaginaUnidades({ searchParams: Promise.resolve({ editar: "un" }) }));
+    const seletor = html.match(/<select[^>]*id="empreendimento-unidade"[^>]*>[\s\S]*?<\/select>/)?.[0];
+    expect(seletor).toBeDefined();
+    expect(seletor).not.toContain("disabled");
+    expect(seletor).toContain('value="destino"');
+    expect(seletor).toContain('aria-describedby="orientacao-troca-empreendimento"');
+    expect(html).toContain("Você pode trocar o empreendimento mesmo com contratos.");
+    expect(html).toContain("inclusive anteriores");
+    expect(html).toContain("Fechamentos já concluídos não serão alterados.");
+    expect(html).not.toContain("mas não de empreendimento");
+    expect(html).toContain("Salvar alterações");
+  });
 });

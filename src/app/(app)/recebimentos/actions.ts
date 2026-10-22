@@ -280,14 +280,7 @@ export async function criarLancamentoAvulso(formData: FormData): Promise<void> {
   await exigirMesAberto(mes);
 
   const contratoId = campo(formData, "contratoId");
-  if (contratoId && !await recursoEstaAtivo(prisma, "CONTRATO", contratoId)) voltar(mes, { erro: "Contrato excluído. Restaure-o antes de criar lançamentos." });
-  const contrato = contratoId
-    ? await prisma.contrato.findUnique({
-        where: { id: contratoId },
-        include: { unidade: true },
-      })
-    : null;
-  if (!contrato) voltar(mes, { erro: "Selecione o contrato do lançamento." });
+  if (!contratoId) voltar(mes, { erro: "Selecione o contrato do lançamento." });
 
   const competencia = campo(formData, "competencia") || mes;
   if (!RE_MES.test(competencia)) {
@@ -298,28 +291,44 @@ export async function criarLancamentoAvulso(formData: FormData): Promise<void> {
     voltar(mes, { erro: "Data de pagamento inválida." });
   }
 
-  // Campos em branco herdam os valores do contrato (digite 0 para zerar).
-  const valor = parseBRL(campo(formData, "valor")) ?? contrato.valorBase;
-  const iptu = parseBRL(campo(formData, "iptu")) ?? contrato.iptu;
-  const cond = parseBRL(campo(formData, "cond")) ?? contrato.condominio;
-  const recebido = parseBRL(campo(formData, "recebido")); // null = ainda não recebido
+  const taxaComissaoBps = await taxaComissaoParaMes(mes);
+  const erro = await prisma.$transaction(async (tx) => {
+    if (!await recursoEstaAtivo(tx, "CONTRATO", contratoId)) {
+      return "Contrato excluído. Restaure-o antes de criar lançamentos.";
+    }
+    // Lê a carteira e grava na mesma transação: uma troca de empreendimento
+    // concorrente não pode deixar o novo recebimento com a carteira antiga.
+    const contrato = await tx.contrato.findUnique({
+      where: { id: contratoId },
+      include: { unidade: true },
+    });
+    if (!contrato) return "Selecione o contrato do lançamento.";
 
-  await prisma.recebimento.create({
-    data: {
-      contratoId: contrato.id,
-      empreendimentoId: contrato.unidade.empreendimentoId,
-      mesLancamento: mes,
-      competencia,
-      valor,
-      iptu,
-      cond,
-      recebido,
-      dataPagamento: recebido !== null && dataPagamento ? dataPagamento : null,
-      via: recebido !== null ? viaValida(campo(formData, "via")) : null,
-      taxaComissaoBps: await taxaComissaoParaMes(mes),
-      observacao: campo(formData, "observacao") || null,
-    },
+    // Campos em branco herdam os valores do contrato (digite 0 para zerar).
+    const valor = parseBRL(campo(formData, "valor")) ?? contrato.valorBase;
+    const iptu = parseBRL(campo(formData, "iptu")) ?? contrato.iptu;
+    const cond = parseBRL(campo(formData, "cond")) ?? contrato.condominio;
+    const recebido = parseBRL(campo(formData, "recebido")); // null = ainda não recebido
+
+    await tx.recebimento.create({
+      data: {
+        contratoId: contrato.id,
+        empreendimentoId: contrato.unidade.empreendimentoId,
+        mesLancamento: mes,
+        competencia,
+        valor,
+        iptu,
+        cond,
+        recebido,
+        dataPagamento: recebido !== null && dataPagamento ? dataPagamento : null,
+        via: recebido !== null ? viaValida(campo(formData, "via")) : null,
+        taxaComissaoBps,
+        observacao: campo(formData, "observacao") || null,
+      },
+    });
+    return null;
   });
+  if (erro) voltar(mes, { erro });
   revalidarLocacao();
   voltar(mes, { ok: "Lançamento avulso criado." });
 }

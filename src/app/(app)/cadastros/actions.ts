@@ -3,6 +3,7 @@
 import { exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { exigirSessao } from "@/lib/auth";
 import { normalizar, normalizarCpfCnpj } from "@/lib/dominio/normalizacao";
@@ -221,6 +222,7 @@ function tipoUnidadeValido(valor: string): valor is (typeof TIPOS_UNIDADE)[numbe
 async function validarDadosUnidade(
   formData: FormData,
   empreendimentoAtualId?: string,
+  db: Pick<Prisma.TransactionClient, "empreendimento" | "recursoGovernado"> = prisma,
 ): Promise<
   | { empreendimentoId: string; identificacao: string; tipo: string }
   | { erro: string }
@@ -234,12 +236,12 @@ async function validarDadosUnidade(
   }
   if (!tipoUnidadeValido(tipo)) return { erro: "Selecione um tipo de imóvel válido." };
 
-  const empreendimento = await prisma.empreendimento.findUnique({
+  const empreendimento = await db.empreendimento.findUnique({
     where: { id: empreendimentoId },
     select: { id: true, ativo: true },
   });
   if (!empreendimento) return { erro: "Empreendimento não encontrado." };
-  if (!await recursoEstaAtivo(prisma, "EMPREENDIMENTO", empreendimentoId)) return { erro: "Este empreendimento foi excluído ou mesclado." };
+  if (!await recursoEstaAtivo(db, "EMPREENDIMENTO", empreendimentoId)) return { erro: "Este empreendimento foi excluído ou mesclado." };
   if (!empreendimento.ativo && empreendimento.id !== empreendimentoAtualId) {
     return { erro: "Selecione um empreendimento ativo para o imóvel." };
   }
@@ -275,31 +277,35 @@ export async function atualizarUnidade(formData: FormData): Promise<void> {
   await exigirPermissaoAcesso("cadastros.editar", { global: true });
   await exigirSessao();
   const id = campo(formData, "id");
-  if (!await recursoEstaAtivo(prisma, "UNIDADE", id)) voltar(ROTAS.unidades, { erro: "Este imóvel foi excluído ou mesclado. Use Revisar e resolver para restaurar." });
   if (!id) voltar(ROTAS.unidades, { erro: "Imóvel não informado." });
 
-  const existente = await prisma.unidade.findUnique({
-    where: { id },
-    include: { _count: { select: { contratos: true } } },
-  });
-  if (!existente) voltar(ROTAS.unidades, { erro: "Imóvel não encontrado." });
-
-  const validacao = await validarDadosUnidade(formData, existente.empreendimentoId);
-  if ("erro" in validacao) {
-    voltar(ROTAS.unidades, { erro: validacao.erro, editar: id });
-  }
-  if (
-    existente.empreendimentoId !== validacao.empreendimentoId &&
-    existente._count.contratos > 0
-  ) {
-    voltar(ROTAS.unidades, {
-      erro: "Um imóvel com contratos não pode ser movido para outro empreendimento. Crie um novo cadastro para preservar o histórico.",
-      editar: id,
-    });
-  }
-
+  let resultado: { erro: string } | { mudouEmpreendimento: boolean };
   try {
-    await prisma.unidade.update({ where: { id }, data: validacao });
+    resultado = await prisma.$transaction(async (tx) => {
+      if (!await recursoEstaAtivo(tx, "UNIDADE", id)) {
+        return { erro: "Este imóvel foi excluído ou mesclado. Use Revisar e resolver para restaurar." };
+      }
+      const existente = await tx.unidade.findUnique({
+        where: { id },
+        select: { id: true, empreendimentoId: true },
+      });
+      if (!existente) return { erro: "Imóvel não encontrado." };
+
+      const validacao = await validarDadosUnidade(formData, existente.empreendimentoId, tx);
+      if ("erro" in validacao) return validacao;
+
+      const mudouEmpreendimento = existente.empreendimentoId !== validacao.empreendimentoId;
+      await tx.unidade.update({ where: { id }, data: validacao });
+      if (mudouEmpreendimento) {
+        // Contratos seguem a unidade; recebimentos guardam também o empreendimento.
+        // Reclassifica toda a operação, sem recriar títulos nem alterar pagamentos ou taxas.
+        await tx.recebimento.updateMany({
+          where: { contrato: { unidadeId: id } },
+          data: { empreendimentoId: validacao.empreendimentoId },
+        });
+      }
+      return { mudouEmpreendimento };
+    });
   } catch (erro) {
     voltar(ROTAS.unidades, {
       erro: erroDeUnicidade(erro)
@@ -309,8 +315,18 @@ export async function atualizarUnidade(formData: FormData): Promise<void> {
     });
   }
 
-  revalidarCadastros("/contratos", "/recebimentos", "/paineis/empreendimentos", "/executivo");
-  voltar(ROTAS.unidades, { ok: "Imóvel atualizado." });
+  if ("erro" in resultado) voltar(ROTAS.unidades, { erro: resultado.erro, editar: id });
+  if (resultado.mudouEmpreendimento) {
+    // A carteira autorizada e todos os relatórios derivados passam a usar o destino.
+    revalidatePath("/", "layout");
+  } else {
+    revalidarCadastros("/contratos", "/recebimentos", "/paineis/empreendimentos", "/executivo");
+  }
+  voltar(ROTAS.unidades, {
+    ok: resultado.mudouEmpreendimento
+      ? "Empreendimento alterado. Contratos e recebimentos acompanharam o imóvel, sem duplicação ou alteração de valores. Correspondências conciliadas podem precisar de nova conferência."
+      : "Imóvel atualizado.",
+  });
 }
 
 export async function definirStatusUnidade(formData: FormData): Promise<void> {
