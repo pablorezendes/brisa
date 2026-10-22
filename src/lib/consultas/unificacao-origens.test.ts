@@ -13,7 +13,7 @@ vi.mock("../db", () => ({ prisma: {
   unificacaoDecisao: { findFirst: mocks.analise }, recursoGovernado: { count: mocks.excluidos },
   importacaoPlanilhaLote: { findFirst: mocks.excel },
 } }));
-import { listarUnificados, organizacaoDosDados } from "./unificacao";
+import { listarTitulosFinanceiros, listarUnificados, organizacaoDosDados } from "./unificacao";
 
 const linha = (chave: string, origem: "BRISA" | "WIDESYS", origens: string[], estado = "ATIVO") => ({
   chave, origem, origens, estado, contabiliza: estado === "ATIVO", dominio: "MOVIMENTO", titulo: chave,
@@ -31,6 +31,19 @@ describe("consulta de origens e situação real da consolidação", () => {
     const r = await listarUnificados({ dominio: "MOVIMENTO", origem: "WIDESYS", porPagina: 1 });
     expect(r.total).toBe(1); expect(r.itens[0].chave).toBe("b"); expect(r.resumo.entradas).toBe(100);
     expect(r.resumo.pendentes).toBe(0);
+  });
+  it.each(["RECEBER", "PAGAR"] as const)("limita a leitura autorizada ao domínio %s", async dominio => {
+    mocks.ler.mockResolvedValue({ linhas: [{ ...linha("titulo", "WIDESYS", ["WIDESYS"]), dominio, valor: 1000, pago: 200, aberto: 800 }], decisoes: [] });
+    const resultado = await listarTitulosFinanceiros({ dominio, origem: "WIDESYS", porPagina: 100 });
+    expect(mocks.ler).toHaveBeenCalledWith(dominio);
+    expect(mocks.exigir).toHaveBeenCalledWith("cadastros.sensiveis", { global: true });
+    expect(resultado.total).toBe(1);
+    expect(resultado.resumo).toMatchObject({ devido: 1000, pago: 200, aberto: 800 });
+  });
+  it("não consulta a lista financeira antes da autorização", async () => {
+    mocks.exigir.mockRejectedValue(new Error("NEGADO"));
+    await expect(listarTitulosFinanceiros({ dominio: "PAGAR" })).rejects.toThrow("NEGADO");
+    expect(mocks.ler).not.toHaveBeenCalled();
   });
   it("não confunde pendências da importação com pendências operacionais", async () => {
     const r = await organizacaoDosDados();

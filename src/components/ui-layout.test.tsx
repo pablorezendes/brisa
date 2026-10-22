@@ -70,7 +70,7 @@ describe("tabelas sem recorte de ações", () => {
   it("a operação unificada usa a tabela responsiva extraída com DTO explícito", () => {
     const codigo = ler("src/components/operacao-unificada.tsx");
     expect(codigo).toContain('from "@/components/tabela-operacao-unificada"');
-    expect(codigo).toContain("<TabelaOperacaoUnificada itens={itensTabela}");
+    expect(codigo).toMatch(/<TabelaOperacaoUnificada\s[\s\S]*?\bitens=\{itensTabela\}/);
     expect(codigo).not.toContain("itens={dados.itens}");
   });
 

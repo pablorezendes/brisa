@@ -76,6 +76,7 @@ describe("confirmação de exclusão sem banco real", () => {
     expect(html).toContain('value="excluir-plataforma"');
     expect(html).toContain("não apaga registros vinculados");
     expect(mocks.estadoGravar).not.toHaveBeenCalled(); expect(mocks.eventoGravar).not.toHaveBeenCalled();
+    expect(mocks.revalidar).not.toHaveBeenCalled();
   });
 
   it("escapa nome e mensagens controlados por URL em vez de interpretar HTML", async () => {
@@ -98,6 +99,7 @@ describe("confirmação de exclusão sem banco real", () => {
     expect(destino.searchParams.has("erro")).toBe(true);
     expect(destino.searchParams.get("modo")).toBe("excluir");
     expect(mocks.estadoGravar).not.toHaveBeenCalled(); expect(mocks.eventoGravar).not.toHaveBeenCalled();
+    expect(mocks.revalidar).not.toHaveBeenCalled();
   });
 
   it("revalida administrador no serviço, mesmo com sessão/indicador forjados", async () => {

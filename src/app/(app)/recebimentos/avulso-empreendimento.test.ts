@@ -138,7 +138,7 @@ describe("lançamento avulso — carteira consistente com o imóvel", () => {
     { contratoId: "" },
     { competencia: "2026-13" },
     { dataPagamento: "22/10/2026" },
-  ])("preserva validações antes de qualquer escrita: %j", async alteracoes => {
+  ] as Record<string, string>[])("preserva validações antes de qualquer escrita: %j", async alteracoes => {
     const retorno = await executar(formulario(alteracoes));
     expect(retorno.get("erro")).toBeTruthy();
     expect(mocks.criar).not.toHaveBeenCalled();

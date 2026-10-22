@@ -1,4 +1,5 @@
 import type { CandidatoUnificacao, DecisaoUnificacao, EstadoUnificacao, FonteUnificacao, LinhaUnificada } from "./tipos";
+import { criarIndiceCandidatos } from "./candidatos-indice";
 
 export function listaJson<T>(valor: string): T[] {
   try { const v: unknown = JSON.parse(valor); return Array.isArray(v) ? v as T[] : []; } catch { return []; }
@@ -43,7 +44,7 @@ export function candidatosPara(f: FonteUnificacao, fontes: FonteUnificacao[], de
   return candidatos.sort((a,b) => b.motivos.length - a.motivos.length || a.chave.localeCompare(b.chave));
 }
 
-export function avaliarFonte(f: FonteUnificacao, candidatos: CandidatoUnificacao[], fontes: Map<string, FonteUnificacao>, anterior?: DecisaoUnificacao, decisoes = new Map<string, DecisaoUnificacao>()): { status: EstadoUnificacao; destinoChave: string | null; motivos: string[] } {
+export function avaliarFonte(f: FonteUnificacao, candidatos: CandidatoUnificacao[], fontes: Map<string, FonteUnificacao>, anterior?: DecisaoUnificacao, decisoes = new Map<string, DecisaoUnificacao>(), competenciasReceberBrisa?: ReadonlySet<FonteUnificacao["competencia"]>): { status: EstadoUnificacao; destinoChave: string | null; motivos: string[] } {
   if (f.qualidade !== "OK") return { status: f.qualidade === "AUSENTE" ? "AUSENTE" : "QUARENTENA", destinoChave: anterior?.destinoChave ?? null, motivos: f.motivos };
   if (anterior?.decisao === "MANUAL") {
     const alvo = anterior.destinoChave ? fontes.get(anterior.destinoChave) : null;
@@ -83,7 +84,7 @@ export function avaliarFonte(f: FonteUnificacao, candidatos: CandidatoUnificacao
   // Contratos/recebíveis sem ponte de identidade podem se sobrepor à planilha
   // mesmo com grafia/valor distintos. A ausência de candidato não é prova.
   if (f.dominio === "CONTRATO" && fontes.size > 0) return { status: "PENDENTE", destinoChave: null, motivos: ["CONFERIR_IMOVEL_E_INQUILINO"] };
-  if (f.dominio === "RECEBER" && [...fontes.values()].some(o => o.origem === "BRISA" && o.dominio === "RECEBER" && o.competencia === f.competencia)) return { status: "PENDENTE", destinoChave: null, motivos: ["PERIODO_JA_EXISTE_NA_PLANILHA"] };
+  if (f.dominio === "RECEBER" && (competenciasReceberBrisa?.has(f.competencia) ?? [...fontes.values()].some(o => o.origem === "BRISA" && o.dominio === "RECEBER" && o.competencia === f.competencia))) return { status: "PENDENTE", destinoChave: null, motivos: ["PERIODO_JA_EXISTE_NA_PLANILHA"] };
   return { status: "ATIVO", destinoChave: null, motivos: ["SEM_CORRESPONDENCIA_ENCONTRADA"] };
 }
 
@@ -92,19 +93,11 @@ export function projetarUnificados(fontes: FonteUnificacao[], decisoes: DecisaoU
   const decisoesPorChave = new Map(decisoes.map(d => [d.chave,d]));
   const linhas = new Map<string,LinhaUnificada>();
   const destinosSemVinculo = new Map<string, string>();
-  let fontesPorDominio: Map<FonteUnificacao["dominio"], FonteUnificacao[]> | undefined;
-  const fontesDoDominio = (dominio: FonteUnificacao["dominio"]) => {
-    // Só constrói o índice se uma fonte realmente precisar de candidatos novos.
-    // Preserva a ordem original; os vínculos e a avaliação continuam usando a base inteira.
-    if (!fontesPorDominio) {
-      fontesPorDominio = new Map();
-      for (const fonte of fontes) {
-        const grupo = fontesPorDominio.get(fonte.dominio);
-        if (grupo) grupo.push(fonte);
-        else fontesPorDominio.set(fonte.dominio, [fonte]);
-      }
-    }
-    return fontesPorDominio.get(dominio) ?? [];
+  let indiceCandidatos: ReturnType<typeof criarIndiceCandidatos> | undefined;
+  const candidatosNovos = (f: FonteUnificacao) => {
+    // A fotografia já analisada não precisa reconstruir o índice.
+    indiceCandidatos ??= criarIndiceCandidatos(fontes, destinosSemVinculo);
+    return candidatosPara(f, indiceCandidatos.para(f), destinosSemVinculo);
   };
   for (const f of fontes) {
     const d = decisoesPorChave.get(f.chave);
@@ -113,11 +106,11 @@ export function projetarUnificados(fontes: FonteUnificacao[], decisoes: DecisaoU
     const alvo = d?.destinoChave ? porChave.get(d.destinoChave) : null;
     const alvoDecisao = d?.destinoChave ? decisoesPorChave.get(d.destinoChave) : null;
     const alvoInvalido = d?.destinoChave && (!alvo || alvo.dominio !== f.dominio || alvo.hash !== d.hashDestino || alvo.qualidade !== "OK" || alvoDecisao?.status !== "ATIVO" || alvoDecisao?.hashFonte !== alvo.hash);
-    const propostas = d && !reavaliarNativo ? listaJson<CandidatoUnificacao>(d.candidatos) : candidatosPara(f, fontesDoDominio(f.dominio), destinosSemVinculo);
+    const propostas = d && !reavaliarNativo ? listaJson<CandidatoUnificacao>(d.candidatos) : candidatosNovos(f);
     // Cadastros e lançamentos novos do próprio Brisa não exigem uma migração
     // para funcionar. Ainda passam pela mesma checagem de repetição interna.
     const estadoNovo = (!d || reavaliarNativo) && f.origem === "BRISA"
-      ? avaliarFonte(f, propostas, porChave, d, decisoesPorChave).status
+      ? avaliarFonte(f, propostas, porChave, d, decisoesPorChave, indiceCandidatos?.competenciasReceberBrisa).status
       : "PENDENTE";
     const estado: EstadoUnificacao = f.qualidade !== "OK" ? (f.qualidade === "AUSENTE" ? "AUSENTE" : "QUARENTENA")
       : !d || reavaliarNativo ? estadoNovo : fonteMudou || alvoInvalido ? "REVISAR" : d.status as EstadoUnificacao;

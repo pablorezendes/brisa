@@ -2,8 +2,9 @@ import type { PrismaClient, Prisma } from "@prisma/client";
 import { STATUS_BOLETO_ATIVOS } from "../dominio/boletos";
 import { avaliarFonte, candidatosPara, projetarUnificados } from "./reconciliacao";
 import { carregarDadosFontesUnificacao, carregarFontesUnificacao, derivarFontesUnificacao } from "./fontes";
-import type { DecisaoUnificacao, DominioUnificacao, FonteUnificacao } from "./tipos";
+import type { DecisaoUnificacao, FonteUnificacao } from "./tipos";
 import { filtrarFontesGovernadas } from "../governanca/filtros";
+import { criarIndiceCandidatos } from "./candidatos-indice";
 
 export class ErroUnificacao extends Error {
   constructor(public codigo: string, mensagem: string) { super(mensagem); this.name = "ErroUnificacao"; }
@@ -19,15 +20,14 @@ export async function analisarUnificacao(db: PrismaClient, usuarioId: string, dr
     const destinos = new Map<string,string>();
     for (const f of fontes) if (f.vinculoExplicito) destinos.set(f.chave,f.vinculoExplicito);
     for (const d of existentes) if (d.status === "VINCULADO" && d.destinoChave && porChave.get(d.chave)?.hash === d.hashFonte && porChave.get(d.destinoChave)?.hash === d.hashDestino) destinos.set(d.chave,d.destinoChave);
-    const grupos = new Map<DominioUnificacao,FonteUnificacao[]>();
-    for (const f of fontes) { const grupo = grupos.get(f.dominio) ?? []; grupo.push(f); grupos.set(f.dominio,grupo); }
+    const indiceCandidatos = criarIndiceCandidatos(fontes, destinos);
     const novos: Prisma.UnificacaoRegistroCreateManyInput[] = [];
     const estados: Record<string,number> = {};
     let criados = 0, atualizados = 0, inalterados = 0;
     for (const f of fontes) {
       const anterior = anteriores.get(f.chave);
-      const candidatos = candidatosPara(f, grupos.get(f.dominio) ?? [], destinos);
-      const decisao = avaliarFonte(f,candidatos,porChave,anterior,anteriores);
+      const candidatos = candidatosPara(f, indiceCandidatos.para(f), destinos);
+      const decisao = avaliarFonte(f,candidatos,porChave,anterior,anteriores,indiceCandidatos.competenciasReceberBrisa);
       const alvo = decisao.destinoChave ? porChave.get(decisao.destinoChave) : null;
       const dados = {
         dominio: f.dominio, origem: f.origem, origemId: f.origemId,

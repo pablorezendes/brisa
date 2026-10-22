@@ -5,7 +5,7 @@ const ORIGENS = new Set(["BRISA", "WIDESYS", "PLANILHA"]);
 const ESTADOS = new Set(["ATIVO", "PENDENTE", "VINCULADO", "QUARENTENA", "REVISAR", "AUSENTE"]);
 const CHAVE_FINANCEIRA = /^(?:BRISA|WIDESYS):(?:RECEBER|PAGAR):[A-Za-z0-9_-]{1,160}$/;
 const INSEGURO = /[\\\u0000-\u001f\u007f]/;
-const FILTROS = ["q", "origem", "estado", "mes", "de", "ate", "pagina", "vencidos"] as const;
+const FILTROS = ["q", "origem", "estado", "mes", "de", "ate", "pagina", "vencidos", "porPagina"] as const;
 
 function texto(valor: unknown, limite: number): string | null {
   return typeof valor === "string" && valor.length <= limite && !INSEGURO.test(valor) ? valor : null;
@@ -26,6 +26,7 @@ function filtro(nome: typeof FILTROS[number], valor: unknown): string | null {
     case "de":
     case "ate": return /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/.test(v) ? v : null;
     case "pagina": return /^[1-9]\d{0,6}$/.test(v) ? v : null;
+    case "porPagina": return ["25", "50", "100"].includes(v) ? v : null;
     case "vencidos": return v === "1" ? v : null;
   }
 }

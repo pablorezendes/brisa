@@ -7,6 +7,16 @@ const DESTINO = "BRISA:PAGAR:recebimento_1";
 function parametros(href: string) { return new URLSearchParams(href.split("?")[1] ?? ""); }
 
 describe("contexto financeiro da lista", () => {
+  it("preserva apenas tamanhos de página limitados na navegação e no retorno", () => {
+    for (const porPagina of ["25", "50", "100"]) {
+      const contexto = contextoFinanceiro(BASE, { porPagina, pagina: "2" })!;
+      expect(parametros(contexto.hrefExcluir(REGISTRO)).get("porPagina")).toBe(porPagina);
+      expect(validarRetornoFinanceiro(contexto.retorno)).toBe(contexto.retorno);
+    }
+    for (const porPagina of ["0", "-1", "101", "10000", "todos"]) {
+      expect(contextoFinanceiro(BASE, { porPagina })?.retorno).toBe(BASE);
+    }
+  });
   it.each([BASE, "/financeiro/contas-a-receber", "/recebimentos"])("abre detalhe e exclusão na mesma base %s", base => {
     const contexto = contextoFinanceiro(base, { mes: "2026-06", pagina: "3" })!;
     expect(contexto.retorno).toBe(`${base}?mes=2026-06&pagina=3`);

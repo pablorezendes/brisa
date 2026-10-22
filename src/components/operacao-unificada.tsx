@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AcaoAutorizada } from "@/components/acao-autorizada";
 import { BotaoUnificacao } from "@/components/botao-unificacao";
-import { listarUnificados } from "@/lib/consultas/unificacao";
+import { listarTitulosFinanceiros, listarUnificados } from "@/lib/consultas/unificacao";
 import type { DominioUnificacao } from "@/lib/unificacao/tipos";
 import { origensDoRegistro } from "@/lib/unificacao/origens";
 import { explicarConsolidacao } from "@/components/situacao-consolidacao";
@@ -54,7 +54,12 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
   const papel = primeiroParametro(parametros.papel) ?? "";
   const vencidos = primeiroParametro(parametros.vencidos) === "1";
   const pagina = Number(primeiroParametro(parametros.pagina)) || 1;
-  const dados = await listarUnificados({ dominio, estado: estado || undefined, origem: origem || undefined, q, mes, de, ate, papel: papel || undefined, vencidos, pagina });
+  const tamanhoSolicitado = Number(primeiroParametro(parametros.porPagina));
+  const porPagina = [25, 50, 100].includes(tamanhoSolicitado) ? tamanhoSolicitado : 25;
+  const filtros = { estado: estado || undefined, origem: origem || undefined, q, mes, de, ate, papel: papel || undefined, vencidos, pagina, porPagina };
+  const dados = dominio === "PAGAR" || dominio === "RECEBER"
+    ? await listarTitulosFinanceiros({ ...filtros, dominio })
+    : await listarUnificados({ ...filtros, dominio });
   const financeiro = ["RECEBER", "PAGAR"].includes(dominio ?? "");
   const contexto = financeiro ? contextoFinanceiro(base, parametros) : null;
   const chaveSelecionada = primeiroParametro(parametros.registro);
@@ -107,6 +112,7 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
   const hrefLista = (opcoes: { pagina?: number; estado?: string }) => {
     const p = new URLSearchParams();
     for (const [nome, valor] of Object.entries({ dominio: dominioFixo ? "" : dominio, estado: opcoes.estado ?? estado, origem, q, mes, de, ate, papel, vencidos: vencidos ? "1" : "" })) if (valor) p.set(nome, valor);
+    if (porPagina !== 25) p.set("porPagina", String(porPagina));
     if (opcoes.pagina) p.set("pagina", String(opcoes.pagina));
     return `${base}?${p}`;
   };
@@ -136,10 +142,16 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
     <div id="lista-lancamentos" className="scroll-mt-20" />
     <Card className="overflow-hidden">
       <nav aria-label="Atalhos de situação da consolidação" className="flex flex-wrap gap-2 border-b border-contorno p-4">{[["", "Todos visíveis"], ["ATIVO", "Disponíveis"], ["PENDENTE", "Possíveis duplicatas"], ["REVISAR", "Decisões a revisar"], ["QUARENTENA", "Inconsistências"]].map(([valor, rotulo]) => <Link prefetch={false} key={valor} href={hrefLista({ estado: valor })} aria-current={estado === valor ? "page" : undefined} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${estado === valor ? "border-oliva bg-oliva/10 text-oliva-escura" : "border-contorno text-tinta-suave hover:bg-slate-50"}`}>{rotulo}</Link>)}</nav>
-      <FiltrosOperacaoUnificada base={base} dominio={dominio ?? ""} dominioFixo={Boolean(dominioFixo)} financeiro={financeiro} movimento={movimento} baixa={baixa} q={q} origem={origem} estado={estado} mes={mes} de={de} ate={ate} papel={papel} vencidos={vencidos} />
+      <FiltrosOperacaoUnificada base={base} dominio={dominio ?? ""} dominioFixo={Boolean(dominioFixo)} financeiro={financeiro} movimento={movimento} baixa={baixa} q={q} origem={origem} estado={estado} mes={mes} de={de} ate={ate} papel={papel} vencidos={vencidos} porPagina={porPagina} />
       {financeiro || movimento || baixa ? <p className="border-b border-contorno px-4 py-2 text-[10px] leading-relaxed text-tinta-suave">{financeiro ? "Mês e intervalo usam a competência do título; no intervalo, ela corresponde ao primeiro dia do mês. Sem competência, usam o vencimento e, na falta dele, a data do registro." : "Mês e intervalo usam a data do movimento ou da baixa. Quando ausente, usam o vencimento e depois a competência, considerada no primeiro dia do mês."}</p> : null}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-contorno bg-slate-50/60 px-4 py-3 text-xs text-tinta-suave"><span>{dados.total} registro(s) · página {dados.pagina} de {dados.paginas || 1}</span><span>Possíveis duplicidades e inconsistências ficam fora dos totais.</span></div>
-      <TabelaOperacaoUnificada itens={itensTabela} financeiro={financeiro} exibirDominio={!dominioFixo} exibirValor={movimento || baixa} contextual={Boolean(contexto)} />
+      <TabelaOperacaoUnificada
+        key={contexto?.retorno ?? hrefLista({ pagina: dados.pagina })}
+        itens={itensTabela} financeiro={financeiro} exibirDominio={!dominioFixo}
+        exibirValor={movimento || baixa} contextual={Boolean(contexto)}
+        exclusaoLote={permiteExcluir && contexto && (dominio === "RECEBER" || dominio === "PAGAR")
+          ? { dominio, contexto: contexto.retorno } : undefined}
+      />
       <div className="flex items-center justify-between gap-3 border-t border-contorno p-4"><span className="text-xs text-tinta-suave">A origem e as decisões ficam registradas no histórico.</span><div className="flex gap-2">{dados.pagina > 1 ? <Link prefetch={false} className={btnSecundario} href={hrefPagina(dados.pagina - 1)}>Anterior</Link> : null}{dados.pagina < dados.paginas ? <Link prefetch={false} className={btnSecundario} href={hrefPagina(dados.pagina + 1)}>Próxima</Link> : null}</div></div>
     </Card>
     <details className="mt-5 rounded-xl border border-contorno bg-carta p-4">

@@ -46,6 +46,7 @@ async function processarGovernanca(form: FormData, acesso: Awaited<ReturnType<ty
     if (!(erro instanceof ErroGovernanca)) throw erro;
     resultado = { erro: erro.message };
   }
-  revalidatePath("/", "layout");
+  // Erros de validação não modificam dados nem precisam recalcular todas as visões.
+  if (resultado.ok) revalidatePath("/", "layout");
   return resultado;
 }

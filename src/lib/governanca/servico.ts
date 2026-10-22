@@ -42,7 +42,9 @@ async function entidade(tx: Tx, tipo: TipoGovernanca, id: string): Promise<{ id:
       if (t) r = { id, nome: `${t.contrato.locatario?.nome ?? "Recebimento"} · ${t.contrato.unidade.identificacao} · ${t.competencia}`, referencia: `Brisa · competência ${t.competencia} · lançamento ${t.mesLancamento}`, valor: t.valor + t.iptu + t.cond, dadosHash: hash(t) };
     } else if (origem === "WIDESYS") {
       const t = await tx.tituloFinanceiroLegado.findUnique({ where: { id: identificador } });
-      if (t && t.natureza === dominio) {
+      // A lista mantém naturezas inconsistentes em RECEBER para conferência.
+      // A mesma identidade precisa continuar acessível para restaurar na lixeira.
+      if (t && t.origem === "WIDESYS" && (dominio === "PAGAR" ? t.natureza === "PAGAR" : t.natureza !== "PAGAR")) {
         const pessoa = t.pessoaLegadoId ? await tx.pessoa.findUnique({ where: { origem_legadoId: { origem: t.origem, legadoId: t.pessoaLegadoId } }, select: { nome: true } }) : null;
         r = { id, nome: `${pessoa?.nome ?? "Título Widesys"} · ${t.legadoId} · ${dominio === "PAGAR" ? "a pagar" : "a receber"}`, referencia: ["Widesys", t.contaBancariaRotulo, t.planoContaRotulo, t.vencimento ? `vencimento ${t.vencimento}` : t.competencia, t.numeroDocumento ? `documento ${t.numeroDocumento}` : null].filter(Boolean).join(" · "), valor: t.valorDevido ?? t.valorOriginal, dadosHash: hash(t) };
       }

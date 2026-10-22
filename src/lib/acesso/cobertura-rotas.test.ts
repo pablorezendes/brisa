@@ -62,6 +62,7 @@ const PAGINAS = [
   "unificacao/[chave]/page.tsx"
 ];
 const ACTIONS = [
+  "cadastros/governanca/lote-actions.ts",
   "integracoes/sicoob/actions.ts",
   "cadastros/actions.ts",
   "caixa/actions.ts",
@@ -99,6 +100,7 @@ function validarImportacao(ast: ts.SourceFile, guarda: string) {
     && n.importClause.namedBindings.elements.some(e => e.name.text === guarda));
 }
 function permissaoEsperada(arquivo: string, nome: string): string {
+  if (arquivo === "cadastros/governanca/lote-actions.ts") return "governanca.editar";
   if (arquivo === "integracoes/sicoob/actions.ts") return "integracoes.gerenciar";
   if (arquivo === "caixa/actions.ts" && nome === "excluirLancamento") return "governanca.editar";
   if (arquivo === "temporada/actions.ts" && nome.startsWith("excluir")) return "governanca.editar";

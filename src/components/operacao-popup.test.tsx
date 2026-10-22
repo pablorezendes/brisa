@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/autorizacao", () => ({ perfilAtual: mocks.perfil }));
 vi.mock("@/lib/acesso/servidor", () => ({ acessoAtual: mocks.acesso }));
-vi.mock("@/lib/consultas/unificacao", () => ({ listarUnificados: mocks.listar }));
+vi.mock("@/lib/consultas/unificacao", () => ({ listarUnificados: mocks.listar, listarTitulosFinanceiros: mocks.listar }));
 vi.mock("@/app/(app)/unificacao/actions", () => ({ sincronizarUnificacao: vi.fn(), sincronizarUnificacaoNaTela: vi.fn() }));
 vi.mock("@/components/acao-autorizada", () => ({ AcaoAutorizada: ({ children }: { children: ReactNode }) => children }));
 vi.mock("@/components/botao-unificacao", () => ({ BotaoUnificacao: ({ children }: { children: ReactNode }) => <button>{children}</button> }));
@@ -244,7 +244,9 @@ describe("popup financeiro integrado à lista SSR", () => {
       expect(alvos).toHaveLength(1);
       conferirContexto(alvos[0], base, { registro: chave, painel: "detalhe" });
     }
-    conferirContexto(links(html, "Excluir da plataforma")[0], base, { registro: chave, painel: "excluir" });
+    expect(links(html, "Excluir da plataforma")).toHaveLength(0);
+    expect(html).toMatch(/<button[^>]*>Excluir da plataforma<\/button>/);
+    expect(html).toContain('aria-label="Selecionar todos os registros desta página"');
     conferirContexto(links(html, "Anterior")[0], base, { pagina: "2" });
     conferirContexto(links(html, "Próxima")[0], base, { pagina: "4" });
     expect(html).toContain('data-formulario-na-tela="true"');
@@ -254,6 +256,14 @@ describe("popup financeiro integrado à lista SSR", () => {
     expect(mocks.conferencia).not.toHaveBeenCalled();
     expect(mocks.exclusao).not.toHaveBeenCalled();
     expect(mocks.listar).toHaveBeenCalledWith(expect.objectContaining({ ...filtros, dominio, pagina: 3, vencidos: true }));
+  });
+
+  it.each(["25", "50", "100"])("preserva %s registros por página nos filtros e na navegação", async porPagina => {
+    const arvore = await OperacaoUnificada({ dominio: "PAGAR", titulo: "Pagar", base: "/financeiro/contas-a-pagar", parametros: { ...filtros, porPagina } });
+    const html = renderToStaticMarkup(arvore);
+    expect(mocks.listar).toHaveBeenCalledWith(expect.objectContaining({ porPagina: Number(porPagina) }));
+    expect(html).toContain(`value="${porPagina}" selected=""`);
+    if (porPagina !== "25") expect(links(html, "Próxima")[0].searchParams.get("porPagina")).toBe(porPagina);
   });
 
   it.each(cenarios)("abre conferência em $base, encaminhando comparação e retorno limpo", async ({ base, dominio }) => {

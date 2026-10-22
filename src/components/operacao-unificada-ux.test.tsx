@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({ perfil: vi.fn(), acesso: vi.fn(), listar: vi.f
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/autorizacao", () => ({ perfilAtual: mocks.perfil }));
 vi.mock("@/lib/acesso/servidor", () => ({ acessoAtual: mocks.acesso, exigirPaginaAcesso: mocks.pagina, exigirPermissaoAcesso: mocks.permissao }));
-vi.mock("@/lib/consultas/unificacao", () => ({ listarUnificados: mocks.listar, detalheUnificado: mocks.detalhe }));
+vi.mock("@/lib/consultas/unificacao", () => ({ listarUnificados: mocks.listar, listarTitulosFinanceiros: mocks.listar, detalheUnificado: mocks.detalhe }));
 vi.mock("@/app/(app)/unificacao/actions", () => ({ sincronizarUnificacao: vi.fn(), resolverUnificacao: vi.fn() }));
 vi.mock("@/components/acao-autorizada", () => ({ AcaoAutorizada: () => null, podeExibirAcao: () => false }));
 vi.mock("@/components/link-governanca", () => ({ LinkGovernanca: () => null }));

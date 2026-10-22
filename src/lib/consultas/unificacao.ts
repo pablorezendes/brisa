@@ -10,11 +10,11 @@ import { dataOperacionalUnificada, mesOperacionalUnificado } from "../unificacao
 import { correspondeOrigem, resumirOrganizacaoFinanceira } from "../unificacao/origens";
 import { DOMINIOS_UNIFICACAO, type FiltrosUnificacao, type LinhaUnificada, type ListaUnificada } from "../unificacao/tipos";
 
-const ler = cache(async () => {
+const ler = cache(async (dominio?: "RECEBER" | "PAGAR") => {
   await exigirPermissaoAcesso("cadastros.sensiveis", { global: true });
   const perfil = await perfilAtual();
   if (!["ADMINISTRADOR", "FINANCEIRO"].includes(perfil)) notFound();
-  return { ...(await operacaoNaRequisicao()), perfil };
+  return { ...(await operacaoNaRequisicao(dominio)), perfil };
 });
 
 const parametroReservado = (linha: LinhaUnificada) =>
@@ -28,7 +28,14 @@ export function hojeUnificacao(): string {
 const venceu = (linha: LinhaUnificada, hoje: string) => !linha.cancelado && (linha.aberto ?? 0) > 0 && Boolean(linha.vencimento && linha.vencimento < hoje);
 
 export async function listarUnificados(filtros: FiltrosUnificacao = {}): Promise<ListaUnificada> {
-  const { linhas, decisoes, perfil } = await ler();
+  return filtrarLista(await ler(), filtros);
+}
+
+export async function listarTitulosFinanceiros(filtros: FiltrosUnificacao & { dominio: "RECEBER" | "PAGAR" }): Promise<ListaUnificada> {
+  return filtrarLista(await ler(filtros.dominio), filtros);
+}
+
+function filtrarLista({ linhas, decisoes, perfil }: Awaited<ReturnType<typeof ler>>, filtros: FiltrosUnificacao): ListaUnificada {
   const hoje = hojeUnificacao();
   const q = normalizar(filtros.q?.slice(0,120));
   const dominio = DOMINIOS_UNIFICACAO.find(d => d === filtros.dominio);

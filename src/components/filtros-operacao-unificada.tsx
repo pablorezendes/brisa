@@ -22,9 +22,10 @@ type FiltrosOperacaoUnificadaProps = {
   ate: string;
   papel: string;
   vencidos: boolean;
+  porPagina?: number;
 };
 
-export function FiltrosOperacaoUnificada({ base, dominio, dominioFixo, financeiro, movimento, baixa, q, origem, estado, mes, de, ate, papel, vencidos }: FiltrosOperacaoUnificadaProps) {
+export function FiltrosOperacaoUnificada({ base, dominio, dominioFixo, financeiro, movimento, baixa, q, origem, estado, mes, de, ate, papel, vencidos, porPagina = 25 }: FiltrosOperacaoUnificadaProps) {
   const temFiltrosAvancados = Boolean(de || ate || vencidos || ["VINCULADO", "AUSENTE"].includes(estado));
 
   return <form action={base} method="get" className="grid gap-3 border-b border-contorno p-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -33,7 +34,10 @@ export function FiltrosOperacaoUnificada({ base, dominio, dominioFixo, financeir
     <label className="text-[11px] font-semibold text-tinta-suave">De onde veio<select name="origem" defaultValue={origem} className={`${inputBase} mt-1 w-full`}><option value="">Todas as origens</option>{Object.entries(ROTULOS_ORIGEM_DADOS).map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}</select></label>
     {financeiro || movimento || baixa ? <label className="text-[11px] font-semibold text-tinta-suave">Competência<input type="month" name="mes" defaultValue={mes} className={`${inputBase} mt-1 w-full`} /></label> : null}
     {dominio === "PESSOA" ? <label className="text-[11px] font-semibold text-tinta-suave">Papel<select name="papel" defaultValue={papel} className={`${inputBase} mt-1 w-full`}><option value="">Todos os papéis</option>{["INQUILINO", "PROPRIETARIO", "BENEFICIARIO", "FORNECEDOR", "FIADOR", "AVALISTA", "CORRETOR", "FUNCIONARIO", "COMPRADOR", "INTERESSADO"].map((p) => <option key={p} value={p}>{p.toLocaleLowerCase("pt-BR")}</option>)}</select></label> : null}
-    <div className="flex flex-wrap items-end gap-2"><button className={btnPrimario}>Aplicar filtros</button><Link prefetch={false} href={base} className={btnSecundario}>Limpar</Link></div>
+    <div className="flex flex-wrap items-end gap-2">
+      {financeiro ? <label className="text-[11px] font-semibold text-tinta-suave">Por página<select name="porPagina" defaultValue={porPagina} className={`${inputBase} mt-1 block`} aria-label="Registros por página">{[25, 50, 100].map(tamanho => <option key={tamanho} value={tamanho}>{tamanho}</option>)}</select></label> : null}
+      <button className={btnPrimario}>Aplicar filtros</button><Link prefetch={false} href={base} className={btnSecundario}>Limpar</Link>
+    </div>
     <details key={`${de}:${ate}:${vencidos}:${estado}`} open={temFiltrosAvancados} className="col-span-full rounded-lg border border-contorno bg-slate-50/50 px-3 py-2">
       <summary className="cursor-pointer text-xs font-semibold text-oliva-escura">Mais filtros{temFiltrosAvancados ? " · há filtros aplicados" : ""}</summary>
       <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

@@ -67,6 +67,45 @@ Abra https://brisa.tescod.com — o app pede o login criado no primeiro acesso.
 
 ## 4) Atualizações futuras
 
+### Exclusão em lote e desempenho das contas (22/10/2026)
+
+Em **Financeiro → Contas a pagar / Contas a receber**, administradores
+autorizados podem marcar os lançamentos e usar **Excluir selecionados**.
+A seleção vale somente para a página atual; **Por página** permite 25, 50 ou
+100 registros. Trocar página ou filtros limpa a seleção. A exclusão individual
+também abre a confirmação na própria tela, sem recarregar a lista.
+
+O popup confere apenas os registros selecionados. Após informar o motivo e
+confirmar, o lote é processado em uma única transação: se um registro mudou,
+nenhum novo item do lote é excluído e a prévia deve ser atualizada. A lixeira
+permite restaurar. A exclusão retira os títulos das listas e dos totais atuais,
+mas preserva a origem, os vínculos e a auditoria; não cancela boletos no banco,
+não estorna pagamentos e não modifica fechamentos concluídos.
+
+As listas financeiras agora consultam somente seu domínio e as dependências
+necessárias. A comparação de correspondências usa um índice por regras,
+preservando candidatos, decisões e valores. Não há cache financeiro entre
+usuários ou requisições. Testes sintéticos de 7.202 fontes obtiveram 27 consultas
+na leitura completa, 15 na lista a receber e 11 na lista a pagar; os tempos
+dependem do servidor e não representam garantia de desempenho em produção.
+
+Não há alteração de schema nesta atualização. Não execute seed, reimportação
+nem recaptura para instalá-la:
+
+```bash
+set -e
+cd /srv/stack/acamargo
+git pull --ff-only origin main
+docker compose build brisa
+docker compose up -d --no-deps brisa
+docker compose ps
+docker compose logs --tail 80 brisa
+curl --retry 12 --retry-delay 5 --retry-all-errors -fsSI https://brisa.tescod.com/login
+```
+
+Após atualizar, recarregue a página. Confira um pequeno lote conhecido antes
+de selecionar 100 itens. O código não exclui lançamentos automaticamente.
+
 ### Troca de empreendimento de imóveis com contratos (22/10/2026)
 
 Em **Cadastros → Imóveis e unidades → Editar**, agora é possível escolher
