@@ -34,6 +34,14 @@ beforeEach(() => {
 });
 
 describe("seleção simples e autorizada na governança", () => {
+  it("não deixa nota ou saída reservada aparecer na seleção nem abrir prévia por ID direto", async () => {
+    mocks.autorizar.mockResolvedValue({ perfil: "FINANCEIRO", usuarioId: "fin" });
+    mocks.fontes.mockResolvedValue([fonte("privado", { titulo: "Fornecedor genérico", restrito: true }), fonte("publico")]);
+    expect((await buscarFinanceirosGovernanca("CAIXA")).itens.map(i => i.id)).toEqual(["publico"]);
+    await expect(financeiroSelecionadoGovernanca("CAIXA", "privado")).rejects.toThrow("NOT_FOUND");
+    mocks.autorizar.mockResolvedValue({ perfil: "ADMINISTRADOR", usuarioId: "admin" });
+    expect((await financeiroSelecionadoGovernanca("CAIXA", "privado")).id).toBe("privado");
+  });
   it("libera a transação antes de derivar hashes e proveniência das planilhas", async () => {
     mocks.dados.mockImplementation(async () => {
       expect(mocks.emTransacao).toBe(true);

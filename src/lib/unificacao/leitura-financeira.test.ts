@@ -5,6 +5,7 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { analisarUnificacao, lerOperacaoUnificada } from "./servico";
 import { lerListaFinanceira } from "./leitura-financeira";
+import { fonteLancamentoCaixa } from "./fontes";
 
 vi.mock("node:fs", async importOriginal => {
   const fs = await importOriginal<typeof import("node:fs")>();
@@ -88,7 +89,96 @@ async function decisoesManuais() {
   await db.unificacaoRegistro.update({ where: { chave: "WIDESYS:PAGAR:p1" }, data: { status: "ATIVO", decisao: "MANUAL" } });
 }
 
+async function despesaSintetica(paga = false) {
+  if (paga) await db.lancamentoCaixa.create({ data: { id: "pix-nota", tipo: "SAIDA", centroCusto: "GERAL", mesReferencia: "2026-10", data: "2026-10-08", valor: 256000 } });
+  return db.despesaDocumento.create({ data: {
+    id: "nota-nativa", fornecedorNome: "Fornecedor da manutenção", numero: "NF-SINTETICA", emissao: "2026-10-07", competencia: "2026-10", total: 256000,
+    criadoPorId: "admin", atualizadoPorId: "admin", lancamentoCaixaId: paga ? "pix-nota" : null, pagamentoVia: paga ? "PIX" : null,
+    rateios: { create: [{ empreendimentoId: "emp", ordem: 0, descricao: "Serviço parcial", valor: 43000 }, { empreendimentoId: "emp", ordem: 1, descricao: "Outros serviços", valor: 213000 }] },
+  } });
+}
+
 describe("leitura financeira restrita ao domínio — paridade real com SQLite", () => {
+  it("nota com várias parcelas aparece uma única vez em pagar e conserva uma única saída", async () => {
+    await despesaSintetica(true);
+    const dados = await paridade("PAGAR");
+    expect(dados.fontes.filter(f => f.chave === "BRISA:PAGAR:nota-nativa")).toHaveLength(1);
+    expect(dados.linhas.find(f => f.chave === "BRISA:PAGAR:nota-nativa")).toMatchObject({ valor: 256000, pago: 256000, aberto: 0, contabiliza: true });
+    expect(await db.lancamentoCaixa.count({ where: { tipo: "SAIDA" } })).toBe(1);
+    expect(await db.despesaRateio.count()).toBe(2);
+    expect((await paridade("RECEBER")).fontes.some(f => f.origemId === "nota-nativa")).toBe(false);
+  });
+
+  it("rateio de título Widesys é overlay e nunca cria outra conta a pagar", async () => {
+    await despesaSintetica();
+    await db.despesaDocumento.update({ where: { id: "nota-nativa" }, data: { origemChave: "WIDESYS:PAGAR:p1" } });
+    const dados = await paridade("PAGAR");
+    expect(dados.fontes.some(f => f.chave === "BRISA:PAGAR:nota-nativa")).toBe(false);
+    expect(dados.fontes.filter(f => f.chave === "WIDESYS:PAGAR:p1")).toHaveLength(1);
+    expect(await db.lancamentoCaixa.count({ where: { tipo: "SAIDA" } })).toBe(0);
+  });
+
+  it.each(["EXCLUIDO", "VALOR_DIVERGENTE", "NATUREZA_DIVERGENTE"])("saída %s coloca a nota em conferência sem duplicar nem gerar nova cobrança", async caso => {
+    await despesaSintetica(true);
+    if (caso === "EXCLUIDO") await db.recursoGovernado.create({ data: { tipo: "CAIXA", origemId: "pix-nota", status: "EXCLUIDO", motivo: "Conferência sintética", autorId: "admin" } });
+    else await db.lancamentoCaixa.update({ where: { id: "pix-nota" }, data: caso === "VALOR_DIVERGENTE" ? { valor: 1 } : { tipo: "ENTRADA" } });
+    const dados = await paridade("PAGAR");
+    expect(dados.linhas.find(f => f.chave === "BRISA:PAGAR:nota-nativa")).toMatchObject({ qualidade: "QUARENTENA", estado: "QUARENTENA", contabiliza: false, motivos: ["PAGAMENTO_DESPESA_CONFERIR"] });
+    expect(await db.despesaDocumento.count()).toBe(1);
+    expect(await db.lancamentoCaixa.count({ where: { id: "pix-nota" } })).toBe(1);
+  });
+
+  it.each(["PENDENTE", "VINCULADO", "REVISAR", "ATIVO_DESATUALIZADO"])("saída com unificação %s não liquida a nota silenciosamente", async status => {
+    await despesaSintetica(true);
+    const caixa = await db.lancamentoCaixa.findUniqueOrThrow({ where: { id: "pix-nota" } });
+    const fonte = fonteLancamentoCaixa(caixa);
+    await db.unificacaoRegistro.create({ data: { chave: fonte.chave, dominio: "MOVIMENTO", origem: "BRISA", origemId: caixa.id,
+      status: status === "ATIVO_DESATUALIZADO" ? "ATIVO" : status, hashFonte: status === "ATIVO_DESATUALIZADO" ? "hash-antigo" : fonte.hash,
+    } });
+    const dados = await paridade("PAGAR");
+    expect(dados.linhas.find(f => f.chave === "BRISA:PAGAR:nota-nativa")).toMatchObject({ qualidade: "QUARENTENA", contabiliza: false });
+    expect(await db.lancamentoCaixa.count({ where: { id: "pix-nota" } })).toBe(1);
+  });
+
+  it("a exclusão administrativa da nota preserva sua saída original", async () => {
+    await despesaSintetica(true);
+    await db.recursoGovernado.create({ data: { tipo: "TITULO", origemId: "BRISA:PAGAR:nota-nativa", status: "EXCLUIDO", motivo: "Nota duplicada", autorId: "admin" } });
+    expect((await paridade("PAGAR")).linhas.some(f => f.chave === "BRISA:PAGAR:nota-nativa")).toBe(false);
+    expect((await lerOperacaoUnificada(db)).fontes.some(f => f.chave === "BRISA:MOVIMENTO:pix-nota")).toBe(true);
+    expect(await db.despesaDocumento.count()).toBe(1);
+    expect(await db.despesaRateio.count()).toBe(2);
+  });
+
+  it("o rateio não muda hash financeiro e não consulta parcelas na listagem de pagar", async () => {
+    await despesaSintetica(true);
+    const antes = await paridade("PAGAR");
+    await db.despesaRateio.updateMany({ where: { despesaId: "nota-nativa" }, data: { descricao: "Descrição reorganizada" } });
+    consultas = [];
+    const depois = await lerListaFinanceira(db, "PAGAR");
+    expect(depois.fontes.find(f => f.origemId === "nota-nativa")?.hash).toBe(antes.fontes.find(f => f.origemId === "nota-nativa")?.hash);
+    expect(consultas.some(sql => sql.includes('"DespesaRateio"'))).toBe(false);
+  });
+
+  it("marca nota restrita e a saída correspondente sem divulgar o total por outro módulo", async () => {
+    await despesaSintetica(true);
+    const antes = (await lerOperacaoUnificada(db)).fontes.find(f => f.chave === "BRISA:MOVIMENTO:pix-nota")!;
+    await db.despesaDocumento.update({ where: { id: "nota-nativa" }, data: { restrita: true } });
+    const fontes = (await lerOperacaoUnificada(db)).fontes;
+    expect(fontes.find(f => f.chave === "BRISA:PAGAR:nota-nativa")?.restrito).toBe(true);
+    expect(fontes.find(f => f.chave === "BRISA:MOVIMENTO:pix-nota")).toMatchObject({ restrito: true, hash: antes.hash });
+  });
+
+  it.each(["CLASSIFICACAO", "OVERLAY_STICKY"])("protege título Widesys e baixa quando comissão é marcada por %s", async tipo => {
+    if (tipo === "CLASSIFICACAO") await db.tituloFinanceiroLegado.update({ where: { id: "p1" }, data: { planoContaRotulo: "Comissão administrativa" } });
+    else {
+      await despesaSintetica();
+      await db.despesaDocumento.update({ where: { id: "nota-nativa" }, data: { origemChave: "WIDESYS:PAGAR:p1", restrita: true } });
+    }
+    const lista = await paridade("PAGAR");
+    expect(lista.fontes.find(f => f.chave === "WIDESYS:PAGAR:p1")?.restrito).toBe(true);
+    expect(lista.fontes.some(f => f.chave === "BRISA:PAGAR:nota-nativa")).toBe(false);
+    expect((await lerOperacaoUnificada(db)).fontes.find(f => f.chave === "WIDESYS:BAIXA_PAGAR:baixa")?.restrito).toBe(true);
+  });
   it.each(["RECEBER", "PAGAR"] as const)("preserva fontes, hashes, vínculos e candidatos de %s sem análise persistida", async dominio => {
     const dados = await paridade(dominio);
     if (dominio === "RECEBER") {

@@ -3,6 +3,7 @@ import type { FonteUnificacao, LinhaUnificada } from "./tipos";
 export const ROTULOS_ORIGEM_DADOS = {
   PLANILHA: "Planilhas Excel",
   WIDESYS: "Widesys",
+  MANUAL: "Cadastro manual Brisa",
   BRISA: "Brisa · origem a confirmar",
 } as const;
 export type OrigemDados = keyof typeof ROTULOS_ORIGEM_DADOS;
@@ -10,8 +11,9 @@ type RegistroOrigem = Pick<FonteUnificacao, "origem" | "proveniencia"> & { orige
 
 /** Origem de armazenamento não comprova inclusão manual. Um grupo pode ter várias fontes. */
 export function origensDoRegistro(registro: RegistroOrigem): OrigemDados[] {
-  const origens = registro.origens?.length ? registro.origens : [registro.proveniencia?.arquivo ? "PLANILHA" : registro.origem];
-  return [...new Set(origens.map((origem): OrigemDados => origem === "PLANILHA" ? "PLANILHA" : origem === "WIDESYS" ? "WIDESYS" : "BRISA"))];
+  const manualComprovado = registro.origem === "BRISA" && registro.proveniencia?.tipo === "CADASTRO_MANUAL";
+  const origens = registro.origens?.length ? registro.origens : [manualComprovado ? "MANUAL" : registro.proveniencia?.arquivo ? "PLANILHA" : registro.origem];
+  return [...new Set(origens.map((origem): OrigemDados => origem === "PLANILHA" ? "PLANILHA" : origem === "WIDESYS" ? "WIDESYS" : origem === "MANUAL" ? "MANUAL" : "BRISA"))];
 }
 
 export function correspondeOrigem(registro: RegistroOrigem, filtro?: string): boolean {

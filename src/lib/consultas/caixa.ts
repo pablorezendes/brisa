@@ -70,6 +70,7 @@ export type ConsolidacaoAnual = {
 /** Mês (YYYY-MM) com lançamentos mais recente; fallback: mês corrente (só quando a tabela está vazia). */
 export async function mesMaisRecente(): Promise<string> {
   const ultimo = await prisma.lancamentoCaixa.findFirst({
+    where: await filtroCaixaUnificado(),
     orderBy: { mesReferencia: "desc" },
     select: { mesReferencia: true },
   });
@@ -342,5 +343,5 @@ export async function categoriasPorCentro(): Promise<{ AL: string[]; CH: string[
 
 /** Busca um lançamento pelo id (para a tela de edição). */
 export async function buscarLancamento(id: string): Promise<LancamentoCaixa | null> {
-  return prisma.lancamentoCaixa.findUnique({ where: { id } });
+  return prisma.lancamentoCaixa.findFirst({ where: { AND: [{ id }, await filtroCaixaUnificado()] } });
 }

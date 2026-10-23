@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { descartarTitulo, excluirAdministrativamente, excluirRecurso, inativarConta, mesclarRecursos, restaurarRecurso } from "@/lib/governanca/servico";
 import { ErroGovernanca } from "@/lib/governanca/tipos";
 import type { ResultadoNaTela } from "@/lib/interface/resultado-na-tela";
+import { filtroCaixaDespesasRestritas } from "@/lib/despesas/sigilo-caixa";
 
 export async function executarGovernanca(form: FormData) {
   const acesso = await exigirPermissaoAcesso("governanca.editar", { global: true });
@@ -25,6 +26,7 @@ async function processarGovernanca(form: FormData, acesso: Awaited<ReturnType<ty
   const tipo = valor("tipo"); const origemId = valor("origemId");
   let resultado: ResultadoNaTela;
   try {
+    if (tipo === "CAIXA" && acesso.perfil !== "ADMINISTRADOR" && !await prisma.lancamentoCaixa.findFirst({ where: { AND: [{ id: origemId }, filtroCaixaDespesasRestritas(acesso.perfil)] }, select: { id: true } })) throw new ErroGovernanca("SEM_PERMISSAO", "Este lançamento está indisponível para sua função.");
     if (valor("confirmar") !== "sim") throw new ErroGovernanca("CONFIRMACAO", "Confirme que revisou a origem, o destino e os vínculos.");
     if (!/^[a-f0-9]{64}$/.test(valor("assinaturaPrevia"))) throw new ErroGovernanca("PREVIA_OBRIGATORIA", "Confira os vínculos antes de confirmar a operação.");
     const ator = { id: acesso.usuarioId, administrador: acesso.perfil === "ADMINISTRADOR", assinaturaPrevia: valor("assinaturaPrevia") };

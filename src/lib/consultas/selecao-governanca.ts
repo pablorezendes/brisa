@@ -18,10 +18,11 @@ export function filtrosSelecaoGovernanca(q?: string, mes?: string) {
 }
 
 async function autorizar(tipo: TipoFinanceiro) {
-  await exigirPermissaoAcesso("governanca.editar", { global: true });
+  const acesso = await exigirPermissaoAcesso("governanca.editar", { global: true });
   await exigirPermissaoAcesso("financeiro.ver", { global: true });
   await exigirPermissaoAcesso("cadastros.sensiveis", { global: true });
   if (tipo === "CAIXA") await exigirPermissaoAcesso("caixa.ver", { global: true });
+  return acesso;
 }
 
 // Cache só desta requisição. Inclui fontes excluídas para permitir a restauração
@@ -49,6 +50,7 @@ function reservado(f: FonteUnificacao) {
 }
 function origem(f: FonteUnificacao) {
   if (f.origem === "WIDESYS") return "Widesys";
+  if (f.proveniencia?.tipo === "CADASTRO_MANUAL") return "Cadastro manual Brisa";
   if (typeof f.proveniencia?.arquivo === "string") {
     const aba = typeof f.proveniencia.aba === "string" ? ` · ${f.proveniencia.aba}` : "";
     return `Excel · ${f.proveniencia.arquivo}${aba}`;
@@ -64,13 +66,13 @@ function opcao(f: FonteUnificacao, tipo: TipoFinanceiro, situacao: string): Opca
 export async function buscarFinanceirosGovernanca(tipo: TipoFinanceiro, parametros: {
   q?: string; mes?: string; mantido?: boolean; excluirId?: string; dominio?: string; excluidos?: boolean;
 } = {}) {
-  await autorizar(tipo);
+  const acesso = await autorizar(tipo);
   const filtros = filtrosSelecaoGovernanca(parametros.q, parametros.mes);
   const busca = normalizar(filtros.q);
   const { linhas, estados } = await fotografia();
   const filtradas = linhas.filter(f => {
     const id = tipo === "CAIXA" ? f.origemId : f.chave;
-    if (!compativel(f, tipo) || reservado(f) || id === parametros.excluirId) return false;
+    if (!compativel(f, tipo) || (f.restrito && acesso.perfil !== "ADMINISTRADOR") || reservado(f) || id === parametros.excluirId) return false;
     if (parametros.dominio && f.dominio !== parametros.dominio) return false;
     const inativo = (estados.get(`${tipo}:${id}`) ?? "ATIVO") !== "ATIVO";
     if (parametros.excluidos ? !inativo : inativo || f.estado === "VINCULADO" || f.estado === "AUSENTE") return false;
@@ -82,10 +84,10 @@ export async function buscarFinanceirosGovernanca(tipo: TipoFinanceiro, parametr
 }
 
 export async function financeiroSelecionadoGovernanca(tipo: TipoFinanceiro, id: string) {
-  await autorizar(tipo);
+  const acesso = await autorizar(tipo);
   if (!id || id.length > 250) notFound();
   const { fontes, estados } = await fotografia();
   const f = fontes.find(f => compativel(f, tipo) && (tipo === "CAIXA" ? f.origemId : f.chave) === id);
-  if (!f || reservado(f)) notFound();
+  if (!f || (f.restrito && acesso.perfil !== "ADMINISTRADOR") || reservado(f)) notFound();
   return { ...opcao(f, tipo, estados.get(`${tipo}:${id}`) ?? "ATIVO"), dominio: f.dominio };
 }

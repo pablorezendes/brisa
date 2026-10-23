@@ -27,6 +27,20 @@ function vinculo(f: FonteUnificacao, alvo: FonteUnificacao): DecisaoUnificacao {
 
 const mapa = (fontes: FonteUnificacao[]) => new Map(fontes.map(f => [f.chave, f]));
 
+describe("proveniência manual explícita", () => {
+  it("mantém nota manual separada da origem desconhecida e da planilha", () => {
+    const fontes = [
+      fonte("BRISA:PAGAR:manual", { dominio: "PAGAR", proveniencia: { tipo: "CADASTRO_MANUAL" } }),
+      fonte("BRISA:RECEBER:antigo"),
+      fonte("BRISA:MOVIMENTO:excel", { dominio: "MOVIMENTO", proveniencia: { arquivo: "caixa.xlsx" } }),
+    ];
+    const linhas = projetarUnificados(fontes, []);
+    expect(linhas.find(l => l.chave === fontes[0].chave)?.origens).toEqual(["MANUAL"]);
+    expect(linhas.find(l => l.chave === fontes[1].chave)?.origens).toEqual(["BRISA"]);
+    expect(linhas.find(l => l.chave === fontes[2].chave)?.origens).toEqual(["PLANILHA"]);
+  });
+});
+
 // Fotografia imutavel de decisoes anteriores, como analisarUnificacao; sem banco.
 function reanalisar(fontes: FonteUnificacao[], anteriores: DecisaoUnificacao[]): DecisaoUnificacao[] {
   const porChave = mapa(fontes);

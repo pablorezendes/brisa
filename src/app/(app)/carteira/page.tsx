@@ -2,6 +2,7 @@ import Link from "next/link";
 import { acessoAtual } from "@/lib/acesso/servidor";
 import { pode } from "@/lib/acesso/politica";
 import { consultarCarteira } from "@/lib/acesso/carteira";
+import { consultarResumoRateios } from "@/lib/consultas/rateios";
 import { prisma } from "@/lib/db";
 import { Card, PageHeader, Dinheiro, Sigilo, btnSecundario, inputBase } from "@/components/ui";
 
@@ -14,7 +15,7 @@ export default async function CarteiraPage({ searchParams }: { searchParams: Pro
   const abas = [
     ...(pode(acesso, "cadastros.ver") ? [{ id: "imoveis", nome: "Imóveis" }, { id: "empreendimentos", nome: "Empreendimentos" }, { id: "clientes", nome: "Clientes" }] : []),
     ...(pode(acesso, "contratos.ver") ? [{ id: "contratos", nome: "Contratos" }] : []),
-    ...(pode(acesso, "financeiro.ver") ? [{ id: "financeiro", nome: "Financeiro" }] : []),
+    ...(pode(acesso, "financeiro.ver") ? [{ id: "financeiro", nome: "Financeiro" }, { id: "custos", nome: "Custos rateados" }] : []),
   ];
   const aba = abas.find(a => a.id === sp.aba)?.id ?? abas[0]?.id ?? "";
   const dados = await consultarCarteira(prisma, acesso, mes);
@@ -23,7 +24,9 @@ export default async function CarteiraPage({ searchParams }: { searchParams: Pro
   const itens = (aba === "clientes" ? dados.clientes : aba === "empreendimentos" ? dados.empreendimentos : dados.imoveis).filter(corresponde);
   const contratos = dados.contratos.filter(corresponde);
   const titulos = dados.titulos.filter(corresponde);
-  const total = aba === "contratos" ? contratos.length : aba === "financeiro" ? titulos.length : itens.length;
+  const rateios = aba === "custos" ? await consultarResumoRateios(prisma, acesso, mes) : null;
+  const custos = rateios?.custos.filter(corresponde) ?? [];
+  const total = aba === "custos" ? custos.length : aba === "contratos" ? contratos.length : aba === "financeiro" ? titulos.length : itens.length;
   const paginas = Math.max(1, Math.ceil(total / 30));
   const pagina = Math.min(paginas, Math.max(1, Math.floor(Number(sp.pagina) || 1)));
   const trecho = <T,>(xs: T[]) => xs.slice((pagina - 1) * 30, pagina * 30);
@@ -41,13 +44,14 @@ export default async function CarteiraPage({ searchParams }: { searchParams: Pro
       <label className="grid min-w-0 flex-[1_1_16rem] gap-1 text-xs font-semibold">Buscar na carteira<input className={inputBase} name="q" maxLength={100} defaultValue={busca} placeholder="Nome, imóvel ou situação" /></label>
       <button className={btnSecundario} type="submit">Aplicar filtros</button>
     </form>
-    <Card className="overflow-hidden">
+    {aba === "custos" ? <Card className="mb-4 p-4"><p className="text-xs text-tinta-suave">Custo apropriado à sua carteira nesta seleção</p><p className="mt-1 text-2xl font-bold"><Sigilo><Dinheiro centavos={custos.reduce((s, c) => s + c.valor, 0)} /></Sigilo></p><p className="mt-2 text-xs leading-relaxed text-tinta-suave">Somente sua parcela das notas conferidas, por competência. Não inclui a nota integral, anexos, pagamentos globais ou custos de outras carteiras. Não some este valor aos títulos ou ao caixa.</p></Card> : null}
+    {aba === "custos" ? <Card className="overflow-hidden"><div className="border-b border-contorno p-4 text-sm font-semibold">Custos rateados · {total} resultado(s)</div>{total ? <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Custos rateados da carteira autorizada" tabIndex={0}><table className="tabela"><thead><tr><th>Empreendimento autorizado</th><th>Competência</th><th>Parcelas</th><th>Custo da sua carteira</th></tr></thead><tbody>{trecho(custos).map(c => <tr key={`${c.empreendimentoId}:${c.competencia}`}><td>{c.empreendimento}</td><td>{c.competencia}</td><td>{c.parcelas}</td><td><Sigilo><Dinheiro centavos={c.valor} /></Sigilo></td></tr>)}</tbody></table></div> : <p className="p-6 text-sm text-tinta-suave">Nenhum custo rateado conferido e autorizado nesta competência.</p>}<div className="flex items-center justify-between gap-3 border-t border-contorno p-4 text-sm">{pagina > 1 ? <Link className={btnSecundario} href={url(aba, pagina - 1)}>Anterior</Link> : <span />}<span>Página {pagina} de {paginas}</span>{pagina < paginas ? <Link className={btnSecundario} href={url(aba, pagina + 1)}>Próxima</Link> : <span />}</div></Card> : <Card className="overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-contorno p-4"><h2 className="font-semibold">{abas.find(a => a.id === aba)?.nome ?? "Acesso pendente"}</h2><span className="text-xs text-tinta-suave">{total} registro(s) autorizado(s)</span></div>
       {total === 0 ? <div className="p-8 text-sm text-tinta-suave">Nenhum registro autorizado corresponde a esta seleção. Uma lista vazia não significa ausência de dados no sistema; confirme sua abrangência com o administrador.</div> : <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Registros da carteira autorizada" tabIndex={0}><table className="tabela">
         {aba === "financeiro" ? <><thead><tr><th>Origem</th><th>Natureza</th><th>Imóvel / cliente</th><th>Vencimento</th><th>Devido</th><th>Pago</th><th>Em aberto</th></tr></thead><tbody>{trecho(titulos).map(t => <tr key={t.id}><td>{t.origem}</td><td>{t.natureza === "PAGAR" ? "A pagar" : "A receber"}</td><td>{t.imovel}<div className="text-xs text-tinta-suave">{t.cliente}</div></td><td>{t.vencimento ?? "Não informado"}</td><td><Sigilo><Dinheiro centavos={t.devido} /></Sigilo></td><td><Sigilo><Dinheiro centavos={t.pago} /></Sigilo></td><td><Sigilo><Dinheiro centavos={t.aberto} /></Sigilo></td></tr>)}</tbody></> : aba === "contratos" ? <><thead><tr><th>Imóvel</th><th>Cliente</th><th>Situação</th><th>Início</th><th>Fim</th><th>Origem</th></tr></thead><tbody>{trecho(contratos).map(c => <tr key={c.id}><td>{c.imovel}</td><td>{c.cliente}</td><td>{c.situacao}</td><td>{c.inicio ?? "—"}</td><td>{c.fim ?? "—"}</td><td>{c.origem}</td></tr>)}</tbody></> : <><thead><tr><th>Nome</th><th>{aba === "clientes" ? "Categoria" : "Empreendimento"}</th><th>Origem</th>{aba === "clientes" && pode(acesso, "cadastros.sensiveis") ? <><th>Documento</th><th>Contato</th></> : null}</tr></thead><tbody>{trecho(itens).map(i => <tr key={i.id}><td>{i.nome}</td><td>{i.grupo}</td><td>{i.origem}</td>{aba === "clientes" && pode(acesso, "cadastros.sensiveis") ? <><td>{i.documento ?? "—"}</td><td>{i.contato ?? "—"}</td></> : null}</tr>)}</tbody></>}
       </table></div>}
       <div className="flex items-center justify-between gap-3 border-t border-contorno p-4 text-sm">{pagina > 1 ? <Link className={btnSecundario} href={url(aba, pagina - 1)}>Anterior</Link> : <span />}<span>Página {pagina} de {paginas}</span>{pagina < paginas ? <Link className={btnSecundario} href={url(aba, pagina + 1)}>Próxima</Link> : <span />}</div>
-    </Card>
+    </Card>}
     {aba === "financeiro" ? <p className="mt-3 text-xs leading-relaxed text-tinta-suave">Inclui apenas títulos operacionais reconciliados, por competência. Pendências, fontes fora da carteira, receitas de administração/comissão, títulos legados sem classificação e lançamentos sem contrato autorizado não entram na consulta nem na exportação.</p> : null}
   </>;
 }

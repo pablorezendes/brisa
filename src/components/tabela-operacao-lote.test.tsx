@@ -58,6 +58,13 @@ describe("exclusão financeira na própria lista", () => {
     expect(isValidElement(segundo) && segundo.key).toBe("/pagar?pagina=2");
   });
 
+  it("permite excluir em lote a nota nativa de rateio, sem navegar para outra tela", () => {
+    const html = renderToStaticMarkup(<TabelaOperacaoUnificada {...props} itens={[{ ...linha, chave: "BRISA:PAGAR:nota-1", origens: ["BRISA"] }]} exclusaoLote={{ dominio: "PAGAR", contexto: "/pagar" }} />);
+    expect(html).not.toMatch(/<input[^>]*disabled=""/);
+    expect(html).toMatch(/<button[^>]*title="Conferir e excluir nesta tela"[^>]*>Excluir da plataforma<\/button>/);
+    expect(html).not.toContain("painel=excluir");
+  });
+
   it.each([{ financeiro: false }, { contextual: false }, { exibirDominio: true }])("não habilita lote fora da lista financeira contextual: %j", opcoes => {
     const html = renderToStaticMarkup(<TabelaOperacaoUnificada {...props} {...opcoes} exclusaoLote={{ dominio: "PAGAR", contexto: "/qualquer" }} />);
     expect(html).not.toContain("Excluir selecionados");

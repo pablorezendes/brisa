@@ -11,6 +11,14 @@ describe("origem apresentada ao usuário", () => {
     expect(origensDoRegistro({ origem: "BRISA", proveniencia: { arquivo: "caixa.xlsx" } })).toEqual(["PLANILHA"]);
     expect(origensDoRegistro({ origem: "BRISA", origens: ["PLANILHA", "WIDESYS", "PLANILHA"] })).toEqual(["PLANILHA", "WIDESYS"]);
   });
+  it("reconhece cadastro manual somente com evidência explícita, sem reclassificar carga antiga", () => {
+    const manual = { origem: "BRISA" as const, proveniencia: { tipo: "CADASTRO_MANUAL" } };
+    expect(origensDoRegistro(manual)).toEqual(["MANUAL"]);
+    expect(correspondeOrigem(manual, "MANUAL")).toBe(true);
+    expect(correspondeOrigem(manual, "BRISA")).toBe(false);
+    expect(origensDoRegistro({ origem: "BRISA", proveniencia: { desconhecida: true } })).toEqual(["BRISA"]);
+    expect(origensDoRegistro({ origem: "WIDESYS", proveniencia: { tipo: "CADASTRO_MANUAL" } })).toEqual(["WIDESYS"]);
+  });
   it("filtra por origem, inclusive nos grupos vinculados, sem ampliar por rótulo inventado", () => {
     const registro = { origem: "BRISA" as const, origens: ["PLANILHA", "WIDESYS"] };
     expect(correspondeOrigem(registro, "PLANILHA")).toBe(true);

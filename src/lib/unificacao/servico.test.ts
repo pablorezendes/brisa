@@ -93,6 +93,15 @@ describe("serviço transacional de unificação", () => {
     await expect(decidirUnificacao(prisma, { ...await entrada("VINCULAR", 0), destinoChave: fontes[1].chave, hashDestino: fontes[1].hash }, "teste")).rejects.toMatchObject({ codigo: "PRESERVAR_COMPOSICAO_NATIVA" });
   });
 
+  it("preserva nota nativa com rateio como principal ao vincular um título Widesys", async () => {
+    fontes = fontes.map(f => ({ ...f, dominio: "PAGAR", chave: `${f.origem}:PAGAR:${f.origemId}` }));
+    await analisarUnificacao(prisma, "teste");
+    await decidirUnificacao(prisma, await entrada("DISTINTO"), "teste");
+    await expect(decidirUnificacao(prisma, { ...await entrada("VINCULAR", 0), destinoChave: fontes[1].chave, hashDestino: fontes[1].hash }, "teste")).rejects.toMatchObject({ codigo: "PRESERVAR_COMPOSICAO_NATIVA" });
+    await decidirUnificacao(prisma, await entrada("VINCULAR"), "teste");
+    expect((await lerOperacaoUnificada(prisma)).linhas.find(l => l.chave === fontes[0].chave)).toMatchObject({ estado: "ATIVO", fontes: [fontes[0].chave, fontes[1].chave], valor: 100000, pago: 30000 });
+  });
+
   it("dry-run não escreve e repetir a análise é idempotente", async () => {
     await expect(analisarUnificacao(prisma, "teste", true)).resolves.toMatchObject({ modo: "DRY_RUN", criados: 2 });
     expect(await prisma.unificacaoRegistro.count()).toBe(0);

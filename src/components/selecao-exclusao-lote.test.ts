@@ -13,8 +13,8 @@ describe("seleção financeira restrita à página", () => {
     ], "RECEBER")).toEqual(["BRISA:RECEBER:a", "WIDESYS:RECEBER:b"]);
   });
 
-  it("contas a pagar só selecionam a origem suportada pelo servidor", () => {
-    expect(chavesExcluiveisNaPagina([item("BRISA:PAGAR:a", "PAGAR"), item("WIDESYS:PAGAR:b", "PAGAR")], "PAGAR")).toEqual(["WIDESYS:PAGAR:b"]);
+  it("contas a pagar selecionam notas nativas e importadas autorizadas, sem misturar domínio", () => {
+    expect(chavesExcluiveisNaPagina([item("BRISA:PAGAR:a", "PAGAR"), item("WIDESYS:PAGAR:b", "PAGAR"), item("BRISA:PAGAR:c", "PAGAR", false), item("BRISA:RECEBER:r", "PAGAR")], "PAGAR")).toEqual(["BRISA:PAGAR:a", "WIDESYS:PAGAR:b"]);
   });
 
   it("limita selecionar página a 100 e nunca acrescenta dados de outras páginas", () => {

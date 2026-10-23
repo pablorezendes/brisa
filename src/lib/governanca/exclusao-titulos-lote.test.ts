@@ -66,6 +66,14 @@ async function fatos() {
   };
 }
 
+async function notaComRateio(origemChave: string | null = null) {
+  await db.lancamentoCaixa.create({ data: { id: "pix-nota", mesReferencia: "2026-10", centroCusto: "GERAL", tipo: "SAIDA", valor: 256000, data: "2026-10-08" } });
+  await db.despesaDocumento.create({ data: { id: "nota", origemChave, fornecedorNome: "Fornecedor sintético", numero: "42-TESTE", emissao: "2026-10-07", competencia: "2026-10", total: 256000,
+    criadoPorId: ator.id, atualizadoPorId: ator.id, lancamentoCaixaId: "pix-nota", pagamentoVia: "PIX",
+    rateios: { create: [{ empreendimentoId: "emp", ordem: 0, valor: 100000, descricao: "Serviço 1" }, { empreendimentoId: "emp", ordem: 1, valor: 156000, descricao: "Serviço 2" }] },
+  } });
+}
+
 async function criarTituloComReferencias() {
   const captura = { origem: "WIDESYS", capturadoEm: new Date("2026-10-22T12:00:00Z"), snapshot: "{}", snapshotHash: "sintetico" };
   await db.pessoa.createMany({ data: [
@@ -84,6 +92,36 @@ async function criarTituloComReferencias() {
 }
 
 describe("exclusão administrativa agrupada de títulos", () => {
+  it("exclui e restaura nota nativa preservando rateios e o único PIX", async () => {
+    await notaComRateio();
+    const retrato = async () => ({ notas: await db.despesaDocumento.findMany(), rateios: await db.despesaRateio.findMany(), caixa: await db.lancamentoCaixa.findMany() });
+    const antes = await retrato();
+    const previa = await previaExclusaoTitulosLote(db, "PAGAR", ["BRISA:PAGAR:nota"], ator);
+    expect(previa.itens[0]).toMatchObject({ nome: "Fornecedor sintético · NF 42-TESTE", valor: 256000, vinculos: { pagamentos: 1, boletos: 0, baixas: 0 } });
+    await excluirTitulosLote(db, "PAGAR", previa.itens, "Nota duplicada conferida", ator);
+    expect(await retrato()).toEqual(antes);
+    const lixeira = await previaGovernanca(db, "TITULO", "BRISA:PAGAR:nota");
+    expect(lixeira).toMatchObject({ status: "EXCLUIDO", vinculos: { pagamentos: 1, rateios: 2 } });
+    await restaurarRecurso(db, "TITULO", "BRISA:PAGAR:nota", "Restaurar a nota", { ...ator, administrador: true, assinaturaPrevia: lixeira.assinatura });
+    expect(await retrato()).toEqual(antes);
+    expect((await previaGovernanca(db, "TITULO", "BRISA:PAGAR:nota")).status).toBe("ATIVO");
+  });
+
+  it("não trata o overlay de uma nota Widesys como título nativo independente", async () => {
+    await notaComRateio("WIDESYS:PAGAR:externa");
+    await expect(previaExclusaoTitulosLote(db, "PAGAR", ["BRISA:PAGAR:nota"], ator)).rejects.toMatchObject({ codigo: "NAO_ENCONTRADO" });
+    await expect(previaGovernanca(db, "TITULO", "BRISA:PAGAR:nota")).rejects.toMatchObject({ codigo: "NAO_ENCONTRADO" });
+    expect(await db.recursoGovernado.count()).toBe(0);
+  });
+
+  it("mudança no PIX ou versão da nota invalida a prévia de exclusão antes de escrever", async () => {
+    await notaComRateio();
+    const previa = await previaExclusaoTitulosLote(db, "PAGAR", ["BRISA:PAGAR:nota"], ator);
+    await db.lancamentoCaixa.update({ where: { id: "pix-nota" }, data: { valor: 200000 } });
+    await expect(excluirTitulosLote(db, "PAGAR", previa.itens, "Nota duplicada conferida", ator)).rejects.toMatchObject({ codigo: "PREVIA_DESATUALIZADA" });
+    expect(await db.recursoGovernado.count()).toBe(0);
+  });
+
   it("retira somente os IDs explícitos, preserva fatos e permite restaurar pela lixeira existente", async () => {
     const antes = await fatos();
     const itens = await confirmar();

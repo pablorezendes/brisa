@@ -14,7 +14,31 @@ const ler = cache(async (dominio?: "RECEBER" | "PAGAR") => {
   await exigirPermissaoAcesso("cadastros.sensiveis", { global: true });
   const perfil = await perfilAtual();
   if (!["ADMINISTRADOR", "FINANCEIRO"].includes(perfil)) notFound();
-  return { ...(await operacaoNaRequisicao(dominio)), perfil };
+  const operacao = await operacaoNaRequisicao(dominio);
+  if (perfilPodeVerComissoes(perfil)) return { ...operacao, perfil };
+  // Uma nota com parcela restrita não pode revelar seu total por outra tela,
+  // pelos candidatos de duplicidade ou pela fonte associada a outro título.
+  const chavesRestritas = new Set(operacao.fontes.filter(f => f.restrito).map(f => f.chave));
+  const dependentes = new Map<string, string[]>();
+  for (const linha of operacao.linhas) {
+    if (linha.restrito) chavesRestritas.add(linha.chave);
+    for (const fonte of linha.fontes) {
+      const vinculadas = dependentes.get(fonte) ?? [];
+      vinculadas.push(linha.chave); dependentes.set(fonte, vinculadas);
+    }
+  }
+  // Percorre cada vínculo uma vez: propaga inclusive cadeias e ciclos, sem
+  // depender da ordem da consulta nem refazer a lista inteira a cada nível.
+  const fila = [...chavesRestritas];
+  for (let indice = 0; indice < fila.length; indice++) {
+    for (const chave of dependentes.get(fila[indice]) ?? []) {
+      if (!chavesRestritas.has(chave)) { chavesRestritas.add(chave); fila.push(chave); }
+    }
+  }
+  return { ...operacao, perfil,
+    fontes: operacao.fontes.filter(f => !chavesRestritas.has(f.chave)),
+    linhas: operacao.linhas.filter(l => !chavesRestritas.has(l.chave)).map(l => ({ ...l, candidatos: l.candidatos.filter(c => !chavesRestritas.has(c.chave)) })),
+  };
 });
 
 const parametroReservado = (linha: LinhaUnificada) =>

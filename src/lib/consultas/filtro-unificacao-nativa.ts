@@ -3,6 +3,8 @@ import { cache } from "react";
 import { prisma } from "../db";
 import { operacaoNaRequisicao } from "./operacao-na-requisicao";
 import { idsGovernadosInativos } from "../governanca/filtros";
+import { acessoAtual } from "../acesso/servidor";
+import { filtroCaixaDespesasRestritas } from "../despesas/sigilo-caixa";
 
 /**
  * As apurações de aluguel preservam seus insumos e a fórmula de comissão.
@@ -109,6 +111,7 @@ export async function filtroRecebimentosUnificados(): Promise<Prisma.Recebimento
 }
 
 export async function filtroCaixaUnificado(): Promise<Prisma.LancamentoCaixaWhereInput> {
-  const { caixa } = await idsSuprimidos();
-  return caixa.length ? { id: { notIn: caixa } } : {};
+  const [{ caixa }, acesso] = await Promise.all([idsSuprimidos(), acessoAtual()]);
+  const governanca = caixa.length ? { id: { notIn: caixa } } : {};
+  return acesso.perfil === "ADMINISTRADOR" ? governanca : { AND: [governanca, filtroCaixaDespesasRestritas(acesso.perfil)] };
 }

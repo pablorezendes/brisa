@@ -118,7 +118,8 @@ export function projetarUnificados(fontes: FonteUnificacao[], decisoes: DecisaoU
     const avisos = listaJson<string>(d?.motivos ?? "[]");
     if (!d) avisos.push("ANALISE_NECESSARIA");
     if (fonteMudou || alvoInvalido) avisos.push("FONTE_ALTERADA_APOS_DECISAO");
-    linhas.set(f.chave, { ...f, estado, origens: [f.proveniencia ? "PLANILHA" : f.origem], fontes: [f.chave], versao: d?.versao ?? 0, candidatos, avisos, contabiliza: estado === "ATIVO" && !f.cancelado && !f.informativo, divergencias: [] });
+    const origemManual = f.origem === "BRISA" && f.proveniencia?.tipo === "CADASTRO_MANUAL";
+    linhas.set(f.chave, { ...f, estado, origens: [origemManual ? "MANUAL" : f.proveniencia ? "PLANILHA" : f.origem], fontes: [f.chave], versao: d?.versao ?? 0, candidatos, avisos, contabiliza: estado === "ATIVO" && !f.cancelado && !f.informativo, divergencias: [] });
   }
   for (const d of decisoes) {
     const f = linhas.get(d.chave); const alvo = d.destinoChave ? linhas.get(d.destinoChave) : null;
@@ -139,6 +140,7 @@ export function projetarUnificados(fontes: FonteUnificacao[], decisoes: DecisaoU
 }
 
 export const MOTIVOS_UNIFICACAO: Record<string,string> = {
+  PAGAMENTO_DESPESA_CONFERIR: "A saída vinculada à nota foi alterada ou excluída. Confira o vínculo; o sistema não cria outro pagamento nem uma nova cobrança.",
   POSSIVEL_DUPLICIDADE: "Existe um registro semelhante. Compare antes de incorporar.", POSSIVEL_DUPLICIDADE_INTERNA: "O próprio sistema contém uma possível repetição.", POSSIVEIS_CORRESPONDENCIAS: "Há registros que podem complementar esta informação.",
   CONFERIR_IMOVEL_E_INQUILINO: "Confirme o imóvel e o inquilino para identificar o contrato existente.", PERIODO_JA_EXISTE_NA_PLANILHA: "Já existem cobranças neste período nas planilhas. Identifique o contrato antes de somar.",
   SEM_CORRESPONDENCIA_ENCONTRADA: "Nenhum vínculo confirmado; conserva sua identidade de origem.", FONTE_ALTERADA_APOS_DECISAO: "Dados alterados desde a decisão. Compare novamente.", VINCULO_JA_COMPROVADO: "Vínculo cadastral já registrado no sistema.", ANALISE_NECESSARIA: "Atualize a análise para classificar o registro.",

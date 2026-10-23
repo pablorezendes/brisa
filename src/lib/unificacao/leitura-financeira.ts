@@ -6,7 +6,9 @@ import type { DecisaoUnificacao } from "./tipos";
 
 /**
  * Lista financeira: preserva todas as fontes do domínio e suas dependências,
- * mas não lê caixa, baixas, parâmetros e cadastros nativos não utilizados.
+ * mas não lê caixa inteiro, baixas, parâmetros e cadastros nativos não utilizados.
+ * Em PAGAR, lê somente a saída vinculada a cada nota nativa para conferir o
+ * pagamento único, sem carregar as parcelas de rateio nem somá-las ao título.
  * Sem cache entre requisições. A fotografia permanece transacional; a CPU
  * de derivação/reconciliação roda após liberar a conexão de leitura.
  * Detalhes, workers, reanálise e relatórios gerais continuam na leitura completa.

@@ -8,6 +8,8 @@ export const PERMISSOES_ACESSO = {
   "contratos.ver": "Consultar contratos",
   "contratos.editar": "Criar, editar e encerrar contratos",
   "financeiro.ver": "Consultar financeiro e cobranças",
+  "despesas.ver": "Consultar notas de despesas e rateios completos",
+  "despesas.editar": "Cadastrar despesas e conferir rateios manuais",
   "recebimentos.editar": "Registrar e ajustar recebimentos",
   "caixa.ver": "Consultar caixa global",
   "caixa.editar": "Alterar movimentações de caixa",
@@ -49,7 +51,7 @@ export type PoliticaAcesso = { usuarioId: string; perfil: string; ativo: boolean
 const leitura: PermissaoAcesso[] = ["carteira.ver", "cadastros.ver", "contratos.ver", "financeiro.ver", "relatorios.ver"];
 const BASE: Record<string, PermissaoAcesso[]> = {
   SOCIO: [...leitura, "painel.ver"], CONTABILIDADE: [...leitura, "relatorios.exportar"],
-  FINANCEIRO: [...leitura, "painel.ver", "boletos.ver", "contas.ver", "caixa.ver", "temporada.ver"],
+  FINANCEIRO: [...leitura, "painel.ver", "boletos.ver", "contas.ver", "caixa.ver", "temporada.ver", "despesas.ver"],
   OPERADOR: ["carteira.ver", "cadastros.ver", "contratos.ver", "financeiro.ver", "boletos.ver"],
   CONSULTA: ["carteira.ver", "cadastros.ver", "contratos.ver"],
 };

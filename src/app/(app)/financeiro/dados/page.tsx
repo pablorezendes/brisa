@@ -101,10 +101,10 @@ export default async function PaginaConferirDados() {
         <details>
           <summary className={resumoDetalhes}>Ver a origem e a atualização dos dados</summary>
           <div className="mt-4 space-y-4 text-sm text-tinta-suave">
-            <div className="grid gap-4 md:grid-cols-3">{dados.origens.map(origem => <div key={origem.origem}>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{dados.origens.map(origem => <div key={origem.origem}>
               <h3 className="font-semibold text-tinta">{ROTULOS_ORIGEM_DADOS[origem.origem]}</h3>
               <p className="mt-1"><span className="font-semibold tabular-nums text-tinta">{numero(origem.quantidade)}</span> referências financeiras</p>
-              <p className="mt-2 text-xs leading-relaxed">{origem.origem === "PLANILHA" ? "Arquivo Excel comprovado. Confira arquivo, aba e linha quando preservada na importação. Abas de caixas distintos continuam separadas." : origem.origem === "WIDESYS" ? "Dados capturados do sistema anterior. A captura indica até quando a informação foi observada." : "Registro do Brisa sem prova suficiente do arquivo de origem. Não é considerado manual por suposição."}</p>
+              <p className="mt-2 text-xs leading-relaxed">{origem.origem === "PLANILHA" ? "Arquivo Excel comprovado. Confira arquivo, aba e linha quando preservada na importação. Abas de caixas distintos continuam separadas." : origem.origem === "WIDESYS" ? "Dados capturados do sistema anterior. A captura indica até quando a informação foi observada." : origem.origem === "MANUAL" ? "Documento cadastrado diretamente no Brisa. A nota e suas parcelas de rateio têm autoria registrada, sem serem tratadas como uma importação." : "Registro do Brisa sem prova suficiente do arquivo de origem. Não é considerado manual por suposição."}</p>
             </div>)}</div>
             <p className="text-xs">Um registro vinculado pode ter mais de uma origem. Não some essas contagens: não são lançamentos adicionais. Na lista, use o filtro “De onde veio” para conferir cada fonte.</p>
             <dl className="grid gap-4 border-t border-contorno pt-4 sm:grid-cols-3">

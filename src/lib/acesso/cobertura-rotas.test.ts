@@ -71,6 +71,8 @@ const ACTIONS = [
   "financeiro/boletos/actions.ts",
   "financeiro/conciliacao/actions.ts",
   "financeiro/contas-bancarias/actions.ts",
+  "financeiro/contas-a-pagar/rateio-actions.ts",
+  "financeiro/contas-a-pagar/rateios-consulta.ts",
   "financeiro/notas-fiscais/actions.ts",
   "recebimentos/actions.ts",
   "temporada/actions.ts",
@@ -100,6 +102,8 @@ function validarImportacao(ast: ts.SourceFile, guarda: string) {
     && n.importClause.namedBindings.elements.some(e => e.name.text === guarda));
 }
 function permissaoEsperada(arquivo: string, nome: string): string {
+  if (arquivo === "financeiro/contas-a-pagar/rateios-consulta.ts") return "despesas.ver";
+  if (arquivo === "financeiro/contas-a-pagar/rateio-actions.ts") return nome === "carregarRateioDespesa" ? "despesas.ver" : "despesas.editar";
   if (arquivo === "cadastros/governanca/lote-actions.ts") return "governanca.editar";
   if (arquivo === "integracoes/sicoob/actions.ts") return "integracoes.gerenciar";
   if (arquivo === "caixa/actions.ts" && nome === "excluirLancamento") return "governanca.editar";
@@ -159,6 +163,16 @@ describe("cobertura de autorização das superfícies operacionais", () => {
     expect(validarImportacao(ast, "exigirPermissaoAcesso")).toBe(true);
     validarGlobal(chamada, ast);
     expect(chamada.arguments[0].getText(ast)).toBe('"relatorios.exportar"');
+  });
+
+  it("anexos de despesas exigem autorização global em cada método", () => {
+    const ast = ler("financeiro/contas-a-pagar/anexos/route.ts");
+    expect(validarImportacao(ast, "exigirPermissaoAcesso")).toBe(true);
+    for (const funcao of ast.statements.filter(exportada)) {
+      const chamada = primeiraChamada(funcao)!;
+      validarGlobal(chamada, ast);
+      expect(chamada.arguments[0].getText(ast)).toBe(funcao.name?.text === "POST" ? '"despesas.editar"' : '"despesas.ver"');
+    }
   });
 });
 

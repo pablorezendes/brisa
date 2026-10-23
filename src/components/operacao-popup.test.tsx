@@ -165,6 +165,7 @@ describe("popup financeiro integrado à lista SSR", () => {
   });
 
   it("envia somente o DTO exibido e preserva as 25 linhas da paginação", async () => {
+    mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "ADMINISTRADOR", ativo: true, global: true, regras: [], permissoes: ["cadastros.sensiveis", "governanca.editar", "financeiro.ver", "unificacao.ver", "caixa.ver", "despesas.ver", "despesas.editar"] });
     const dados = lista();
     dados.itens = Array.from({ length: 25 }, (_, indice) => ({
       ...registro(), chave: `WIDESYS:PAGAR:linha_${indice}`, titulo: `Título ${indice}`,
@@ -179,7 +180,19 @@ describe("popup financeiro integrado à lista SSR", () => {
     expect(itens[24].titulo).toBe("Título 24");
     expect(itens[0].correspondencias).toBe(1);
     expect(JSON.stringify(itens)).not.toContain("SEGREDO");
-    expect(Object.keys(itens[0]).sort()).toEqual(["chave", "dominio", "titulo", "descricao", "origens", "papeis", "estado", "contabiliza", "correspondencias", "aviso", "impacto", "data", "competencia", "valor", "pago", "aberto", "natureza", "hrefDetalhe", "hrefCadastro", "exclusao"].sort());
+    expect(Object.keys(itens[0]).sort()).toEqual(["chave", "dominio", "titulo", "descricao", "origens", "papeis", "estado", "contabiliza", "correspondencias", "aviso", "impacto", "data", "competencia", "valor", "pago", "aberto", "natureza", "hrefDetalhe", "hrefCadastro", "exclusao", "rateio"].sort());
+    expect(itens[0].rateio).toEqual({ origemChave: "WIDESYS:PAGAR:linha_0" });
+  });
+
+  it("não envia ação de rateio sem permissão própria de edição", async () => {
+    mocks.perfil.mockResolvedValue("FINANCEIRO");
+    mocks.acesso.mockResolvedValue({ usuarioId: "financeiro", perfil: "FINANCEIRO", ativo: true, global: true, regras: [], permissoes: ["cadastros.sensiveis", "financeiro.ver", "despesas.ver"] });
+    const arvore = await OperacaoUnificada({ dominio: "PAGAR", titulo: "Pagar", base: "/financeiro/contas-a-pagar" });
+    expect(linhasEnviadasAoCliente(arvore)[0].rateio).toBeUndefined();
+    const html = renderToStaticMarkup(arvore);
+    expect(html).toContain("Custos por empreendimento");
+    expect(html).not.toContain("Nova despesa com rateio");
+    expect(html).not.toContain("Ratear despesa");
   });
 
   it("não envia montantes que não são exibidos em cadastros", async () => {

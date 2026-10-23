@@ -162,7 +162,7 @@ describe("carga transacional em SQLite descartável", () => {
     const tabelasVazias = Object.fromEntries([
       "locatario", "pessoa", "unidade", "imovelLegado", "contrato", "contratoLegado",
       "recebimento", "tituloFinanceiroLegado", "pagamentoRecebimento", "baixaFinanceiraLegado",
-      "movimentoFinanceiroLegado", "catalogoLegadoRegistro",
+      "movimentoFinanceiroLegado", "catalogoLegadoRegistro", "despesaDocumento",
     ].map(nome => [nome, { findMany: async () => [] }]));
     const banco = { ...tabelasVazias, lancamentoCaixa: db.lancamentoCaixa, importacaoPlanilhaLinha: db.importacaoPlanilhaLinha } as unknown as BancoUnificacao;
     const foto = await carregarDadosFontesUnificacao(banco);

@@ -8,6 +8,7 @@ import { ErroGovernanca, ROTULOS_GOVERNANCA, TIPOS_GOVERNANCA, type TipoGovernan
 import { buscarFinanceirosGovernanca, financeiroSelecionadoGovernanca, filtrosSelecaoGovernanca, type OpcaoFinanceiraGovernanca } from "@/lib/consultas/selecao-governanca";
 import { executarGovernanca } from "./actions";
 import { TelaExclusao, TelaLixeira } from "./exclusao";
+import { filtroCaixaDespesasRestritas } from "@/lib/despesas/sigilo-caixa";
 
 export const metadata = { title: "Revisar e resolver — Brisa" };
 type Opcoes = { id: string; nome: string }[];
@@ -35,6 +36,9 @@ export default async function PaginaGovernanca({ searchParams }: { searchParams:
   if (sp.modo === "lixeira") return <TelaLixeira pagina={sp.pagina} />;
   if (sp.modo === "excluir" && sp.origemId) return <TelaExclusao tipo={tipo} origemId={sp.origemId} erro={sp.erro} ok={sp.ok} />;
   await exigirPermissaoAcesso(tipo === "CONTA" ? "contas.ver" : "cadastros.sensiveis", { global: true });
+  // A prévia antiga não recebe ator. Bloqueia a saída de uma nota reservada
+  // antes de consultar nome, valor, vínculos ou eventos pela URL direta.
+  if (tipo === "CAIXA" && sp.origemId && acesso.perfil !== "ADMINISTRADOR" && !await prisma.lancamentoCaixa.findFirst({ where: { AND: [{ id: sp.origemId }, filtroCaixaDespesasRestritas(acesso.perfil)] }, select: { id: true } })) notFound();
   const financeiro = tipo === "CAIXA" || tipo === "TITULO";
   const filtros = filtrosSelecaoGovernanca(sp.q, sp.mes);
   const filtrosMantido = filtrosSelecaoGovernanca(sp.buscaMantido, sp.mesMantido);

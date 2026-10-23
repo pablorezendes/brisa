@@ -10,6 +10,7 @@ vi.mock("node:fs", () => ({ existsSync: vi.fn(), readFileSync: vi.fn() }));
 // Dados inteiramente artificiais: cada campo usado pela projeção recebe valor
 // para uma omissão em select não passar despercebida como null/undefined.
 const dados: DadosFontesUnificacao = {
+  despesas: [], caixasDespesasGovernados: [], caixasDespesasDecisoes: [],
   locatarios: [{ id: "loc", nome: "Inquilino sintético", cpfCnpj: "00000000000", pessoaId: "pessoa",
     email: "inquilino@example.test", telefone: "62900000000", contato: "Contato sintético",
     endereco: "Rua de teste", numeroEndereco: "10", bairro: "Bairro", cidade: "Goiânia", uf: "GO", cep: "74000000" }],
@@ -82,6 +83,7 @@ function bancoArtificial(importacoesPlanilha: DadosFontesUnificacao["caixa"][num
     pagamentoRecebimento: dados.pagamentos, baixaFinanceiraLegado: dados.baixas,
     lancamentoCaixa: dados.caixa, movimentoFinanceiroLegado: dados.movimentos,
     catalogoLegadoRegistro: dados.parametros,
+    despesaDocumento: dados.despesas,
     importacaoPlanilhaLinha: importacoesPlanilha,
   };
   const mocks = Object.fromEntries(Object.entries(tabelas).map(([nome, registros]) => [nome, {

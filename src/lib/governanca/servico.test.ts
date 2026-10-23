@@ -66,7 +66,58 @@ async function retratoFatosFinanceiros() {
   };
 }
 
+async function notasDuplicadas() {
+  await db.despesaDocumento.createMany({ data: ["original", "duplicada"].map(id => ({ id, fornecedorNome: "Fornecedor sintético", numero: `NF-${id}`, emissao: "2026-10-07", competencia: "2026-10", total: 10000, criadoPorId: ator.id, atualizadoPorId: ator.id })) });
+  await db.despesaRateio.createMany({ data: [{ despesaId: "duplicada", empreendimentoId: "e1", ordem: 0, valor: 4000, descricao: "Serviço 1" }, { despesaId: "duplicada", empreendimentoId: "e2", ordem: 1, valor: 6000, descricao: "Serviço 2" }] });
+}
+
 describe("exclusão administrativa explícita e reversível", () => {
+  it("descarta duplicata de nota nativa não paga e restaura sem apagar nota nem parcelas", async () => {
+    await notasDuplicadas();
+    const retrato = async () => ({ notas: await db.despesaDocumento.findMany({ orderBy: { id: "asc" } }), rateios: await db.despesaRateio.findMany({ orderBy: { ordem: "asc" } }), caixa: await db.lancamentoCaixa.findMany() });
+    const antes = await retrato();
+    const chave = "BRISA:PAGAR:duplicada";
+    await descartarTitulo(db, chave, "BRISA:PAGAR:original", "Duplicidade conferida", await atorConferido("TITULO", chave));
+    expect((await lerOperacaoUnificada(db)).linhas.some(l => l.chave === chave)).toBe(false);
+    expect(await retrato()).toEqual(antes);
+    await descartarTitulo(db, chave, "BRISA:PAGAR:original", "Duplicidade conferida", ator);
+    expect(await db.eventoGovernanca.count()).toBe(1);
+    await restaurarRecurso(db, "TITULO", chave, "Restaurar nota válida", await atorConferido("TITULO", chave));
+    expect((await lerOperacaoUnificada(db)).linhas.some(l => l.chave === chave)).toBe(true);
+    expect(await retrato()).toEqual(antes);
+    expect(await db.eventoGovernanca.count()).toBe(2);
+  });
+
+  it.each(["PAGO", "DIVERGENTE", "CAIXA_EXCLUIDO"])("não descarta nota nativa com vínculo de pagamento %s", async situacao => {
+    await notasDuplicadas();
+    await db.lancamentoCaixa.create({ data: { id: "pix-duplicada", tipo: "SAIDA", valor: situacao === "DIVERGENTE" ? 1 : 10000, mesReferencia: "2026-10", centroCusto: "BRISA" } });
+    await db.despesaDocumento.update({ where: { id: "duplicada" }, data: { lancamentoCaixaId: "pix-duplicada" } });
+    if (situacao === "CAIXA_EXCLUIDO") await db.recursoGovernado.create({ data: { tipo: "CAIXA", origemId: "pix-duplicada", status: "EXCLUIDO", motivo: "Revisão sintética", autorId: ator.id } });
+    await expect(descartarTitulo(db, "BRISA:PAGAR:duplicada", "BRISA:PAGAR:original", "Duplicidade conferida", ator)).rejects.toMatchObject({ codigo: "TITULO_COM_BAIXA" });
+    expect(await db.recursoGovernado.count({ where: { tipo: "TITULO" } })).toBe(0);
+    expect(await db.despesaDocumento.count()).toBe(2);
+    expect(await db.despesaRateio.count()).toBe(2);
+    expect(await db.lancamentoCaixa.count()).toBe(1);
+  });
+
+  it("retira e restaura nota de fornecedor individual sem apagar rateio nem saída de caixa", async () => {
+    await db.lancamentoCaixa.create({ data: { id: "pix-nota", mesReferencia: "2026-10", centroCusto: "GERAL", tipo: "SAIDA", valor: 12345, data: "2026-10-08" } });
+    await db.despesaDocumento.create({ data: { id: "nota", fornecedorNome: "Fornecedor sintético", numero: "NF-TESTE", emissao: "2026-10-07", competencia: "2026-10", total: 12345,
+      criadoPorId: ator.id, atualizadoPorId: ator.id, lancamentoCaixaId: "pix-nota", pagamentoVia: "PIX",
+      rateios: { create: [{ empreendimentoId: "e1", ordem: 0, valor: 12345, descricao: "Serviço sintético" }] },
+    } });
+    const chave = "BRISA:PAGAR:nota";
+    const antes = { nota: await db.despesaDocumento.findUnique({ where: { id: "nota" } }), caixa: await db.lancamentoCaixa.findUnique({ where: { id: "pix-nota" } }) };
+    await excluirAdministrativamente(db, "TITULO", chave, "Nota duplicada conferida", await atorConferido("TITULO", chave));
+    expect((await lerOperacaoUnificada(db)).linhas.some(l => l.chave === chave)).toBe(false);
+    expect((await lerOperacaoUnificada(db)).linhas.some(l => l.chave === "BRISA:MOVIMENTO:pix-nota")).toBe(true);
+    await restaurarRecurso(db, "TITULO", chave, "Nota revisada e válida", await atorConferido("TITULO", chave));
+    expect((await lerOperacaoUnificada(db)).linhas.some(l => l.chave === chave)).toBe(true);
+    expect(await db.despesaRateio.count()).toBe(1);
+    expect(await db.despesaDocumento.findUnique({ where: { id: "nota" } })).toEqual(antes.nota);
+    expect(await db.lancamentoCaixa.findUnique({ where: { id: "pix-nota" } })).toEqual(antes.caixa);
+  });
+
   it("retira título pago e conciliado de mês fechado sem modificar fatos financeiros ou vínculos", async () => {
     await operacaoBancariaSintetica();
     const antes = await retratoFatosFinanceiros();

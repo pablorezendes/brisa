@@ -40,6 +40,9 @@ async function entidade(tx: Tx, tipo: TipoGovernanca, id: string): Promise<{ id:
     if (origem === "BRISA" && dominio === "RECEBER") {
       const t = await tx.recebimento.findUnique({ where: { id: identificador }, include: { contrato: { include: { locatario: true, unidade: true } } } });
       if (t) r = { id, nome: `${t.contrato.locatario?.nome ?? "Recebimento"} · ${t.contrato.unidade.identificacao} · ${t.competencia}`, referencia: `Brisa · competência ${t.competencia} · lançamento ${t.mesLancamento}`, valor: t.valor + t.iptu + t.cond, dadosHash: hash(t) };
+    } else if (origem === "BRISA" && dominio === "PAGAR") {
+      const d = await tx.despesaDocumento.findUnique({ where: { id: identificador }, include: { lancamentoCaixa: true } });
+      if (d && !d.origemChave) r = { id, nome: `${d.fornecedorNome} · NF ${d.numero}`, referencia: `Brisa · competência ${d.competencia} · nota única${d.lancamentoCaixaId ? " · pagamento preservado no caixa" : ""}`, valor: d.total, dadosHash: hash(d) };
     } else if (origem === "WIDESYS") {
       const t = await tx.tituloFinanceiroLegado.findUnique({ where: { id: identificador } });
       // A lista mantém naturezas inconsistentes em RECEBER para conferência.
@@ -68,6 +71,12 @@ async function vinculos(tx: Tx, tipo: TipoGovernanca, id: string): Promise<Recor
     const recebimentoId = id.slice("BRISA:RECEBER:".length);
     return { pagamentos: await tx.pagamentoRecebimento.count({ where: { recebimentoId } }), boletos: await tx.boleto.count({ where: { recebimentoId } }) };
   }
+  if (tipo === "TITULO" && id.startsWith("BRISA:PAGAR:")) {
+    const documentoId = id.slice("BRISA:PAGAR:".length);
+    const d = await tx.despesaDocumento.findUnique({ where: { id: documentoId }, select: { lancamentoCaixaId: true } });
+    return { pagamentos: d?.lancamentoCaixaId ? 1 : 0, rateios: await tx.despesaRateio.count({ where: { despesaId: documentoId } }) };
+  }
+  if (tipo === "CAIXA") return { notasVinculadas: await tx.despesaDocumento.count({ where: { lancamentoCaixaId: id } }) };
   if (tipo === "CONTRATO") return { recebimentos: await tx.recebimento.count({ where: { contratoId: id } }) };
   if (tipo === "BOLETO") return { pagamentos: await tx.pagamentoRecebimento.count({ where: { boletoId: id } }), eventosBancarios: await tx.eventoBoleto.count({ where: { boletoId: id } }) };
   if (tipo === "NFSE") return { eventosFiscais: await tx.eventoFiscal.count({ where: { notaFiscalId: id } }) };
@@ -80,8 +89,8 @@ async function vinculos(tx: Tx, tipo: TipoGovernanca, id: string): Promise<Recor
     ]); return { locatarios, contratos, titulos, imoveis };
   }
   if (tipo === "LOCATARIO") return { contratos: await tx.contrato.count({ where: { locatarioId: id } }), boletos: await tx.boleto.count({ where: { locatarioId: id } }) };
-  if (tipo === "UNIDADE") return { contratos: await tx.contrato.count({ where: { unidadeId: id } }), temporada: await tx.unidadeTemporada.count({ where: { unidadeId: id } }) };
-  if (tipo === "EMPREENDIMENTO") return { imoveis: await tx.unidade.count({ where: { empreendimentoId: id } }), titulos: await tx.recebimento.count({ where: { empreendimentoId: id } }) };
+  if (tipo === "UNIDADE") return { contratos: await tx.contrato.count({ where: { unidadeId: id } }), temporada: await tx.unidadeTemporada.count({ where: { unidadeId: id } }), rateios: await tx.despesaRateio.count({ where: { unidadeId: id } }) };
+  if (tipo === "EMPREENDIMENTO") return { imoveis: await tx.unidade.count({ where: { empreendimentoId: id } }), titulos: await tx.recebimento.count({ where: { empreendimentoId: id } }), rateios: await tx.despesaRateio.count({ where: { empreendimentoId: id } }) };
   if (tipo === "IMOVEL_LEGADO") {
     const i = await tx.imovelLegado.findUniqueOrThrow({ where: { id } });
     return { contratos: await tx.contratoLegado.count({ where: { origem: i.origem, imovelLegadoId: i.legadoId } }), proprietarios: await tx.imovelProprietarioLegado.count({ where: { imovelId: id } }) };
@@ -204,12 +213,14 @@ export async function mesclarRecursos(db: PrismaClient, tipo: string, origemId: 
       add("boleto", "locatarioId", await tx.boleto.findMany({ where: { locatarioId: origemId }, select: { id: true } }));
     }
     if (tipo === "UNIDADE") {
+      if (await tx.despesaRateio.count({ where: { unidadeId: origemId } })) throw new ErroGovernanca("RATEIO_VINCULADO", "Este imóvel está em um rateio de despesa. Ajuste os rateios para o cadastro de destino antes de mesclar.");
       const a = await tx.unidade.findUniqueOrThrow({ where: { id: origemId } }); const b = await tx.unidade.findUniqueOrThrow({ where: { id: destinoId } });
       if (a.empreendimentoId !== b.empreendimentoId || a.tipo !== b.tipo) throw new ErroGovernanca("EMPREENDEDIMENTO_DIVERGENTE", "Mescle apenas imóveis do mesmo empreendimento e tipo, preservando a apuração.");
       add("contrato", "unidadeId", await tx.contrato.findMany({ where: { unidadeId: origemId }, select: { id: true } }));
       add("unidadeTemporada", "unidadeId", await tx.unidadeTemporada.findMany({ where: { unidadeId: origemId }, select: { id: true } }));
     }
     if (tipo === "EMPREENDIMENTO") {
+      if (await tx.despesaRateio.count({ where: { empreendimentoId: origemId } })) throw new ErroGovernanca("RATEIO_VINCULADO", "Este empreendimento está em um rateio de despesa. Ajuste os rateios para o cadastro de destino antes de mesclar.");
       const unidades = await tx.unidade.findMany({ where: { empreendimentoId: origemId }, select: { id: true, identificacao: true } });
       if (await tx.unidade.count({ where: { empreendimentoId: destinoId, identificacao: { in: unidades.map(u => u.identificacao) } } })) throw new ErroGovernanca("IMOVEIS_CONFLITANTES", "Existem imóveis com a mesma identificação nos dois empreendimentos. Resolva-os antes da mesclagem.");
       const recebimentos = await tx.recebimento.findMany({ where: { empreendimentoId: origemId }, select: { id: true, mesLancamento: true } });
@@ -280,15 +291,22 @@ export async function descartarTitulo(db: PrismaClient, origemId: string, destin
     const linhas = projetarUnificados(fontes, await tx.unificacaoRegistro.findMany());
     const origem = linhas.find(f => f.chave === origemId); const destino = linhas.find(f => f.chave === destinoId);
     if (!origem || !destino || !["RECEBER", "PAGAR"].includes(origem.dominio) || origem.dominio !== destino.dominio || destino.estado !== "ATIVO") throw new ErroGovernanca("DESTINO_INVALIDO", "Escolha um título principal ativo da mesma natureza.");
+    if (origem.origem === "BRISA" && origem.dominio === "PAGAR") {
+      const despesa = await tx.despesaDocumento.findUnique({ where: { id: origem.origemId }, select: { origemChave: true, lancamentoCaixaId: true } });
+      if (!despesa || despesa.origemChave) throw new ErroGovernanca("DESTINO_INVALIDO", "A nota não corresponde a uma obrigação nativa. Confira o título de origem.");
+      // Mesmo se a saída estiver excluída ou divergente (pago projetado = 0),
+      // o vínculo físico de pagamento permanece e não pode ser descartado.
+      if (despesa.lancamentoCaixaId) throw new ErroGovernanca("TITULO_COM_BAIXA", "A nota possui uma saída de caixa vinculada. Mantenha-a e revise a outra cópia.");
+    }
     if (origem.qualidade !== "OK") throw new ErroGovernanca("FONTE_EM_QUARENTENA", "Resolva a inconsistência de origem antes de descartar.");
     if ((origem.pago ?? 0) > 0) throw new ErroGovernanca("TITULO_COM_BAIXA", "Este título já tem pagamento. Mantenha o título pago e revise a outra cópia.");
     if (await tx.recursoGovernado.count({ where: { tipo: "TITULO", destinoId: origemId, status: "DESCARTADO" } })) throw new ErroGovernanca("PRINCIPAL_COM_VINCULOS", "Este título é mantido por outro descarte. Desfaça o descarte anterior primeiro.");
-    if (origem.origem === "BRISA") {
+    if (origem.origem === "BRISA" && origem.dominio === "RECEBER") {
       const r = await tx.recebimento.findUniqueOrThrow({ where: { id: origem.origemId } });
       if (r.recebido !== null || await tx.pagamentoRecebimento.count({ where: { recebimentoId: r.id } })) throw new ErroGovernanca("TITULO_COM_BAIXA", "O título já possui registro de pagamento. Mantenha-o e revise a outra cópia.");
       if (r.reservaEmissaoToken || await tx.boleto.count({ where: { recebimentoId: r.id, status: { in: [...STATUS_BOLETO_ATIVOS] } } })) throw new ErroGovernanca("BOLETO_ATIVO", "O título possui emissão ou boleto ativo no banco. Não é seguro descartá-lo.");
       if (await tx.fechamentoMensal.count({ where: { mesLancamento: r.mesLancamento } })) throw new ErroGovernanca("MES_FECHADO", "O título pertence a um mês fechado.");
-    } else {
+    } else if (origem.origem === "WIDESYS") {
       const t = await tx.tituloFinanceiroLegado.findUniqueOrThrow({ where: { id: origem.origemId } });
       if (t.pagamento || t.situacaoNormalizada === "PAGO" || t.pagamentoParcial || await tx.baixaFinanceiraLegado.count({ where: { origem: t.origem, tituloEscopo: t.escopo, tituloLegadoId: t.legadoId } })) throw new ErroGovernanca("TITULO_COM_BAIXA", "Há baixa ou pagamento na origem. Mantenha este título e revise a outra cópia.");
     }

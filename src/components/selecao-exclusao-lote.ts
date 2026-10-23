@@ -6,7 +6,6 @@ type ItemSelecionavel = { chave: string; dominio: string; exclusao: unknown | nu
 export function chavesExcluiveisNaPagina(itens: ItemSelecionavel[], dominio: DominioExclusaoTitulos): string[] {
   return [...new Set(itens.filter(item => item.exclusao && item.dominio === dominio
     && item.chave.split(":")[1] === dominio && /^(BRISA|WIDESYS):(RECEBER|PAGAR):[^\s:]+$/.test(item.chave)
-    && (dominio === "RECEBER" || item.chave.startsWith("WIDESYS:"))
     && item.chave.length <= 250).map(item => item.chave))].slice(0, LIMITE_EXCLUSAO_TITULOS);
 }
 

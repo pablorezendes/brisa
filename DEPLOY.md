@@ -67,6 +67,58 @@ Abra https://brisa.tescod.com — o app pede o login criado no primeiro acesso.
 
 ## 4) Atualizações futuras
 
+### Nota única com rateio manual de despesas (23/10/2026)
+
+Em **Financeiro → Contas a pagar**, use **Nova despesa com rateio**, ou
+**Ratear despesa** na linha de um título existente. Informe os valores de cada
+empreendimento manualmente. Um imóvel é opcional e precisa pertencer ao
+empreendimento escolhido. Salve como rascunho enquanto houver saldo a distribuir;
+**Conferir rateio** exige que a soma corresponda exatamente à nota.
+
+Há uma nota e um pagamento, independentemente do número de parcelas. Para um
+PIX já importado, escolha **Vincular saída existente** e confira sua data, caixa
+e descrição. Não registre outra saída. Registrar pagamento novo é uma ação
+explícita, exige permissão de caixa e não faz transferência bancária. Títulos do
+Widesys recebem somente o rateio complementar, preservando valor, origem e
+pagamento. Se a fonte mudar, o rateio exige nova conferência.
+
+**Custos por empreendimento** mostra somente parcelas conferidas de notas
+operacionais válidas, por competência. Não some esses custos novamente à nota
+ou ao caixa. Em **Minha carteira → Custos rateados**, cada usuário vê somente
+sua parcela autorizada, sem nota integral, anexos ou valores de outras carteiras.
+Comissões continuam restritas. O rateio é gerencial e não emite documentos
+fiscais nem cria reembolsos automáticos entre CNPJs.
+
+O administrador tem acesso completo. Demais operadores precisam das permissões
+**Consultar notas de despesas e rateios completos** e **Cadastrar despesas e
+conferir rateios manuais**, com carteira global; registrar ou vincular pagamento
+exige também **Alterar movimentações de caixa**. Anexos PDF/JPEG/PNG ficam no
+banco privado, limitados a 5 MB por arquivo e dez arquivos por nota.
+
+Esta atualização **adiciona tabelas**. Faça backup consistente com o aplicativo
+parado. A inicialização sincroniza o schema sem apagar dados. Não execute seed,
+não reimporte planilhas e não use `--accept-data-loss`:
+
+```bash
+set -e
+cd /srv/stack/acamargo
+git pull --ff-only origin main
+docker compose build brisa
+docker compose stop brisa
+umask 077
+backup="/srv/backups/brisa-rateio-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$backup"
+cp -a dados "$backup/"
+docker compose up -d --no-deps brisa
+docker compose logs --tail 100 brisa
+curl --retry 12 --retry-delay 5 --retry-all-errors -fsSI https://brisa.tescod.com/login
+```
+
+Se o Git encontrar divergências ou a sincronização do schema falhar, pare e
+revise o erro; não force. O exemplo de nota informado no chat não é cadastrado
+automaticamente. A implantação preserva os dados atuais e não envia pagamentos,
+mensagens ou documentos fiscais a terceiros.
+
 ### Exclusão em lote e desempenho das contas (22/10/2026)
 
 Em **Financeiro → Contas a pagar / Contas a receber**, administradores

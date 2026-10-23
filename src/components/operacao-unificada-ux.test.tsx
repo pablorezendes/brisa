@@ -43,6 +43,12 @@ describe("origem e situação são informações diferentes", () => {
     expect(html.match(/Planilhas Excel/g)).toHaveLength(1);
     expect(html).toContain("Widesys");
   });
+  it("identifica nota cadastrada manualmente sem chamá-la de planilha ou origem desconhecida", () => {
+    const html = renderToStaticMarkup(<OrigensUnificadas origens={["MANUAL"]} />);
+    expect(html).toContain("Cadastro manual Brisa");
+    expect(html).not.toContain("origem a confirmar");
+    expect(html).not.toContain("Excel");
+  });
   it("ATIVO financeiro não declara auditoria concluída e cadastro não declara efeito financeiro", () => {
     expect(renderToStaticMarkup(<EstadoUnificado item={registro()} />)).toContain("Incluído nos totais");
     expect(renderToStaticMarkup(<EstadoUnificado item={registro({ dominio: "PESSOA" })} />)).toContain("Disponível");

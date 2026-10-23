@@ -110,12 +110,16 @@ function assinarPreferencia(notificar: () => void): () => void {
  * às trocas de rota. Um evento próprio mantém múltiplos botões sincronizados
  * na mesma página; o evento `storage` faz o mesmo entre abas.
  */
-export function BotaoSigilo() {
-  const visiveis = useSyncExternalStore(
+export function useValoresVisiveis() {
+  return useSyncExternalStore(
     assinarPreferencia,
     snapshotPreferencia,
     snapshotServidor
   );
+}
+
+export function BotaoSigilo() {
+  const visiveis = useValoresVisiveis();
 
   const alternar = () => {
     const proximo = !preferenciaAtual;

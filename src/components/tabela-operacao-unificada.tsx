@@ -9,6 +9,7 @@ import type { OrigemDados } from "@/lib/unificacao/origens";
 import type { DominioExclusaoTitulos } from "@/lib/governanca/exclusao-titulos-lote-tipos";
 import { ExclusaoTitulosModal } from "@/components/exclusao-titulos-modal";
 import { alternarSelecao, chavesExcluiveisNaPagina, selecaoVisivel } from "@/components/selecao-exclusao-lote";
+import { RateioDespesaBotao } from "@/components/rateio-despesa-botao";
 
 /** DTO exclusivo da tabela. Não aceitar LinhaUnificada nem espalhar registros do DAL. */
 export type LinhaTabelaOperacao = {
@@ -32,6 +33,7 @@ export type LinhaTabelaOperacao = {
   hrefDetalhe: string;
   hrefCadastro: string | null;
   exclusao: { href: string; rotulo: string } | null;
+  rateio?: { id?: string; origemChave?: string };
 };
 
 type PropriedadesTabela = {
@@ -125,6 +127,7 @@ function conteudoTabela({ itens, financeiro, exibirDominio, exibirValor, context
           {!exibirDominio ? <td className="tabela-valores-agrupados"><dl className="tabela-valores-financeiros">{[{ rotulo: "Devido", valor: item.valor }, { rotulo: "Pago", valor: item.pago }, { rotulo: "Aberto", valor: item.aberto }].map(({ rotulo, valor }) => <div key={rotulo}><dt>{rotulo}</dt><dd><Sigilo><Dinheiro centavos={valor} /></Sigilo></dd></div>)}</dl></td> : null}
         </> : exibirValor ? <td className="text-right!"><span className="block text-[10px] text-tinta-suave">{item.natureza}</span><Sigilo><Dinheiro centavos={item.valor} /></Sigilo></td> : null}
         <td className="text-right!"><div className="flex flex-col items-end gap-2">
+          {item.rateio && item.dominio === "PAGAR" ? <RateioDespesaBotao {...item.rateio} compacto /> : null}
           <LinkRegistro {...propsLinkRegistro} href={item.hrefDetalhe} className="text-xs font-semibold text-oliva-escura hover:underline">{["PENDENTE", "REVISAR", "QUARENTENA"].includes(item.estado) ? "Revisar e resolver" : "Ver detalhes"}</LinkRegistro>
           {item.exclusao ? selecao?.permitidas.includes(item.chave) ? <button type="button" onClick={() => selecao.excluir(item.chave)} className="inline-flex min-h-8 items-center rounded-md px-2 py-1 text-xs font-semibold text-erro underline-offset-4 hover:bg-erro/5 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2" title="Conferir e excluir nesta tela">{item.exclusao.rotulo}</button> : <LinkRegistro {...propsLinkRegistro} href={item.exclusao.href} className="inline-flex min-h-8 items-center rounded-md px-2 py-1 text-xs font-semibold text-erro underline-offset-4 hover:bg-erro/5 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2" title="Revisar o impacto e confirmar a exclusão com histórico">{item.exclusao.rotulo}</LinkRegistro> : null}
           {item.hrefCadastro ? <Link prefetch={false} href={item.hrefCadastro} className="text-[11px] text-tinta-suave hover:underline">Abrir cadastro / lançamento</Link> : null}

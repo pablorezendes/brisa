@@ -14,6 +14,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { parseBRL } from "@/lib/dominio/dinheiro";
 import { recursoEstaAtivo } from "@/lib/governanca/filtros";
+import { filtroCaixaDespesasRestritas } from "@/lib/despesas/sigilo-caixa";
 
 export type EstadoFormLancamento = { erro: string | null };
 
@@ -34,8 +35,9 @@ export async function salvarLancamento(
   _prev: EstadoFormLancamento,
   formData: FormData,
 ): Promise<EstadoFormLancamento> {
-  await exigirPermissaoAcesso("caixa.editar", { global: true });
+  const acesso = await exigirPermissaoAcesso("caixa.editar", { global: true });
   const id = texto(formData, "id");
+  const sigilo = filtroCaixaDespesasRestritas(acesso.perfil);
 
   const tipo = texto(formData, "tipo") ?? "";
   if (!TIPOS.has(tipo)) return { erro: "Tipo de lançamento inválido." };
@@ -60,7 +62,7 @@ export async function salvarLancamento(
   if (tipo === "SAIDA") {
     centroCusto = texto(formData, "centro") ?? "";
     const centroPreservado = id && !CENTROS_SAIDA.has(centroCusto)
-      ? await prisma.lancamentoCaixa.findUnique({ where: { id }, select: { centroCusto: true, tipo: true } }) : null;
+      ? await prisma.lancamentoCaixa.findFirst({ where: { AND: [{ id }, sigilo] }, select: { centroCusto: true, tipo: true } }) : null;
     if (!CENTROS_SAIDA.has(centroCusto) && !(centroPreservado?.tipo === "SAIDA" && centroPreservado.centroCusto === centroCusto)) {
       return { erro: "Saída exige centro de custo (Antonio/Laura, Chácara Brisa ou Brisa)." };
     }
@@ -86,9 +88,12 @@ export async function salvarLancamento(
 
   if (id) {
     if (!await recursoEstaAtivo(prisma, "CAIXA", id)) return { erro: "Este lançamento foi excluído logicamente. Restaure-o na governança antes de editar." };
-    const existente = await prisma.lancamentoCaixa.findUnique({ where: { id } });
+    const existente = await prisma.lancamentoCaixa.findFirst({ where: { AND: [{ id }, sigilo] }, select: { id: true } });
     if (!existente) return { erro: "Lançamento não encontrado — pode ter sido excluído." };
-    await prisma.lancamentoCaixa.update({ where: { id }, data: dados });
+    // A mesma condição no UPDATE impede corrida com uma nota que acaba de
+    // tornar seu pagamento reservado, sem carregar seus dados para o cliente.
+    const resultado = await prisma.lancamentoCaixa.updateMany({ where: { AND: [{ id }, sigilo] }, data: dados });
+    if (resultado.count !== 1) return { erro: "Lançamento indisponível para alteração. Reabra a página." };
   } else {
     await prisma.lancamentoCaixa.create({ data: dados });
   }
@@ -100,8 +105,9 @@ export async function salvarLancamento(
 
 /** Abre a conferência auditada; nunca exclui diretamente a partir da lista. */
 export async function excluirLancamento(formData: FormData): Promise<void> {
-  await exigirPermissaoAcesso("governanca.editar", { global: true });
+  const acesso = await exigirPermissaoAcesso("governanca.editar", { global: true });
   const id = texto(formData, "id");
   if (!id) return;
+  if (!await prisma.lancamentoCaixa.findFirst({ where: { AND: [{ id }, filtroCaixaDespesasRestritas(acesso.perfil)] }, select: { id: true } })) return;
   redirect(`/cadastros/governanca?${new URLSearchParams({ tipo: "CAIXA", origemId: id })}`);
 }

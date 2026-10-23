@@ -323,6 +323,7 @@ model Empreendimento {
   ativo        Boolean       @default(true)
   unidades     Unidade[]
   recebimentos Recebimento[]
+  rateiosDespesa DespesaRateio[]
 }
 
 model Locatario {
@@ -782,6 +783,7 @@ model Unidade {
   empreendimento   Empreendimento     @relation(fields: [empreendimentoId], references: [id])
   contratos        Contrato[]
   unidadeTemporada UnidadeTemporada[]
+  rateiosDespesa   DespesaRateio[]
 
   @@unique([empreendimentoId, identificacao])
 }
@@ -876,6 +878,7 @@ model ContaBancaria {
   pagamentos                  PagamentoRecebimento[]
   sincronizacoes              SincronizacaoBancaria[]
   configuracaoCobrancaSicoob  ConfiguracaoCobrancaSicoob?
+  despesasPagas               DespesaDocumento[]
 
   @@unique([codigoBanco, agencia, numero])
   @@index([ativa, padrao])
@@ -1175,8 +1178,96 @@ model LancamentoCaixa {
   local         String? // só RECEB_DINHEIRO
   caixaOrigem   String? // identidade do caixa da fonte; não é centro de custo nem conta bancária inferida
   importacoesPlanilha ImportacaoPlanilhaLinha[]
+  despesaDocumento DespesaDocumento?
 
   @@index([mesReferencia, centroCusto])
+}
+
+// Nota recebida/obrigação única. O rateio é dimensão gerencial, não novos títulos
+// nem novas saídas bancárias. Um overlay Widesys conserva a fonte sem alterá-la.
+model DespesaDocumento {
+  id                    String @id @default(uuid())
+  origemChave           String? @unique
+  origemHash            String?
+  identidadeNota        String? @unique
+  fornecedorNome        String
+  fornecedorDocumento   String?
+  numero                String
+  serie                 String?
+  tomadorNome           String?
+  tomadorDocumento      String?
+  emissao               String
+  competencia           String
+  vencimento            String?
+  total                 Int
+  statusRateio          String @default("RASCUNHO")
+  restrita              Boolean @default(false) // derivada pelo servidor; comissões não saem para perfis compartilhados
+  versao                Int @default(1)
+  lancamentoCaixaId      String? @unique
+  contaBancariaId        String?
+  pagamentoVia          String?
+  pagamentoObservacao   String?
+  criadoPorId           String
+  atualizadoPorId       String
+  criadoEm              DateTime @default(now())
+  atualizadoEm          DateTime @updatedAt
+  lancamentoCaixa        LancamentoCaixa? @relation(fields: [lancamentoCaixaId], references: [id], onDelete: Restrict)
+  contaBancaria          ContaBancaria? @relation(fields: [contaBancariaId], references: [id], onDelete: Restrict)
+  rateios               DespesaRateio[]
+  eventos               DespesaEvento[]
+  anexos                DespesaAnexo[]
+
+  @@index([competencia, statusRateio])
+  @@index([atualizadoEm])
+}
+
+model DespesaRateio {
+  id                  String @id @default(uuid())
+  despesaId           String
+  ordem               Int
+  empreendimentoId    String
+  unidadeId           String?
+  descricao           String
+  categoria           String?
+  valor               Int
+  despesa             DespesaDocumento @relation(fields: [despesaId], references: [id], onDelete: Restrict)
+  empreendimento      Empreendimento @relation(fields: [empreendimentoId], references: [id], onDelete: Restrict)
+  unidade             Unidade? @relation(fields: [unidadeId], references: [id], onDelete: Restrict)
+
+  @@unique([despesaId, ordem])
+  @@index([empreendimentoId, despesaId])
+  @@index([unidadeId])
+}
+
+model DespesaEvento {
+  id          String @id @default(uuid())
+  despesaId   String
+  requestId   String @unique
+  requestHash String
+  autorId     String
+  versao      Int
+  antes       String?
+  depois      String
+  criadoEm    DateTime @default(now())
+  despesa     DespesaDocumento @relation(fields: [despesaId], references: [id], onDelete: Restrict)
+
+  @@index([despesaId, criadoEm])
+}
+
+model DespesaAnexo {
+  id            String @id @default(uuid())
+  despesaId     String
+  nomeOriginal  String
+  mimeType      String
+  tamanho       Int
+  hash          String
+  conteudo      Bytes
+  criadoEm      DateTime @default(now())
+  criadoPorId   String
+  despesa       DespesaDocumento @relation(fields: [despesaId], references: [id], onDelete: Restrict)
+
+  @@unique([despesaId, hash])
+  @@index([despesaId])
 }
 
 // Cargas incrementais: a origem é imutável e nunca substitui dataset.json/seed.

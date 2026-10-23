@@ -17,6 +17,7 @@ export type FonteUnificacao = {
   competencia?: string | null; data?: string | null; vencimento?: string | null;
   valor?: number | null; pago?: number | null; aberto?: number | null; natureza?: string | null;
   cancelado?: boolean; informativo?: boolean; papeis?: string[];
+  restrito?: boolean;
   proveniencia?: Record<string, unknown>;
 };
 export type CandidatoUnificacao = { chave: string; motivos: string[] };

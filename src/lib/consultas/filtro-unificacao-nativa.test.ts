@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DecisaoUnificacao, LinhaUnificada } from "../unificacao/tipos";
 
-const mocks = vi.hoisted(() => ({ candidato: vi.fn(), fechamentos: vi.fn(), operacao: vi.fn(), governados: vi.fn() }));
+const mocks = vi.hoisted(() => ({ candidato: vi.fn(), fechamentos: vi.fn(), operacao: vi.fn(), governados: vi.fn(), acesso: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("../db", () => ({ prisma: {
   unificacaoRegistro: { findFirst: mocks.candidato },
@@ -9,6 +9,7 @@ vi.mock("../db", () => ({ prisma: {
   recursoGovernado: { findMany: mocks.governados },
 } }));
 vi.mock("../unificacao/servico", () => ({ lerOperacaoUnificada: mocks.operacao }));
+vi.mock("../acesso/servidor", () => ({ acessoAtual: mocks.acesso }));
 
 import { filtroCaixaUnificado, filtroRecebimentosUnificados } from "./filtro-unificacao-nativa";
 
@@ -41,9 +42,16 @@ beforeEach(() => {
   mocks.fechamentos.mockResolvedValue([]);
   mocks.governados.mockResolvedValue([]);
   mocks.operacao.mockResolvedValue({ linhas: [], decisoes: [] });
+  mocks.acesso.mockResolvedValue({ perfil: "ADMINISTRADOR" });
 });
 
 describe("filtros das apurações nativas reconciliadas", () => {
+  it("retira pagamentos de notas restritas dos totais e listas para não administradores", async () => {
+    mocks.acesso.mockResolvedValue({ perfil: "FINANCEIRO" });
+    expect(await filtroCaixaUnificado()).toEqual({ AND: [{}, { OR: [{ despesaDocumento: { is: null } }, { despesaDocumento: { is: { restrita: false } } }] }] });
+    mocks.acesso.mockResolvedValue({ perfil: "ADMINISTRADOR" });
+    expect(await filtroCaixaUnificado()).toEqual({});
+  });
   it("excluir → fechar → restaurar volta à operação sem reescrever o fechamento", async () => {
     let excluido = true;
     const fechamento = { mesLancamento: "2026-06", unificacaoExcluidos: '["restaurado", "copia-historica"]', fechadoEm: new Date("2026-07-02T12:00:00Z") };

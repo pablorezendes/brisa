@@ -23,7 +23,7 @@ function validarSelecao(dominio: string, chaves: unknown): Identidade[] {
   const vistos = new Set<string>();
   return chaves.map(chave => {
     const partes = typeof chave === "string" && chave.length <= 250 ? /^(BRISA|WIDESYS):(RECEBER|PAGAR):([^\s:]+)$/.exec(chave) : null;
-    if (!partes || partes[2] !== dominio || (partes[1] === "BRISA" && dominio !== "RECEBER")) {
+    if (!partes || partes[2] !== dominio) {
       throw new ErroGovernanca("IDENTIDADE_INVALIDA", "A seleção contém um registro inválido ou de outra lista. Atualize a seleção.");
     }
     if (vistos.has(chave)) throw new ErroGovernanca("SELECAO_REPETIDA", "Há registros repetidos na seleção. Selecione cada registro uma só vez.");
@@ -56,9 +56,10 @@ function agrupar<T>(itens: T[], chave: (item: T) => string) {
 
 /** Leituras agrupadas somente dos IDs escolhidos: nunca carrega/reconcilia a operação inteira. */
 async function carregarPrevia(tx: Tx, selecao: Identidade[]) {
-  const brisaIds = selecao.filter(i => i.origem === "BRISA").map(i => i.id);
+  const brisaIds = selecao.filter(i => i.origem === "BRISA" && i.dominio === "RECEBER").map(i => i.id);
+  const despesasIds = selecao.filter(i => i.origem === "BRISA" && i.dominio === "PAGAR").map(i => i.id);
   const legadoIds = selecao.filter(i => i.origem === "WIDESYS").map(i => i.id);
-  const [estados, recebimentos, titulos, pagamentos, boletos] = await Promise.all([
+  const [estados, recebimentos, titulos, pagamentos, boletos, despesas] = await Promise.all([
     tx.recursoGovernado.findMany({ where: { tipo: "TITULO", origemId: { in: selecao.map(i => i.chave) } } }),
     brisaIds.length ? tx.recebimento.findMany({ where: { id: { in: brisaIds } }, include: { contrato: { include: { locatario: true, unidade: true } } } }) : [],
     legadoIds.length ? tx.tituloFinanceiroLegado.findMany({ where: { id: { in: legadoIds } }, select: {
@@ -71,6 +72,8 @@ async function carregarPrevia(tx: Tx, selecao: Identidade[]) {
       select: { id: true, recebimentoId: true, valor: true, status: true, atualizadoEm: true }, orderBy: { id: "asc" } }) : [],
     brisaIds.length ? tx.boleto.findMany({ where: { recebimentoId: { in: brisaIds } },
       select: { id: true, recebimentoId: true, status: true, conciliacaoStatus: true, atualizadoEm: true }, orderBy: { id: "asc" } }) : [],
+    despesasIds.length ? tx.despesaDocumento.findMany({ where: { id: { in: despesasIds }, origemChave: null },
+      include: { lancamentoCaixa: true } }) : [],
   ]);
   const contratosWhere = titulos.filter(t => t.contratoLegadoId).map(t => ({ origem: t.origem, legadoId: t.contratoLegadoId! }));
   const contratos = contratosWhere.length ? await tx.contratoLegado.findMany({ where: { OR: contratosWhere }, select: {
@@ -96,6 +99,7 @@ async function carregarPrevia(tx: Tx, selecao: Identidade[]) {
   ]);
   const estadosPorId = new Map(estados.map(e => [e.origemId, e]));
   const recebimentosPorId = new Map(recebimentos.map(r => [r.id, r]));
+  const despesasPorId = new Map(despesas.map(d => [d.id, d]));
   const titulosPorId = new Map(titulos.map(t => [t.id, t]));
   const pessoasPorId = new Map(pessoas.map(p => [JSON.stringify([p.origem, p.legadoId]), p.nome]));
   const imoveisPorId = new Map(imoveis.map(i => [JSON.stringify([i.origem, i.legadoId]), i]));
@@ -106,7 +110,15 @@ async function carregarPrevia(tx: Tx, selecao: Identidade[]) {
     const estado = estadosPorId.get(item.chave);
     let nome: string, referencia: string, valor: number | null, dados: unknown;
     let links: { pagamentos: unknown[]; boletos: unknown[]; baixas: unknown[] };
-    if (item.origem === "BRISA") {
+    if (item.origem === "BRISA" && item.dominio === "PAGAR") {
+      const d = despesasPorId.get(item.id);
+      if (!d) throw new ErroGovernanca("NAO_ENCONTRADO", "Uma das notas selecionadas não existe mais ou pertence a um título Widesys. Atualize a lista.");
+      nome = `${d.fornecedorNome} · NF ${d.numero}`;
+      referencia = `Brisa · competência ${d.competencia} · nota única${d.lancamentoCaixaId ? " · pagamento preservado no caixa" : ""}`;
+      valor = d.total;
+      dados = d;
+      links = { pagamentos: d.lancamentoCaixa ? [d.lancamentoCaixa] : [], boletos: [], baixas: [] };
+    } else if (item.origem === "BRISA") {
       const t = recebimentosPorId.get(item.id);
       if (!t) throw new ErroGovernanca("NAO_ENCONTRADO", "Um dos registros selecionados não existe mais. Atualize a lista antes de continuar.");
       nome = `${t.contrato.locatario?.nome ?? "Recebimento"} · ${t.contrato.unidade.identificacao} · ${t.competencia}`;
