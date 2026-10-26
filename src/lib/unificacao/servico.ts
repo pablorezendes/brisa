@@ -5,6 +5,9 @@ import { carregarDadosFontesUnificacao, carregarFontesUnificacao, derivarFontesU
 import type { DecisaoUnificacao, FonteUnificacao } from "./tipos";
 import { filtrarFontesGovernadas } from "../governanca/filtros";
 import { criarIndiceCandidatos } from "./candidatos-indice";
+import { hashFonteCorresponde } from "./hashes";
+import { carteiraIrrestrita, montarPolitica, pode } from "../acesso/politica";
+import { chavesRestritasUnificacao } from "./privacidade";
 
 export class ErroUnificacao extends Error {
   constructor(public codigo: string, mensagem: string) { super(mensagem); this.name = "ErroUnificacao"; }
@@ -19,7 +22,7 @@ export async function analisarUnificacao(db: PrismaClient, usuarioId: string, dr
     const anteriores = new Map(existentes.map(d => [d.chave,d]));
     const destinos = new Map<string,string>();
     for (const f of fontes) if (f.vinculoExplicito) destinos.set(f.chave,f.vinculoExplicito);
-    for (const d of existentes) if (d.status === "VINCULADO" && d.destinoChave && porChave.get(d.chave)?.hash === d.hashFonte && porChave.get(d.destinoChave)?.hash === d.hashDestino) destinos.set(d.chave,d.destinoChave);
+    for (const d of existentes) if (d.status === "VINCULADO" && d.destinoChave && hashFonteCorresponde(porChave.get(d.chave), d.hashFonte) && hashFonteCorresponde(porChave.get(d.destinoChave), d.hashDestino)) destinos.set(d.chave,d.destinoChave);
     const indiceCandidatos = criarIndiceCandidatos(fontes, destinos);
     const novos: Prisma.UnificacaoRegistroCreateManyInput[] = [];
     const estados: Record<string,number> = {};
@@ -58,47 +61,64 @@ export async function analisarUnificacao(db: PrismaClient, usuarioId: string, dr
 
 export type ResolverUnificacaoEntrada = { chave: string; versao: number; acao: "VINCULAR" | "DISTINTO" | "REABRIR"; destinoChave?: string; hashFonte: string; hashDestino?: string; justificativa: string };
 
-export async function decidirUnificacao(db: PrismaClient, entrada: ResolverUnificacaoEntrada, usuarioId: string) {
+export async function decidirUnificacaoNaTransacao(tx: Prisma.TransactionClient, entrada: ResolverUnificacaoEntrada, usuarioId: string, fontesAtuais?: FonteUnificacao[]) {
   if (!entrada.chave || entrada.chave.length > 250 || !Number.isSafeInteger(entrada.versao) || entrada.versao < 1 || !["VINCULAR","DISTINTO","REABRIR"].includes(entrada.acao)) throw new ErroUnificacao("DADOS_INVALIDOS", "Atualize a análise antes de resolver este registro.");
   if (entrada.justificativa.trim().length < 8 || entrada.justificativa.length > 500) throw new ErroUnificacao("JUSTIFICATIVA_OBRIGATORIA", "Descreva o motivo da decisão com 8 a 500 caracteres.");
+  const registro = await tx.unificacaoRegistro.findUnique({ where: { chave: entrada.chave } });
+  if (!registro || registro.versao !== entrada.versao) throw new ErroUnificacao("DECISAO_DESATUALIZADA", "Este registro foi alterado. Reabra a comparação.");
+  const fontes = fontesAtuais ?? filtrarFontesGovernadas(await carregarFontesUnificacao(tx), await tx.recursoGovernado.findMany({ select: { tipo: true, origemId: true, status: true } }));
+  const fonte = fontes.find(f => f.chave === entrada.chave);
+  if (!fonte || !hashFonteCorresponde(fonte, entrada.hashFonte) || !hashFonteCorresponde(fonte, registro.hashFonte)) throw new ErroUnificacao("FONTE_DESATUALIZADA", "A origem mudou. Atualize a análise e compare novamente.");
+  if (fonte.qualidade !== "OK") throw new ErroUnificacao("FONTE_EM_QUARENTENA", "Resolva a inconsistência na origem e importe uma nova captura antes de incorporar este registro.");
+  const envolvidas = new Set([fonte.chave, registro.destinoChave, ...(entrada.acao === "VINCULAR" ? [entrada.destinoChave] : [])]);
+  const idsRecebimentos = fontes.filter(f => envolvidas.has(f.chave) && f.origem === "BRISA" && f.dominio === "RECEBER").map(f => f.origemId);
+  if (idsRecebimentos.length) {
+    const meses = await tx.recebimento.findMany({ where: { id: { in: idsRecebimentos } }, select: { mesLancamento: true } });
+    if (await tx.fechamentoMensal.count({ where: { mesLancamento: { in: meses.map(r => r.mesLancamento) } } })) throw new ErroUnificacao("MES_FECHADO", "Um dos recebimentos pertence a um mês fechado. Reabra o mês pelo fluxo de locações antes de alterar sua unificação.");
+  }
+  let destino: FonteUnificacao | undefined;
+  if (entrada.acao === "VINCULAR") {
+    destino = fontes.find(f => f.chave === entrada.destinoChave);
+    const decisaoAlvo = destino ? await tx.unificacaoRegistro.findUnique({ where: { chave: destino.chave } }) : null;
+    if (!destino || destino.chave === fonte.chave || destino.dominio !== fonte.dominio || destino.qualidade !== "OK" || decisaoAlvo?.status !== "ATIVO" || decisaoAlvo.destinoChave) throw new ErroUnificacao("DESTINO_INVALIDO", "Escolha um registro principal ativo do mesmo tipo.");
+    if (!hashFonteCorresponde(destino, entrada.hashDestino) || !hashFonteCorresponde(destino, decisaoAlvo.hashFonte)) throw new ErroUnificacao("DESTINO_DESATUALIZADO", "O registro principal mudou. Reabra a comparação.");
+    // Reparentear um grupo esconderia vários vínculos e pode formar ciclos.
+    if (await tx.unificacaoRegistro.count({ where: { destinoChave: fonte.chave, status: "VINCULADO" } })) throw new ErroUnificacao("REGISTRO_PRINCIPAL_COM_VINCULOS", "Este registro já é principal de outro grupo. Reabra os vínculos antes de unir grupos.");
+    if ((fonte.dominio === "RECEBER" || fonte.dominio === "PAGAR") && Boolean(fonte.cancelado) !== Boolean(destino.cancelado)) throw new ErroUnificacao("SITUACAO_DIVERGENTE", "Um título está cancelado e o outro não. Corrija a situação antes de vinculá-los.");
+    if (fonte.dominio === "MOVIMENTO" && (fonte.natureza !== destino.natureza || Boolean(fonte.informativo) !== Boolean(destino.informativo))) throw new ErroUnificacao("NATUREZA_DIVERGENTE", "Movimentos com direções ou efeitos diferentes no caixa não podem representar o mesmo lançamento.");
+    if (fonte.dominio === "MOVIMENTO" && fonte.caixaChave && destino.caixaChave && fonte.caixaChave !== destino.caixaChave) throw new ErroUnificacao("CAIXAS_DISTINTOS", "Lançamentos de caixas distintos não podem ser fundidos. Transferências exigem identificar as duas pontas, sem apagar uma delas.");
+    if (["RECEBER", "PAGAR", "MOVIMENTO"].includes(fonte.dominio) && fonte.origem === "BRISA" && destino.origem === "WIDESYS") throw new ErroUnificacao("PRESERVAR_COMPOSICAO_NATIVA", "Mantenha o lançamento Brisa como principal para preservar a composição e a apuração. Abra a ocorrência Widesys e vincule-a ao registro Brisa.");
+    const recebimentos = [fonte, destino].filter(f => f.origem === "BRISA" && f.dominio === "RECEBER").map(f => f.origemId);
+    const contratos = [fonte, destino].filter(f => f.origem === "BRISA" && f.dominio === "CONTRATO").map(f => f.origemId);
+    if ((recebimentos.length || contratos.length) && await tx.recebimento.count({ where: { AND: [{ OR: [{ id: { in: recebimentos } }, { contratoId: { in: contratos } }] }, { OR: [{ reservaEmissaoToken: { not: null } }, { boletos: { some: { status: { in: [...STATUS_BOLETO_ATIVOS] } } } }] }] } })) throw new ErroUnificacao("EMISSAO_EM_ANDAMENTO", "Este título ou contrato possui cobrança bancária ativa ou emissão em andamento. Confira a situação no banco antes de unificar.");
+  }
+  const status = entrada.acao === "VINCULAR" ? "VINCULADO" : entrada.acao === "DISTINTO" ? "ATIVO" : "PENDENTE";
+  const mudanca = await tx.unificacaoRegistro.updateMany({ where: { chave: entrada.chave, versao: entrada.versao }, data: {
+    status, destinoChave: destino?.chave ?? null, hashFonte: fonte.hash, hashDestino: destino?.hash ?? null,
+    decisao: "MANUAL", decididoPor: usuarioId, decididoEm: new Date(), versao: { increment: 1 },
+    motivos: JSON.stringify([entrada.acao === "VINCULAR" ? "UNIAO_CONFIRMADA" : entrada.acao === "DISTINTO" ? "REGISTRO_DISTINTO_CONFIRMADO" : "REVISAO_REABERTA"]),
+  } });
+  if (mudanca.count !== 1) throw new ErroUnificacao("DECISAO_DESATUALIZADA", "Outra pessoa já resolveu este registro. Atualize a página.");
+  await tx.unificacaoDecisao.create({ data: { registroChave: registro.chave, acao: entrada.acao, estadoAnterior: registro.status, estadoNovo: status, destinoChave: destino?.chave, hashFonte: fonte.hash, hashDestino: destino?.hash, justificativa: entrada.justificativa.trim(), usuarioId } });
+  return { chave: registro.chave, status };
+}
+
+export async function decidirUnificacao(db: PrismaClient, entrada: ResolverUnificacaoEntrada, usuarioId: string) {
   return db.$transaction(async tx => {
-    const registro = await tx.unificacaoRegistro.findUnique({ where: { chave: entrada.chave } });
-    if (!registro || registro.versao !== entrada.versao) throw new ErroUnificacao("DECISAO_DESATUALIZADA", "Este registro foi alterado. Reabra a comparação.");
-    const fontes = filtrarFontesGovernadas(await carregarFontesUnificacao(tx), await tx.recursoGovernado.findMany({ select: { tipo: true, origemId: true, status: true } }));
-    const fonte = fontes.find(f => f.chave === entrada.chave);
-    if (!fonte || fonte.hash !== entrada.hashFonte || registro.hashFonte !== fonte.hash) throw new ErroUnificacao("FONTE_DESATUALIZADA", "A origem mudou. Atualize a análise e compare novamente.");
-    if (fonte.qualidade !== "OK") throw new ErroUnificacao("FONTE_EM_QUARENTENA", "Resolva a inconsistência na origem e importe uma nova captura antes de incorporar este registro.");
-    const envolvidas = new Set([fonte.chave, registro.destinoChave, ...(entrada.acao === "VINCULAR" ? [entrada.destinoChave] : [])]);
-    const idsRecebimentos = fontes.filter(f => envolvidas.has(f.chave) && f.origem === "BRISA" && f.dominio === "RECEBER").map(f => f.origemId);
-    if (idsRecebimentos.length) {
-      const meses = await tx.recebimento.findMany({ where: { id: { in: idsRecebimentos } }, select: { mesLancamento: true } });
-      if (await tx.fechamentoMensal.count({ where: { mesLancamento: { in: meses.map(r => r.mesLancamento) } } })) throw new ErroUnificacao("MES_FECHADO", "Um dos recebimentos pertence a um mês fechado. Reabra o mês pelo fluxo de locações antes de alterar sua unificação.");
-    }
-    let destino: FonteUnificacao | undefined;
-    if (entrada.acao === "VINCULAR") {
-      destino = fontes.find(f => f.chave === entrada.destinoChave);
-      const decisaoAlvo = destino ? await tx.unificacaoRegistro.findUnique({ where: { chave: destino.chave } }) : null;
-      if (!destino || destino.chave === fonte.chave || destino.dominio !== fonte.dominio || destino.qualidade !== "OK" || decisaoAlvo?.status !== "ATIVO" || decisaoAlvo.destinoChave) throw new ErroUnificacao("DESTINO_INVALIDO", "Escolha um registro principal ativo do mesmo tipo.");
-      if (destino.hash !== entrada.hashDestino || decisaoAlvo.hashFonte !== destino.hash) throw new ErroUnificacao("DESTINO_DESATUALIZADO", "O registro principal mudou. Reabra a comparação.");
-      // Reparentear um grupo esconderia vários vínculos e pode formar ciclos.
-      if (await tx.unificacaoRegistro.count({ where: { destinoChave: fonte.chave, status: "VINCULADO" } })) throw new ErroUnificacao("REGISTRO_PRINCIPAL_COM_VINCULOS", "Este registro já é principal de outro grupo. Reabra os vínculos antes de unir grupos.");
-      if ((fonte.dominio === "RECEBER" || fonte.dominio === "PAGAR") && Boolean(fonte.cancelado) !== Boolean(destino.cancelado)) throw new ErroUnificacao("SITUACAO_DIVERGENTE", "Um título está cancelado e o outro não. Corrija a situação antes de vinculá-los.");
-      if (fonte.dominio === "MOVIMENTO" && (fonte.natureza !== destino.natureza || Boolean(fonte.informativo) !== Boolean(destino.informativo))) throw new ErroUnificacao("NATUREZA_DIVERGENTE", "Movimentos com direções ou efeitos diferentes no caixa não podem representar o mesmo lançamento.");
-      if (fonte.dominio === "MOVIMENTO" && fonte.caixaChave && destino.caixaChave && fonte.caixaChave !== destino.caixaChave) throw new ErroUnificacao("CAIXAS_DISTINTOS", "Lançamentos de caixas distintos não podem ser fundidos. Transferências exigem identificar as duas pontas, sem apagar uma delas.");
-      if (["RECEBER", "PAGAR", "MOVIMENTO"].includes(fonte.dominio) && fonte.origem === "BRISA" && destino.origem === "WIDESYS") throw new ErroUnificacao("PRESERVAR_COMPOSICAO_NATIVA", "Mantenha o lançamento Brisa como principal para preservar a composição e a apuração. Abra a ocorrência Widesys e vincule-a ao registro Brisa.");
-      const recebimentos = [fonte, destino].filter(f => f.origem === "BRISA" && f.dominio === "RECEBER").map(f => f.origemId);
-      const contratos = [fonte, destino].filter(f => f.origem === "BRISA" && f.dominio === "CONTRATO").map(f => f.origemId);
-      if ((recebimentos.length || contratos.length) && await tx.recebimento.count({ where: { AND: [{ OR: [{ id: { in: recebimentos } }, { contratoId: { in: contratos } }] }, { OR: [{ reservaEmissaoToken: { not: null } }, { boletos: { some: { status: { in: [...STATUS_BOLETO_ATIVOS] } } } }] }] } })) throw new ErroUnificacao("EMISSAO_EM_ANDAMENTO", "Este título ou contrato possui cobrança bancária ativa ou emissão em andamento. Confira a situação no banco antes de unificar.");
-    }
-    const status = entrada.acao === "VINCULAR" ? "VINCULADO" : entrada.acao === "DISTINTO" ? "ATIVO" : "PENDENTE";
-    const mudanca = await tx.unificacaoRegistro.updateMany({ where: { chave: entrada.chave, versao: entrada.versao }, data: {
-      status, destinoChave: destino?.chave ?? null, hashFonte: fonte.hash, hashDestino: destino?.hash ?? null,
-      decisao: "MANUAL", decididoPor: usuarioId, decididoEm: new Date(), versao: { increment: 1 },
-      motivos: JSON.stringify([entrada.acao === "VINCULAR" ? "UNIAO_CONFIRMADA" : entrada.acao === "DISTINTO" ? "REGISTRO_DISTINTO_CONFIRMADO" : "REVISAO_REABERTA"]),
+    // O hash financeiro não é uma autorização. Revalida acesso e sigilo mesmo
+    // quando a comparação foi aberta antes de uma alteração de permissões.
+    const usuario = await tx.usuario.findUnique({ where: { id: usuarioId }, select: {
+      id: true, perfil: true, ativo: true, acessoGlobal: true, permissoesExtras: true, permissoesNegadas: true,
+      papelAcesso: { select: { ativo: true, permissoes: true } }, regrasAcesso: { select: { tipo: true, recursoId: true, efeito: true } },
     } });
-    if (mudanca.count !== 1) throw new ErroUnificacao("DECISAO_DESATUALIZADA", "Outra pessoa já resolveu este registro. Atualize a página.");
-    await tx.unificacaoDecisao.create({ data: { registroChave: registro.chave, acao: entrada.acao, estadoAnterior: registro.status, estadoNovo: status, destinoChave: destino?.chave, hashFonte: fonte.hash, hashDestino: destino?.hash, justificativa: entrada.justificativa.trim(), usuarioId } });
-    return { chave: registro.chave, status };
+    const politica = usuario ? montarPolitica(usuario) : null;
+    if (!politica || !["ADMINISTRADOR", "FINANCEIRO"].includes(politica.perfil) || !carteiraIrrestrita(politica) || !pode(politica, "unificacao.editar")) throw new ErroUnificacao("SEM_PERMISSAO", "Você não tem permissão para concluir esta conferência.");
+    const fontes = filtrarFontesGovernadas(await carregarFontesUnificacao(tx), await tx.recursoGovernado.findMany({ select: { tipo: true, origemId: true, status: true } }));
+    if (!pode(politica, "comissoes.ver")) {
+      const restritas = chavesRestritasUnificacao(fontes, await tx.unificacaoRegistro.findMany({ select: { chave: true, destinoChave: true } }));
+      if (restritas.has(entrada.chave) || (entrada.acao === "VINCULAR" && !!entrada.destinoChave && restritas.has(entrada.destinoChave))) throw new ErroUnificacao("COMISSAO_RESTRITA", "Esta conferência está disponível somente ao administrador.");
+    }
+    return decidirUnificacaoNaTransacao(tx, entrada, usuarioId, fontes);
   }, { maxWait: 15000, timeout: 60000 });
 }
 

@@ -944,6 +944,33 @@ docker compose logs --tail 100 brisa
 curl --retry 12 --retry-delay 5 --retry-all-errors -fsSI https://brisa.tescod.com/login
 ```
 
+## Conferência de despesas e honorários (outubro/2026)
+
+O popup **Organizar despesa** separa o cadastro da decisão financeira:
+
+1. **Salvar dados da despesa** guarda categoria, descrição e distribuição do custo.
+2. No mesmo popup, **Conferência de duplicidade** mostra o estado atual. Se houver
+   pendência, compare os lançamentos e informe se representam o mesmo gasto ou
+   gastos diferentes. Conclua em **Confirmar decisão e concluir**.
+3. Ao fechar, a lista e o contador de pendências são atualizados. Um registro
+   vinculado não soma novamente; um registro distinto passa a seguir sua situação
+   financeira. Nenhum pagamento é criado por esta decisão.
+
+Alterações de acesso deixam de invalidar a assinatura financeira. A
+compatibilidade considera somente o mesmo conteúdo com a antiga marca de sigilo;
+mudanças de valor, pagamento ou origem continuam exigindo conferência. A decisão
+verifica novamente permissões, versão e candidatos antes de gravar.
+
+Honorários contábeis ou advocatícios não são classificados como comissão apenas
+pelo nome. Proteções já gravadas permanecem. O administrador pode corrigir uma
+categoria de honorários em **Categorias > Editar**, confirmando a correção de
+restrição indevida. Isso não libera despesas antigas em lote: cada despesa elegível
+oferece uma confirmação individual em **Organizar despesa**, incluindo seus anexos.
+Histórico de comissão impede essa correção. Comissões continuam restritas.
+
+Esta atualização não exige alteração de schema, seed ou nova importação. Use o
+deploy habitual e preserve o banco do servidor; os dados de teste não são publicados.
+
 ## Cloudflare — a nuvem laranja e o certificado
 
 O registro `brisa.tescod.com` está no Cloudflare **com proxy** (nuvem

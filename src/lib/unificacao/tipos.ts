@@ -18,6 +18,8 @@ export type FonteUnificacao = {
   valor?: number | null; pago?: number | null; aberto?: number | null; natureza?: string | null;
   cancelado?: boolean; informativo?: boolean; papeis?: string[];
   restrito?: boolean;
+  /** Assinaturas legadas que diferem somente pela classificação de sigilo. */
+  hashesCompativeis?: string[];
   proveniencia?: Record<string, unknown>;
 };
 export type CandidatoUnificacao = { chave: string; motivos: string[] };

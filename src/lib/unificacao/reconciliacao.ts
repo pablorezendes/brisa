@@ -1,5 +1,6 @@
 import type { CandidatoUnificacao, DecisaoUnificacao, EstadoUnificacao, FonteUnificacao, LinhaUnificada } from "./tipos";
 import { criarIndiceCandidatos } from "./candidatos-indice";
+import { hashFonteCorresponde } from "./hashes";
 
 export function listaJson<T>(valor: string): T[] {
   try { const v: unknown = JSON.parse(valor); return Array.isArray(v) ? v as T[] : []; } catch { return []; }
@@ -48,7 +49,7 @@ export function avaliarFonte(f: FonteUnificacao, candidatos: CandidatoUnificacao
   if (f.qualidade !== "OK") return { status: f.qualidade === "AUSENTE" ? "AUSENTE" : "QUARENTENA", destinoChave: anterior?.destinoChave ?? null, motivos: f.motivos };
   if (anterior?.decisao === "MANUAL") {
     const alvo = anterior.destinoChave ? fontes.get(anterior.destinoChave) : null;
-    if (anterior.hashFonte !== f.hash || (anterior.destinoChave && (!alvo || alvo.dominio !== f.dominio || alvo.hash !== anterior.hashDestino || alvo.qualidade !== "OK"))) {
+    if (!hashFonteCorresponde(f, anterior.hashFonte) || (anterior.destinoChave && (!alvo || alvo.dominio !== f.dominio || !hashFonteCorresponde(alvo, anterior.hashDestino) || alvo.qualidade !== "OK"))) {
       return { status: "REVISAR", destinoChave: anterior.destinoChave, motivos: ["FONTE_ALTERADA_APOS_DECISAO"] };
     }
     return { status: anterior.status as EstadoUnificacao, destinoChave: anterior.destinoChave, motivos: listaJson<string>(anterior.motivos) };
@@ -56,7 +57,7 @@ export function avaliarFonte(f: FonteUnificacao, candidatos: CandidatoUnificacao
   if (f.vinculoExplicito && fontes.get(f.vinculoExplicito)?.qualidade === "OK" && fontes.get(f.vinculoExplicito)?.dominio === f.dominio) return { status: "VINCULADO", destinoChave: f.vinculoExplicito, motivos: ["VINCULO_JA_COMPROVADO"] };
   // A chegada de uma fonte nova não troca o principal previamente aceito.
   // A nova candidata fica pendente, sem alternância a cada reanálise.
-  if (anterior?.decisao === "AUTOMATICA" && anterior.status === "ATIVO" && anterior.hashFonte === f.hash) return { status: "ATIVO", destinoChave: null, motivos: listaJson<string>(anterior.motivos) };
+  if (anterior?.decisao === "AUTOMATICA" && anterior.status === "ATIVO" && hashFonteCorresponde(f, anterior.hashFonte)) return { status: "ATIVO", destinoChave: null, motivos: listaJson<string>(anterior.motivos) };
   // O primeiro registro nativo é a referência operacional; uma repetição
   // integral fica pendente sem apagar dados nem escolher valores financeiros.
   // Um principal já confirmado tem precedência sobre novos UUIDs, mesmo que
@@ -67,12 +68,12 @@ export function avaliarFonte(f: FonteUnificacao, candidatos: CandidatoUnificacao
     // Todas as fontes sao avaliadas contra a mesma fotografia anterior. Um
     // principal que mudou pode deixar de ser ATIVO nesta propria passagem;
     // sua precedencia antiga nao deve adiar a classificacao das candidatas.
-    if (!d || d.status !== "ATIVO" || d.destinoChave || !atual || atual.qualidade !== "OK" || atual.dominio !== f.dominio || d.hashFonte !== atual.hash) return false;
+    if (!d || d.status !== "ATIVO" || d.destinoChave || !atual || atual.qualidade !== "OK" || atual.dominio !== f.dominio || !hashFonteCorresponde(atual, d.hashFonte)) return false;
     const alvo = atual.vinculoExplicito ? fontes.get(atual.vinculoExplicito) : null;
     if (d.decisao !== "MANUAL" && alvo?.qualidade === "OK" && alvo.dominio === atual.dominio) return false;
-    return d.decisao === "MANUAL" || anterior?.status !== "ATIVO" || anterior.hashFonte !== f.hash;
+    return d.decisao === "MANUAL" || anterior?.status !== "ATIVO" || !hashFonteCorresponde(f, anterior.hashFonte);
   };
-  if (f.origem === "BRISA" && (anterior?.status !== "ATIVO" || anterior.hashFonte !== f.hash) && candidatos.some(c => c.chave.startsWith("WIDESYS:") && principalExistente(c.chave))) {
+  if (f.origem === "BRISA" && (anterior?.status !== "ATIVO" || !hashFonteCorresponde(f, anterior.hashFonte)) && candidatos.some(c => c.chave.startsWith("WIDESYS:") && principalExistente(c.chave))) {
     return { status: "PENDENTE", destinoChave: null, motivos: ["POSSIVEL_DUPLICIDADE"] };
   }
   const anteriores = candidatos.filter(c => c.chave.startsWith("BRISA:") && (principalExistente(c.chave) || c.chave < f.chave));
@@ -101,11 +102,11 @@ export function projetarUnificados(fontes: FonteUnificacao[], decisoes: DecisaoU
   };
   for (const f of fontes) {
     const d = decisoesPorChave.get(f.chave);
-    const reavaliarNativo = Boolean(d && d.hashFonte !== f.hash && f.origem === "BRISA" && d.status === "ATIVO" && d.decisao === "AUTOMATICA");
-    const fonteMudou = d && d.hashFonte !== f.hash && !reavaliarNativo;
+    const reavaliarNativo = Boolean(d && !hashFonteCorresponde(f, d.hashFonte) && f.origem === "BRISA" && d.status === "ATIVO" && d.decisao === "AUTOMATICA");
+    const fonteMudou = d && !hashFonteCorresponde(f, d.hashFonte) && !reavaliarNativo;
     const alvo = d?.destinoChave ? porChave.get(d.destinoChave) : null;
     const alvoDecisao = d?.destinoChave ? decisoesPorChave.get(d.destinoChave) : null;
-    const alvoInvalido = d?.destinoChave && (!alvo || alvo.dominio !== f.dominio || alvo.hash !== d.hashDestino || alvo.qualidade !== "OK" || alvoDecisao?.status !== "ATIVO" || alvoDecisao?.hashFonte !== alvo.hash);
+    const alvoInvalido = d?.destinoChave && (!alvo || alvo.dominio !== f.dominio || !hashFonteCorresponde(alvo, d.hashDestino) || alvo.qualidade !== "OK" || alvoDecisao?.status !== "ATIVO" || !hashFonteCorresponde(alvo, alvoDecisao?.hashFonte));
     const propostas = d && !reavaliarNativo ? listaJson<CandidatoUnificacao>(d.candidatos) : candidatosNovos(f);
     // Cadastros e lançamentos novos do próprio Brisa não exigem uma migração
     // para funcionar. Ainda passam pela mesma checagem de repetição interna.

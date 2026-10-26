@@ -2,6 +2,7 @@ import "server-only";
 import type { PrismaClient, Prisma } from "@prisma/client";
 import { pode, type PoliticaAcesso, type TipoEscopo } from "./politica";
 import { lerOperacaoUnificada } from "../unificacao/servico";
+import { contemComissaoRestrita } from "../despesas/sigilo";
 
 const ids = (p: PoliticaAcesso, tipo: TipoEscopo, efeito: string) => p.regras.filter(r => r.tipo === tipo && r.efeito === efeito).map(r => r.recursoId);
 export function filtroUnidades(p: PoliticaAcesso): Prisma.UnidadeWhereInput {
@@ -79,7 +80,7 @@ export async function consultarCarteira(db: PrismaClient, p: PoliticaAcesso, mes
     for (const t of legados) {
       // Não revelar receitas de comissão na carteira compartilhável.
       const classificacao = `${t.planoContaRotulo ?? ""} ${t.tipoCobrancaRotulo ?? ""}`.trim();
-      if (!classificacao || /comiss|administra|corretagem|honor[aá]rio/i.test(classificacao)) continue;
+      if (!classificacao || contemComissaoRestrita(classificacao) || /administra/i.test(classificacao)) continue;
       const c = contratosLegados.find(c => c.origem === t.origem && c.legadoId === t.contratoLegadoId);
       if (c) permitidos.set(`WIDESYS:${t.natureza}:${t.id}`, `WIDESYS:${c.id}`);
     }
@@ -97,7 +98,7 @@ export async function consultarCarteira(db: PrismaClient, p: PoliticaAcesso, mes
         const contratoId = permitidos.get(t.chave);
         // Nunca anexar fontes/candidatos de uma outra carteira a um DTO permitido.
         const vinculo = contratoId ? contratosAutorizados.get(contratoId) : null;
-        if (!contratoId || !vinculo || !t.contabiliza || t.cancelado || t.competencia !== mes || !t.fontes.length || !fonteAutorizada(t.chave) || !t.fontes.every(fonteAutorizada) || t.contratoChave !== vinculo.contrato || t.imovelChave !== vinculo.imovel) continue;
+        if (!contratoId || !vinculo || t.restrito || !t.contabiliza || t.cancelado || t.competencia !== mes || !t.fontes.length || !fonteAutorizada(t.chave) || !t.fontes.every(fonteAutorizada) || t.contratoChave !== vinculo.contrato || t.imovelChave !== vinculo.imovel) continue;
         const c = metaContratos.get(contratoId)!;
         titulos.push({ id: t.chave, origem: t.origem, natureza: t.dominio, imovel: c.imovel, cliente: c.cliente, competencia: mes, vencimento: t.vencimento ?? null, devido: t.valor ?? 0, pago: t.pago ?? 0, aberto: t.aberto ?? 0 });
       }

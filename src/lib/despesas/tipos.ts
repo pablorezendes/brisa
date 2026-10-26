@@ -20,6 +20,7 @@ export type SalvarDespesaEntrada = {
   origemChave?: string | null;
   origemHash?: string | null;
   confirmarFonteAlterada?: boolean;
+  corrigirSigiloHonorarios?: boolean;
   versao?: number;
   fornecedorNome: string;
   fornecedorDocumento?: string | null;
@@ -71,6 +72,7 @@ export type DespesaEditor = {
   contas: { id: string; apelido: string }[];
   categorias: { codigo: string; rotulo: string; restrita: boolean; ativa?: boolean }[];
   gerenciaCategorias?: boolean;
+  sigilo?: { restrita: boolean; podeCorrigirHonorarios: boolean; motivo: string };
   permiteCadastrarFornecedor?: boolean;
   permitePagamento: boolean;
   anexos: { id: string; nomeOriginal: string; mimeType: string; tamanho: number }[];

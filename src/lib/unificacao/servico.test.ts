@@ -31,6 +31,10 @@ function fonte(origem: "BRISA" | "WIDESYS", id: string): FonteUnificacao {
 beforeEach(async () => {
   diretorio = mkdtempSync(join(tmpdir(), "brisa-unificacao-servico-"));
   prisma = new PrismaClient({ datasourceUrl: `file:${join(diretorio, "fixture.db").replaceAll("\\", "/")}` });
+  await prisma.$executeRaw`CREATE TABLE "Usuario" (id TEXT PRIMARY KEY, perfil TEXT NOT NULL, ativo BOOLEAN NOT NULL DEFAULT 1, acessoGlobal BOOLEAN NOT NULL DEFAULT 1, permissoesExtras TEXT NOT NULL DEFAULT '[]', permissoesNegadas TEXT NOT NULL DEFAULT '[]', papelAcessoId TEXT)`;
+  await prisma.$executeRaw`CREATE TABLE "PapelAcesso" (id TEXT PRIMARY KEY, ativo BOOLEAN NOT NULL, permissoes TEXT NOT NULL)`;
+  await prisma.$executeRaw`CREATE TABLE "RegraAcesso" (id TEXT PRIMARY KEY, usuarioId TEXT NOT NULL, tipo TEXT NOT NULL, recursoId TEXT NOT NULL, efeito TEXT NOT NULL)`;
+  await prisma.$executeRaw`INSERT INTO "Usuario" (id, perfil) VALUES ('teste', 'ADMINISTRADOR'), ('primeiro', 'ADMINISTRADOR'), ('segundo', 'ADMINISTRADOR')`;
   await prisma.$executeRaw`CREATE TABLE "RecursoGovernado" (id TEXT PRIMARY KEY, tipo TEXT NOT NULL, origemId TEXT NOT NULL, status TEXT NOT NULL)`;
   await prisma.$executeRaw`CREATE TABLE "UnificacaoRegistro" (
     chave TEXT PRIMARY KEY, dominio TEXT NOT NULL, origem TEXT NOT NULL, origemId TEXT NOT NULL,
@@ -77,6 +81,15 @@ async function entrada(acao: "VINCULAR" | "DISTINTO" | "REABRIR", indice = 1) {
 }
 
 describe("serviço transacional de unificação", () => {
+  it("revalida sigilo mesmo quando o hash financeiro anterior continua compatível", async () => {
+    await analisarUnificacao(prisma, "teste");
+    const proposta = await entrada("DISTINTO");
+    fontes[1] = { ...fontes[1], restrito: true, hashesCompativeis: [proposta.hashFonte] };
+    await prisma.$executeRaw`UPDATE "Usuario" SET perfil = 'FINANCEIRO', permissoesExtras = '["unificacao.editar"]' WHERE id = 'teste'`;
+    await expect(decidirUnificacao(prisma, proposta, "teste")).rejects.toMatchObject({ codigo: "COMISSAO_RESTRITA" });
+    await prisma.$executeRaw`UPDATE "Usuario" SET ativo = 0 WHERE id = 'teste'`;
+    await expect(decidirUnificacao(prisma, proposta, "teste")).rejects.toMatchObject({ codigo: "SEM_PERMISSAO" });
+  });
   it("mês fechado impede união e reabertura do vínculo sem mudar a apuração histórica", async () => {
     await prisma.$executeRaw`INSERT INTO "Recebimento" (id) VALUES ('principal')`;
     await analisarUnificacao(prisma, "teste");

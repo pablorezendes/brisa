@@ -9,6 +9,7 @@ import { LIMITE_RATEIOS } from "@/lib/despesas/tipos";
 import { conferirValoresRateio, linhasEditaveis, linhaVazia, modoCustoInicial, rateiosDoFormulario, valorEditavel, type ModoCustoDespesa, type RateioEditavel } from "./rateio-formulario";
 import { EditorCategoriaDespesa } from "./editor-categoria-despesa";
 import { SeletorFornecedorDespesa } from "./seletor-fornecedor-despesa";
+import { RevisaoDespesa } from "./revisao-despesa";
 
 type Selecao = { id?: string; origemChave?: string };
 const campo = `${inputBase} mt-1.5 w-full min-w-0`;
@@ -70,7 +71,7 @@ export function ResumoRateio({ total, linhas }: { total: string; linhas: Pick<Ra
   </div>;
 }
 
-export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar, aoFechar }: { inicial: DespesaEditor; aoOcupar: (valor: boolean) => void; aoAlterar: (valor: boolean) => void; aoFechar: () => void }) {
+export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar: informarAlteracao, aoFechar }: { inicial: DespesaEditor; aoOcupar: (valor: boolean) => void; aoAlterar: (valor: boolean) => void; aoFechar: () => void }) {
   const visiveis = useValoresVisiveis();
   const [editor, setEditor] = useState(inicial);
   const [documento, setDocumento] = useState({ ...inicial.documento, descricao: inicial.documento.descricao ?? (inicial.documento.rateios.length === 1 ? inicial.documento.rateios[0].descricao : ""), totalTexto: valorEditavel(inicial.documento.total) });
@@ -94,10 +95,15 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar, aoFechar
   const [reabrirNecessario, setReabrirNecessario] = useState(false);
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
+  const [alterado, setAlterado] = useState(false);
+  const [revisando, setRevisando] = useState(false);
+  const [atualizacaoRevisao, setAtualizacaoRevisao] = useState(0);
+  const [corrigirSigiloHonorarios, setCorrigirSigiloHonorarios] = useState(false);
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
   const envio = useRef(false);
   const aviso = useRef<HTMLParagraphElement>(null);
   const versaoBusca = useRef(0);
+  const painelRevisao = useRef<HTMLDivElement>(null);
   const legado = Boolean(editor.documento.origemChave);
   const temPagamento = editor.pagamento.origem !== "NENHUM";
   const resumo = conferirValoresRateio(documento.totalTexto, linhas);
@@ -106,6 +112,8 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar, aoFechar
   const conferenciaCompleta = resumo.total !== null && resumo.total > 0 && (modoCusto === "ADMINISTRADORA" || (modoCusto === "UM_EMPREENDIMENTO" ? Boolean(destinoUnico.empreendimentoId && documento.descricao.trim()) : resumo.completo));
   const unidadesDestino = editor.empreendimentos.find(item => item.id === destinoUnico.empreendimentoId)?.unidades ?? [];
   useEffect(() => { if (erro) aviso.current?.focus(); }, [erro]);
+  useEffect(() => { if (atualizacaoRevisao > 0) painelRevisao.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, [atualizacaoRevisao]);
+  function aoAlterar(valor: boolean) { setAlterado(valor); informarAlteracao(valor); }
   function alterarDocumento(campoDocumento: keyof typeof documento, valor: string) {
     setDocumento(atual => ({ ...atual, [campoDocumento]: valor })); aoAlterar(true); setSucesso("");
     if (campoDocumento === "totalTexto") { versaoBusca.current++; setPagamentoSelecionado(null); setPagamentos([]); setBuscou(false); }
@@ -124,7 +132,7 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar, aoFechar
   }
   async function salvar(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (envio.current || salvando || anexando || catalogoOcupado || reabrirNecessario) return;
+    if (envio.current || salvando || anexando || catalogoOcupado || revisando || reabrirNecessario) return;
     const statusRateio = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "CONFERIDO" ? "CONFERIDO" : "RASCUNHO";
     setErro(""); setSucesso("");
     if (resumo.total === null || resumo.total <= 0) { setErro("Informe um total válido, maior que zero, com no máximo dois centavos decimais."); return; }
@@ -148,6 +156,7 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar, aoFechar
       categoriaCodigo: documento.categoriaCodigo || null, descricao: documento.descricao || null, tipoDocumento: documento.tipoDocumento,
       destinoCusto: modoCusto === "ADMINISTRADORA" ? "ADMINISTRADORA" : "EMPREENDIMENTOS",
       total: resumo.total, statusRateio, rateios, pagamento,
+      corrigirSigiloHonorarios,
     };
     envio.current = true; setSalvando(true); aoOcupar(true);
     try {
@@ -164,8 +173,9 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar, aoFechar
         setReabrirNecessario(true);
         setErro("A despesa foi salva, mas não foi possível recarregar os detalhes. Feche e abra novamente antes de editar.");
       }
-      setModoPagamento("MANTER"); setCientePagamento(false); setPagamentoSelecionado(null); setConfirmaFonte(false); setRequestId(crypto.randomUUID()); aoAlterar(false);
-      setSucesso(statusRateio === "CONFERIDO" ? "Despesa conferida e salva. O documento e o pagamento continuam únicos." : "Rascunho salvo. Você pode completar a conferência depois.");
+      setModoPagamento("MANTER"); setCientePagamento(false); setPagamentoSelecionado(null); setConfirmaFonte(false); setCorrigirSigiloHonorarios(false); setRequestId(crypto.randomUUID()); aoAlterar(false);
+      setAtualizacaoRevisao(atual => atual + 1);
+      setSucesso(statusRateio === "CONFERIDO" ? "Dados da despesa salvos. Veja no passo 4 se ainda há uma decisão de duplicidade para concluir." : "Rascunho salvo. A conferência de duplicidade é uma etapa separada, exibida no passo 4.");
     } catch { setErro("Não foi possível confirmar o resultado. Você pode tentar salvar novamente sem duplicar a operação; não altere os dados antes de confirmar."); }
     finally { envio.current = false; setSalvando(false); aoOcupar(false); }
   }
@@ -174,7 +184,7 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar, aoFechar
       {erro && <p ref={aviso} tabIndex={-1} role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">{erro}</p>}
       {sucesso && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{sucesso}</p>}
       {editor.documento.fonteAlterada && <label className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm"><input type="checkbox" checked={confirmaFonte} onChange={event => setConfirmaFonte(event.target.checked)} className="mt-1 shrink-0" /><span>A origem foi atualizada depois do último rateio. Conferi novamente os dados e autorizo salvar o rateio sobre os valores atuais.</span></label>}
-      <fieldset disabled={salvando || anexando || catalogoOcupado || reabrirNecessario} className="min-w-0 space-y-5 disabled:opacity-60">
+      <fieldset disabled={salvando || anexando || catalogoOcupado || revisando || reabrirNecessario} className="min-w-0 space-y-5 disabled:opacity-60">
         <section className="rounded-xl border border-contorno p-4">
           <h3 className="text-sm font-bold">1. O que será pago?</h3>
           {legado && <p className="mt-1 text-xs leading-relaxed text-tinta-suave">Este título veio do Widesys. Você pode completar os dados locais da despesa. O valor, o pagamento e o registro de origem permanecem preservados.</p>}
@@ -188,7 +198,8 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar, aoFechar
             <label className={rotulo}>Vencimento (opcional)<input type="date" value={documento.vencimento ?? ""} onChange={event => alterarDocumento("vencimento", event.target.value)} className={campo} /></label>
           </div>
           {!visiveis && <p id="rateio-valor-aviso" className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-tinta-suave">Os valores estão ocultos. Use “Ver valores” no topo desta janela para preencher e conferir a despesa.</p>}
-          {categoria?.restrita && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-950">Administração/comissão: esta despesa e seus anexos são restritos ao administrador.</p>}
+          {(categoria?.restrita || editor.sigilo?.restrita) && <div className="mt-3 rounded-lg border border-contorno bg-slate-50 p-3 text-xs leading-relaxed"><p><strong>Acesso restrito.</strong> Esta despesa e seus anexos estão disponíveis somente ao administrador. Isso não impede o administrador de salvar os dados ou concluir a conferência.</p>{editor.sigilo?.motivo && <p className="mt-1 text-tinta-suave">{editor.sigilo.motivo}</p>}</div>}
+          {editor.sigilo?.podeCorrigirHonorarios && !categoria?.restrita && <label className="mt-3 flex items-start gap-2 rounded-lg border border-contorno p-3 text-xs leading-relaxed"><input type="checkbox" checked={corrigirSigiloHonorarios} onChange={event => { setCorrigirSigiloHonorarios(event.target.checked); aoAlterar(true); setSucesso(""); }} className="mt-1" /><span><strong className="block">Corrigir restrição indevida de honorários</strong><span className="mt-1 block">Conferi esta despesa e seus anexos: são honorários contábeis ou advocatícios, sem comissão.</span><span className="mt-1 block text-tinta-suave">Libera esta despesa e seus anexos aos perfis que já podem consultar despesas. Não conclui a conferência de duplicidades.</span></span></label>}
           <details open={documentoAberto} onToggle={event => setDocumentoAberto(event.currentTarget.open)} className="mt-4 rounded-lg border border-contorno p-3">
             <summary className="cursor-pointer text-xs font-semibold text-oliva-escura">{documento.tipoDocumento === "SEM_DOCUMENTO" ? "Adicionar documento (opcional)" : "Documento da despesa"}</summary>
             <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -258,10 +269,11 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar, aoFechar
               </div>}
         </section>
         {modoCusto === "VARIOS" && <p className="text-xs leading-relaxed text-tinta-suave">O rateio separa custos por empreendimento. O documento e o pagamento continuam únicos.</p>}
-        <div className="flex flex-wrap items-center gap-3 border-t border-contorno pt-4"><button type="submit" value="CONFERIDO" className={btnPrimario} disabled={!visiveis || !conferenciaCompleta || editor.documento.fonteAlterada && !confirmaFonte}>{salvando ? "Salvando…" : "Salvar e concluir conferência"}</button><button type="submit" value="RASCUNHO" className={btnSecundario} disabled={!visiveis || editor.documento.fonteAlterada && !confirmaFonte}>Salvar rascunho</button><button type="button" className={btnSecundario} onClick={aoFechar}>Fechar</button></div>
+        <div className="border-t border-contorno pt-4"><p className="mb-3 text-xs leading-relaxed text-tinta-suave">Categoria e distribuição do custo são salvas aqui. Se houver uma pendência de duplicidade, conclua a decisão no passo 4, nesta mesma janela.</p><div className="flex flex-wrap items-center gap-3"><button type="submit" value="CONFERIDO" className={btnPrimario} disabled={!visiveis || !conferenciaCompleta || editor.documento.fonteAlterada && !confirmaFonte}>{salvando ? "Salvando…" : "Salvar dados da despesa"}</button><button type="submit" value="RASCUNHO" className={btnSecundario} disabled={!visiveis || editor.documento.fonteAlterada && !confirmaFonte}>Salvar rascunho</button><button type="button" className={btnSecundario} onClick={aoFechar}>Fechar</button></div></div>
       </fieldset>
     </form>
-    <AnexosDespesa despesaId={documento.id} iniciais={editor.anexos} bloqueado={salvando || reabrirNecessario} aoOcupar={valor => { setAnexando(valor); aoOcupar(valor); }} />
+    <div ref={painelRevisao}><RevisaoDespesa key={`${documento.id ?? ""}:${documento.origemChave ?? ""}:${atualizacaoRevisao}`} selecao={{ id: documento.id, origemChave: documento.origemChave }} alterado={alterado} bloqueado={salvando || anexando || catalogoOcupado || reabrirNecessario} aoOcupar={valor => { setRevisando(valor); aoOcupar(valor); }} /></div>
+    <AnexosDespesa despesaId={documento.id} iniciais={editor.anexos} bloqueado={salvando || revisando || reabrirNecessario} aoOcupar={valor => { setAnexando(valor); aoOcupar(valor); }} />
   </div>;
 }
 

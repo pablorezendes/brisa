@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DespesaEditor } from "@/lib/despesas/tipos";
 
 const mocks = vi.hoisted(() => ({ salvar: vi.fn(), carregar: vi.fn(), buscar: vi.fn(), visiveis: false }));
-vi.mock("@/app/(app)/financeiro/contas-a-pagar/rateio-actions", () => ({ salvarRateioDespesa: mocks.salvar, carregarRateioDespesa: mocks.carregar, procurarPagamentoDespesa: mocks.buscar }));
+vi.mock("@/app/(app)/financeiro/contas-a-pagar/rateio-actions", () => ({ salvarRateioDespesa: mocks.salvar, carregarRateioDespesa: mocks.carregar, procurarPagamentoDespesa: mocks.buscar, carregarRevisaoDespesa: vi.fn(), confirmarRevisaoDespesa: vi.fn() }));
 vi.mock("@/app/(app)/financeiro/contas-a-pagar/categorias-actions", () => ({ carregarCategoriasDespesas: vi.fn(), gravarCategoriaDespesa: vi.fn() }));
 vi.mock("@/app/(app)/cadastros/fornecedores/actions", () => ({ pesquisarFornecedores: vi.fn(), salvarCadastroFornecedor: vi.fn(), usarPessoaComoFornecedor: vi.fn() }));
 vi.mock("@/components/botao-sigilo", () => ({ BotaoSigilo: () => <button>Ver valores</button>, useValoresVisiveis: () => mocks.visiveis }));
@@ -36,7 +36,7 @@ describe("rateio manual na própria tela", () => {
     expect(html.match(/type="password"/g)).toHaveLength(3);
     expect(html).toContain("readOnly");
     expect(html).toContain("Os valores estão ocultos");
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Salvar e concluir conferência<\/button>/);
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Salvar dados da despesa<\/button>/);
     expect(html).toContain('class="sigilo"');
   });
   it("mostra nota única, rateio manual e opções de pagamento sem efetuar operação", () => {
@@ -92,7 +92,7 @@ describe("rateio manual na própria tela", () => {
     expect(html).not.toContain("Falta distribuir");
     expect(html).toContain("sem distribuir custos para imóveis ou empreendimentos");
     expect(html).toContain("Já está no caixa");
-    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Salvar e concluir conferência<\/button>/);
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Salvar dados da despesa<\/button>/);
     expect(html).not.toContain("Administração/comissão");
     expect(mocks.salvar).not.toHaveBeenCalled();
   });
@@ -104,9 +104,27 @@ describe("rateio manual na própria tela", () => {
     expect(html).not.toContain("Valor deste serviço");
     expect(html).not.toContain("Falta distribuir");
   });
-  it("destaca comissão somente quando a categoria é autorizada pelo servidor", () => {
+  it("explica acesso restrito sem tratar a restrição como impedimento de salvar", () => {
     const html = formulario({ ...editor, documento: { ...editor.documento, destinoCusto: "ADMINISTRADORA", tipoDocumento: "SEM_DOCUMENTO", categoriaCodigo: "ADMINISTRACAO_COMISSAO", descricao: "Despesa reservada", rateios: [] }, categorias: [{ codigo: "ADMINISTRACAO_COMISSAO", rotulo: "Administração/comissão", restrita: true }] });
-    expect(html).toContain("esta despesa e seus anexos são restritos ao administrador");
+    expect(html).toContain("Acesso restrito.");
+    expect(html).toContain("não impede o administrador de salvar os dados ou concluir a conferência");
+    expect(html).not.toContain("Administração/comissão: esta despesa");
+  });
+  it("expõe a decisão financeira em etapa separada e não promete resolver pendências ao salvar dados", () => {
+    const html = formulario({ ...editor, documento: { ...editor.documento, origemChave: "WIDESYS:PAGAR:t1" } });
+    expect(html).toContain("Salvar dados da despesa");
+    expect(html).toContain("4. Conferência de duplicidade");
+    expect(html).toContain("decisão abaixo define se ela entra nos totais");
+    expect(html).not.toContain("Salvar e concluir conferência");
+    expect(html).not.toContain("Despesa conferida e salva");
+  });
+  it("correção de honorários só aparece por autorização do servidor e exige confirmação também dos anexos", () => {
+    const html = formulario({ ...editor, sigilo: { restrita: true, podeCorrigirHonorarios: true, motivo: "Restrição anterior a conferir" } });
+    expect(html).toContain("Corrigir restrição indevida de honorários");
+    expect(html).toContain("Conferi esta despesa e seus anexos");
+    expect(html).toContain("Não conclui a conferência de duplicidades");
+    expect(html).not.toMatch(/type="checkbox"[^>]*checked/);
+    expect(formulario()).not.toContain("Corrigir restrição indevida");
   });
   it("preserva documento legado de tipo não comprovado sem exigir número ou emissão de nota", () => {
     const html = formulario({ ...editor, documento: { ...editor.documento, origemChave: "WIDESYS:PAGAR:t1", tipoDocumento: "OUTRO", numero: "REF-99", emissao: "", categoriaCodigo: "IMPOSTOS", descricao: "Guia importada" } });

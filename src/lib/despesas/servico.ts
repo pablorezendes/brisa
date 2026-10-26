@@ -5,11 +5,12 @@ import { fonteLancamentoCaixa } from "../unificacao/fontes";
 import { ErroDespesa, LIMITE_RATEIOS, type DespesaEditor, type DestinoCustoDespesa, type TipoDocumentoDespesa, type PagamentoDisponivel, type ResultadoSalvarDespesa, type SalvarDespesaEntrada } from "./tipos";
 import { categoriaDespesa, categoriaWidesys } from "./categorias";
 import { carregarCatalogoDespesas } from "./catalogo-servico";
+import { contemComissaoRestrita, descricaoHonorariosProfissionais, historicoSemComissao } from "./sigilo";
 
 type Tx = Prisma.TransactionClient;
 type Ator = { id: string };
 const hash = (valor: unknown) => createHash("sha256").update(JSON.stringify(valor)).digest("hex");
-const comissaoRestrita = (textos: Array<string | null | undefined>) => /comiss|corretagem|honor[aá]rio|taxa\s+de\s+administra/i.test(textos.filter(Boolean).join(" "));
+const comissaoRestrita = contemComissaoRestrita;
 const selectCaixa = { id: true, data: true, descricao: true, cliente: true, valor: true, centroCusto: true, caixaOrigem: true, tipo: true, categoria: true, mesReferencia: true } satisfies Prisma.LancamentoCaixaSelect;
 const caixaAceito = (caixa: Parameters<typeof fonteLancamentoCaixa>[0], decisao?: { status: string; hashFonte: string } | null) => !decisao || (decisao.status === "ATIVO" && decisao.hashFonte === fonteLancamentoCaixa(caixa).hash);
 const selectDocumento = {
@@ -61,6 +62,7 @@ function valorPositivo(valor: unknown) {
 }
 function validarEntrada(input: SalvarDespesaEntrada) {
   if (!input || typeof input !== "object" || !/^[a-zA-Z0-9_-]{16,100}$/.test(input.requestId)) throw new ErroDespesa("REQUISICAO_INVALIDA", "Reabra a despesa e tente novamente.");
+  if (input.corrigirSigiloHonorarios !== undefined && typeof input.corrigirSigiloHonorarios !== "boolean") throw new ErroDespesa("SIGILO_INVALIDO", "Confirme a conferência do acesso à despesa.");
   const id = texto(input.id, "a identificação", 100);
   const origemChave = texto(input.origemChave, "a origem", 250);
   if (origemChave && !/^WIDESYS:PAGAR:[^\s:]+$/.test(origemChave)) throw new ErroDespesa("ORIGEM_INVALIDA", "Selecione uma conta a pagar válida do Widesys.");
@@ -121,6 +123,22 @@ async function carregarFonte(tx: Tx, origemChave: string) {
   return fonte;
 }
 
+type DocumentoSigilo = Prisma.DespesaDocumentoGetPayload<{ select: typeof selectDocumento }>;
+/** Executada somente para uma exceção solicitada ou para oferecer a ação ao
+ * administrador. A simples abertura/salvamento preserva a proteção gravada. */
+async function avaliarCorrecaoHonorarios(tx: Tx, documento: DocumentoSigilo, categoria: { restrita: boolean } | null | undefined, textosFonte: Array<string | null | undefined>) {
+  if (!documento.restrita) return "Esta despesa já segue o acesso normal do financeiro.";
+  if (!categoria || categoria.restrita) return "Para corrigir um sigilo indevido de honorários, primeiro ajuste a categoria em Gerenciar categorias. Depois reabra esta despesa e confira seu acesso individualmente.";
+  if (!descricaoHonorariosProfissionais(documento.descricao)) return "A correção de acesso exige uma descrição de honorários contábeis ou advocatícios. Outras despesas reservadas permanecem protegidas.";
+  if (comissaoRestrita([documento.categoriaRotulo, documento.descricao, documento.pagamentoObservacao, ...documento.rateios.flatMap(r => [r.categoria, r.descricao]), ...documento.anexos.map(anexo => anexo.nomeOriginal), ...textosFonte])) return "Há informação de comissão nesta despesa. O acesso permanece restrito ao administrador.";
+  const [eventos, pagamento] = await Promise.all([
+    tx.despesaEvento.findMany({ where: { despesaId: documento.id }, select: { antes: true, depois: true } }),
+    documento.lancamentoCaixaId ? tx.lancamentoCaixa.findUnique({ where: { id: documento.lancamentoCaixaId }, select: { categoria: true, descricao: true } }) : null,
+  ]);
+  if (!historicoSemComissao(eventos.flatMap(evento => [evento.antes, evento.depois])) || comissaoRestrita([pagamento?.categoria, pagamento?.descricao])) return "O histórico ou o pagamento contém informação de comissão. Preserve o acesso restrito deste documento.";
+  return null;
+}
+
 export async function obterEditorDespesa(db: PrismaClient, selecao: { id?: string; origemChave?: string }, ator: Ator): Promise<DespesaEditor> {
   return db.$transaction(async tx => {
     const politica = await autorizar(tx, ator);
@@ -137,7 +155,7 @@ export async function obterEditorDespesa(db: PrismaClient, selecao: { id?: strin
     if (!pode(politica, "comissoes.ver") && (documento?.restrita || catalogo.find(categoria => categoria.codigo === documento?.categoriaCodigo)?.restrita || comissaoRestrita([
       documento?.descricao,
       ...(documento?.rateios.flatMap(r => [r.descricao, r.categoria]) ?? []), fonte?.planoContaRotulo, fonte?.tipoCobrancaRotulo,
-    ]))) throw new ErroDespesa("COMISSAO_RESTRITA", "Esta nota contém informações de comissão, disponíveis somente ao administrador.");
+    ]))) throw new ErroDespesa("COMISSAO_RESTRITA", "Esta despesa está restrita ao administrador pela categoria, pelo conteúdo ou pela proteção já registrada.");
     const fornecedor = fonte?.pessoaLegadoId ? await tx.pessoa.findUnique({ where: { origem_legadoId: { origem: fonte.origem, legadoId: fonte.pessoaLegadoId } }, select: { nome: true, cpfCnpj: true } }) : null;
     const bloqueados = await tx.recursoGovernado.findMany({ where: { tipo: { in: ["EMPREENDIMENTO", "UNIDADE", "CONTA"] }, status: { not: "ATIVO" } }, select: { tipo: true, origemId: true } });
     const excluidos = (tipo: string) => bloqueados.filter(b => b.tipo === tipo).map(b => b.origemId);
@@ -151,6 +169,9 @@ export async function obterEditorDespesa(db: PrismaClient, selecao: { id?: strin
     const caixaAtivo = !!lancamento && (!caixaEstado || caixaEstado.status === "ATIVO") && lancamento.tipo === "SAIDA" && lancamento.valor === documento?.total && caixaAceito(lancamento, caixaDecisao);
     const hoje = new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
     const categoriaSugerida = catalogo.find(categoria => categoria.codigo === categoriaWidesys(fonte?.planoContaLegadoId)?.codigo && categoria.ativa);
+    const categoriaAtual = catalogo.find(categoria => categoria.codigo === documento?.categoriaCodigo) ?? categoriaSugerida;
+    const restrita = !!documento?.restrita || !!categoriaAtual?.restrita || comissaoRestrita([documento?.descricao, ...(documento?.rateios.flatMap(r => [r.categoria, r.descricao]) ?? []), fonte?.planoContaRotulo, fonte?.tipoCobrancaRotulo]);
+    const motivoSigilo = documento?.restrita && politica.perfil === "ADMINISTRADOR" ? await avaliarCorrecaoHonorarios(tx, documento, categoriaAtual, [fonte?.planoContaRotulo, fonte?.tipoCobrancaRotulo]) : "Esta despesa segue a regra de acesso da categoria e do seu conteúdo.";
     return {
       documento: {
         ...(documento ? { id: documento.id } : {}), origemChave: origem, origemHash: fonte?.snapshotHash ?? null,
@@ -175,6 +196,8 @@ export async function obterEditorDespesa(db: PrismaClient, selecao: { id?: strin
       empreendimentos, contas, permitePagamento: pode(politica, "despesas.editar") && pode(politica, "caixa.editar") && !origem && !documento?.lancamentoCaixaId,
       categorias: catalogo.filter(categoria => (categoria.ativa || categoria.codigo === documento?.categoriaCodigo) && (!categoria.restrita || pode(politica, "comissoes.ver"))),
       gerenciaCategorias: politica.perfil === "ADMINISTRADOR",
+      sigilo: { restrita, podeCorrigirHonorarios: !!documento?.restrita && politica.perfil === "ADMINISTRADOR" && motivoSigilo === null,
+        motivo: motivoSigilo ?? "O administrador pode corrigir a restrição após conferir que a despesa e seus anexos contêm somente honorários profissionais, sem comissão." },
       permiteCadastrarFornecedor: pode(politica, "cadastros.editar") && pode(politica, "cadastros.sensiveis"),
       anexos: documento?.anexos ?? [],
     };
@@ -206,6 +229,7 @@ export async function salvarDespesa(db: PrismaClient, input: SalvarDespesaEntrad
   try {
     return await db.$transaction(async tx => {
       const politica = await autorizar(tx, ator, true);
+      if (input.corrigirSigiloHonorarios && politica.perfil !== "ADMINISTRADOR") throw new ErroDespesa("SEM_PERMISSAO", "Somente o administrador pode corrigir o acesso de honorários.");
       if (input.pagamento.modo !== "MANTER" && !pode(politica, "caixa.editar")) throw new ErroDespesa("SEM_PERMISSAO", "Você não tem permissão para registrar ou vincular pagamentos.");
       const evento = await tx.despesaEvento.findUnique({ where: { requestId: input.requestId }, select: { requestHash: true, despesaId: true, versao: true, depois: true } });
       if (evento) {
@@ -246,14 +270,19 @@ export async function salvarDespesa(db: PrismaClient, input: SalvarDespesaEntrad
       const fonte = validado.origemChave ? await carregarFonte(tx, validado.origemChave) : null;
       // Remover uma linha não desclassifica anexos e auditorias anteriores.
       // Não existe desclassificação implícita de uma nota já marcada reservada.
-      const restrita = !!atual?.restrita || !!categoriaSelecionada?.restrita || comissaoRestrita([
+      if (input.corrigirSigiloHonorarios) {
+        if (!atual?.restrita || !categoriaSelecionada || categoriaSelecionada.restrita || !descricaoHonorariosProfissionais(validado.campos.descricao)) throw new ErroDespesa("SIGILO_NAO_CORRIGIVEL", "A correção exige uma despesa restrita de honorários contábeis ou advocatícios e uma categoria sem restrição.");
+        const impedimento = await avaliarCorrecaoHonorarios(tx, atual, categoriaSelecionada, [fonte?.planoContaRotulo, fonte?.tipoCobrancaRotulo]);
+        if (impedimento || comissaoRestrita([categoriaRotulo, validado.campos.descricao, ...validado.rateios.flatMap(r => [r.categoria, r.descricao])]) || input.pagamento.modo !== "MANTER") throw new ErroDespesa("SIGILO_NAO_CORRIGIVEL", impedimento ?? "Corrija o acesso sem incluir informação de comissão nem alterar o pagamento nesta operação.");
+      }
+      const restrita = (!input.corrigirSigiloHonorarios && !!atual?.restrita) || !!categoriaSelecionada?.restrita || comissaoRestrita([
         validado.campos.descricao, atual?.descricao,
         input.pagamento.modo === "REGISTRAR" && !validado.campos.categoriaCodigo ? input.pagamento.categoria : null,
         ...validado.rateios.flatMap(r => [r.descricao, r.categoria]), fonte?.planoContaRotulo, fonte?.tipoCobrancaRotulo,
       ]);
       if (!pode(politica, "comissoes.ver") && (atual?.restrita || restrita || comissaoRestrita([
         ...validado.rateios.flatMap(r => [r.descricao, r.categoria]), ...(atual?.rateios.flatMap(r => [r.descricao, r.categoria]) ?? []), fonte?.planoContaRotulo, fonte?.tipoCobrancaRotulo,
-      ]))) throw new ErroDespesa("COMISSAO_RESTRITA", "Somente o administrador pode consultar ou alterar notas com comissão.");
+      ]))) throw new ErroDespesa("COMISSAO_RESTRITA", "Somente o administrador pode consultar ou alterar esta despesa restrita.");
       if (fonte) {
         if (input.origemHash !== fonte.snapshotHash || (atual && atual.origemHash !== fonte.snapshotHash && !input.confirmarFonteAlterada)) throw new ErroDespesa("FONTE_ALTERADA", "A origem Widesys mudou. Reabra e confira o rateio antes de confirmar a nova versão.");
         if (input.pagamento.modo !== "MANTER" || input.total !== fonte.valorDevido) throw new ErroDespesa("FONTE_PROTEGIDA", "O valor e o pagamento vêm do Widesys e não podem ser duplicados neste rateio.");
@@ -311,7 +340,9 @@ export async function salvarDespesa(db: PrismaClient, input: SalvarDespesaEntrad
         await tx.despesaDocumento.create({ data: { id, ...dados, origemChave: validado.origemChave, criadoPorId: ator.id } });
       }
       if (validado.rateios.length) await tx.despesaRateio.createMany({ data: validado.rateios.map(r => ({ ...r, despesaId: id })) });
-      await tx.despesaEvento.create({ data: { despesaId: id, requestId: input.requestId, requestHash, autorId: ator.id, versao, antes: atual ? JSON.stringify(atual) : null, depois: JSON.stringify({ ...dados, origemChave: validado.origemChave, rateios: validado.rateios }) } });
+      await tx.despesaEvento.create({ data: { despesaId: id, requestId: input.requestId, requestHash, autorId: ator.id, versao, antes: atual ? JSON.stringify(atual) : null, depois: JSON.stringify({ ...dados, origemChave: validado.origemChave, rateios: validado.rateios,
+        ...(input.corrigirSigiloHonorarios ? { correcaoSigiloHonorarios: { confirmadaPeloAdministrador: true, motivo: "HONORARIOS_PROFISSIONAIS", anexosConferidos: atual!.anexos.map(anexo => anexo.id) } } : {}),
+      }) } });
       return { id, chave: validado.origemChave ?? `BRISA:PAGAR:${id}`, versao, repetido: false, lancamentoCaixaId };
     }, { maxWait: 5000, timeout: 15000 });
   } catch (erro) {

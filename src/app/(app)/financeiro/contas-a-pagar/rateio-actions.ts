@@ -5,10 +5,31 @@ import { exigirPermissaoAcesso } from "@/lib/acesso/servidor";
 import { prisma } from "@/lib/db";
 import { buscarPagamentosDisponiveis, obterEditorDespesa, salvarDespesa } from "@/lib/despesas/servico";
 import { ErroDespesa, type DespesaEditor, type PagamentoDisponivel, type SalvarDespesaEntrada, type ResultadoSalvarDespesa } from "@/lib/despesas/tipos";
+import { obterRevisaoDespesa, concluirRevisaoDespesa } from "@/lib/despesas/revisao";
+import type { RevisaoDespesa, ConcluirRevisaoDespesaEntrada } from "@/lib/despesas/tipos-revisao";
+import { exigirPermissaoFinanceira } from "@/lib/autorizacao";
+import { ErroUnificacao } from "@/lib/unificacao/servico";
 
 type Falha = { ok: false; mensagem: string };
 function falha(erro: unknown): Falha {
-  return { ok: false, mensagem: erro instanceof ErroDespesa ? erro.message : "Não foi possível concluir. Confira sua conexão e tente novamente; nenhum sucesso foi confirmado." };
+  return { ok: false, mensagem: erro instanceof ErroDespesa || erro instanceof ErroUnificacao ? erro.message : "Não foi possível concluir. Confira sua conexão e tente novamente; nenhum sucesso foi confirmado." };
+}
+
+export async function carregarRevisaoDespesa(selecao: { id?: string; origemChave?: string }): Promise<{ ok: true; revisao: RevisaoDespesa | null } | Falha> {
+  const acesso = await exigirPermissaoAcesso("despesas.ver", { global: true });
+  await exigirPermissaoAcesso("cadastros.sensiveis", { global: true });
+  try { return { ok: true, revisao: await obterRevisaoDespesa(prisma, selecao, { id: acesso.usuarioId }) }; }
+  catch (erro) { return falha(erro); }
+}
+
+export async function confirmarRevisaoDespesa(entrada: ConcluirRevisaoDespesaEntrada): Promise<{ ok: true; revisao: RevisaoDespesa | null } | Falha> {
+  await exigirPermissaoAcesso("unificacao.editar", { global: true });
+  const acesso = await exigirPermissaoFinanceira("CONCILIAR_PAGAMENTOS");
+  try {
+    const resultado = await concluirRevisaoDespesa(prisma, entrada, { id: acesso.sub });
+    revalidatePath("/", "layout");
+    return { ok: true, revisao: resultado.revisao };
+  } catch (erro) { return falha(erro); }
 }
 
 export async function carregarRateioDespesa(selecao: { id?: string; origemChave?: string }): Promise<{ ok: true; editor: DespesaEditor } | Falha> {

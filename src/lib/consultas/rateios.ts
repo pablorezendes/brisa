@@ -5,6 +5,7 @@ import { carregarDadosFontesUnificacao, derivarFontesUnificacao } from "../unifi
 import { projetarUnificados } from "../unificacao/reconciliacao";
 import { filtrarFontesGovernadas } from "../governanca/filtros";
 import type { DecisaoUnificacao } from "../unificacao/tipos";
+import { contemComissaoRestrita } from "../despesas/sigilo";
 
 export type CustoEmpreendimento = { empreendimentoId: string; empreendimento: string; competencia: string; valor: number; parcelas: number };
 export type ResumoRateios = { custos: CustoEmpreendimento[]; total: number; notasConferidas: number; notasPendentes: number };
@@ -45,7 +46,7 @@ export async function consultarResumoRateios(db: PrismaClient, p: PoliticaAcesso
   const fontes = filtrarFontesGovernadas((await derivarFontesUnificacao(dadosFontes)).filter(f => f.dominio === "PAGAR"), governados);
   const linhas = new Map(projetarUnificados(fontes, decisoes as DecisaoUnificacao[]).map(l => [l.chave, l]));
   const hashes = new Map(fontesLegadas.map(f => [`WIDESYS:PAGAR:${f.id}`, f.snapshotHash]));
-  const fontesRestritas = new Set(fontesLegadas.filter(f => /comiss|corretagem|honor[aá]rio|taxa de administra/i.test(`${f.planoContaRotulo ?? ""} ${f.tipoCobrancaRotulo ?? ""}`)).map(f => `WIDESYS:PAGAR:${f.id}`));
+  const fontesRestritas = new Set(fontesLegadas.filter(f => contemComissaoRestrita([f.planoContaRotulo, f.tipoCobrancaRotulo])).map(f => `WIDESYS:PAGAR:${f.id}`));
   // O sigilo é persistente: remover a descrição de comissão não torna seus
   // valores históricos compartilháveis nem expõe o restante da nota por soma.
   const documentosVisiveis = documentos.filter(d => p.perfil === "ADMINISTRADOR" || (!d.restrita && (!d.origemChave || !fontesRestritas.has(d.origemChave))));
@@ -69,7 +70,7 @@ export async function consultarResumoRateios(db: PrismaClient, p: PoliticaAcesso
     const d = porDocumento.get(r.despesaId);
     if (!d || excluidos.has(`EMPREENDIMENTO:${r.empreendimentoId}`) || (r.unidadeId && (excluidos.has(`UNIDADE:${r.unidadeId}`) || r.unidade?.empreendimentoId !== r.empreendimentoId))) continue;
     // Comissões seguem restritas mesmo se classificadas como despesas.
-    if (p.perfil !== "ADMINISTRADOR" && /comiss|corretagem|honor[aá]rio|taxa de administra/i.test(`${r.categoria ?? ""} ${r.descricao}`)) continue;
+    if (p.perfil !== "ADMINISTRADOR" && contemComissaoRestrita([r.categoria, r.descricao])) continue;
     const chave = `${r.empreendimentoId}:${d.competencia}`;
     const grupo = grupos.get(chave) ?? { empreendimentoId: r.empreendimentoId, empreendimento: r.empreendimento.nome, competencia: d.competencia, valor: 0, parcelas: 0 };
     grupo.valor += r.valor; grupo.parcelas += 1;

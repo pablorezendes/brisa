@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import type { LancamentoCaixa, PrismaClient, Prisma } from "@prisma/client";
 import { normalizar } from "../dominio/normalizacao";
 import { categoriaDespesa } from "../despesas/categorias";
+import { contemComissaoRestrita } from "../despesas/sigilo";
 import { referenciaDocumentoDespesa, ROTULOS_DOCUMENTO_DESPESA } from "../despesas/apresentacao";
 import type { CampoFonte, DominioUnificacao, FonteUnificacao } from "./tipos";
 
@@ -19,9 +20,21 @@ const motivos = (valor?: string | null): string[] => valor ? valor.split(";").fi
 const mes = (data?: string | null) => data && /^\d{4}-\d{2}/.test(data) ? data.slice(0, 7) : null;
 
 function fonte(dominio: DominioUnificacao, origem: "BRISA" | "WIDESYS", id: string, dados: Omit<FonteUnificacao, "chave" | "dominio" | "origem" | "origemId" | "hash" | "nomeNorm" | "qualidade" | "motivos"> & Partial<Pick<FonteUnificacao, "nomeNorm" | "qualidade" | "motivos">>): FonteUnificacao {
-  const registro = { chave: chaveFonte(origem, dominio, id), dominio, origem, origemId: id,
-    qualidade: "OK" as const, motivos: [], nomeNorm: normalizar(dados.titulo), ...dados };
-  return { ...registro, hash: hashUnificacao(registro) };
+  const prefixo = { chave: chaveFonte(origem, dominio, id), dominio, origem, origemId: id,
+    qualidade: "OK" as const, motivos: [], nomeNorm: normalizar(dados.titulo) };
+  const { restrito, ...conteudo } = dados;
+  const registro = { ...prefixo, ...conteudo };
+  // Sigilo controla acesso, não altera identidade, valor ou pagamento. Mantém
+  // compatibilidade exata com a ordem das propriedades dos hashes anteriores.
+  const anteriores: string[] = [];
+  if (Object.hasOwn(dados, "restrito")) {
+    anteriores.push(hashUnificacao({ ...prefixo, ...dados, restrito: true }));
+    anteriores.push(hashUnificacao({ ...prefixo, ...dados, restrito: false }));
+  } else if (origem === "WIDESYS" && ["PAGAR", "BAIXA_PAGAR", "MOVIMENTO"].includes(dominio)) {
+    anteriores.push(hashUnificacao({ ...prefixo, restrito: true, ...conteudo }));
+  }
+  return { ...registro, ...(restrito !== undefined ? { restrito } : {}), hash: hashUnificacao(registro),
+    ...(anteriores.length ? { hashesCompativeis: anteriores } : {}) };
 }
 
 /** Mesma identidade/hash usada na lista e na confirmação de vínculo de um PIX. */
@@ -175,7 +188,7 @@ export async function derivarFontesUnificacao(dados: DadosFontesUnificacao): Pro
   const tLegado = new Map(titulos.map(t => [`${t.escopo}:${t.legadoId}`, t]));
   const overlaysRestritos = new Set(despesas.filter(d => d.restrita && d.origemChave).map(d => d.origemChave!));
   const titulosRestritos = new Set(titulos.filter(t => t.natureza === "PAGAR" && (overlaysRestritos.has(chaveFonte("WIDESYS", "PAGAR", t.id))
-    || /comiss|corretagem|honor[aá]rio|taxa\s+de\s+administra/i.test(`${t.planoContaRotulo ?? ""} ${t.tipoCobrancaRotulo ?? ""}`))).map(t => t.id));
+    || contemComissaoRestrita([t.planoContaRotulo, t.tipoCobrancaRotulo]))).map(t => t.id));
   const locPorPessoa = new Map(locatarios.filter(l => l.pessoaId).map(l => [l.pessoaId!, l]));
   const pessoaContrato = (id?: string | null) => {
     const c = id ? cLegado.get(id) : null;

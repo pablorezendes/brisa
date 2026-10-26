@@ -5,6 +5,7 @@ export type CategoriaDespesaCatalogo = {
   ativa: boolean;
   versao: number;
   padrao: boolean;
+  podeCorrigirSigiloHonorarios?: boolean;
 };
 
 export type SalvarCategoriaDespesaEntrada = {
@@ -13,4 +14,5 @@ export type SalvarCategoriaDespesaEntrada = {
   ativa: boolean;
   restrita: boolean;
   versao?: number;
+  confirmarCorrecaoSigilo?: boolean;
 };

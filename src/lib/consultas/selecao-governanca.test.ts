@@ -117,11 +117,16 @@ describe("seleção simples e autorizada na governança", () => {
   it("comissões não entram em lista, contagem nem acesso direto de qualquer perfil", async () => {
     mocks.fontes.mockResolvedValue([
       fonte("comissao", { titulo: "Comissão de administração" }),
-      fonte("honorario", { campos: { plano: { rotulo: "Plano", valor: "Honorários" } } }),
+      fonte("honorario", { campos: { plano: { rotulo: "Plano", valor: "Honorários de administração" } } }),
       fonte("normal"),
     ]);
     expect((await buscarFinanceirosGovernanca("CAIXA")).itens.map(r => r.id)).toEqual(["normal"]);
     await expect(financeiroSelecionadoGovernanca("CAIXA", "comissao")).rejects.toThrow("NOT_FOUND");
     await expect(financeiroSelecionadoGovernanca("CAIXA", "honorario")).rejects.toThrow("NOT_FOUND");
+  });
+  it("honorários contábeis podem ser conferidos sem presumir comissão", async () => {
+    mocks.fontes.mockResolvedValue([fonte("contabilidade", { campos: { plano: { rotulo: "Plano", valor: "Honorários contábeis" } } })]);
+    expect((await buscarFinanceirosGovernanca("CAIXA")).itens.map(r => r.id)).toEqual(["contabilidade"]);
+    expect((await financeiroSelecionadoGovernanca("CAIXA", "contabilidade")).id).toBe("contabilidade");
   });
 });

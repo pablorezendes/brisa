@@ -2,6 +2,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { carteiraIrrestrita, montarPolitica, perfilSomenteLeitura, pode, type PoliticaAcesso } from "../acesso/politica";
+import { contemComissaoRestrita } from "./sigilo";
 
 export const LIMITE_ANEXO_DESPESA = 5 * 1024 * 1024;
 const MAX_ANEXOS = 10;
@@ -44,8 +45,7 @@ async function exigirDocumento(db: Banco, despesaId: string, politica: PoliticaA
   if (!pode(politica, "comissoes.ver")) {
     const origemId = despesa.origemChave && /^WIDESYS:PAGAR:([^:]+)$/.exec(despesa.origemChave)?.[1];
     const fonte = origemId ? await db.tituloFinanceiroLegado.findUnique({ where: { id: origemId }, select: { planoContaRotulo: true, tipoCobrancaRotulo: true } }) : null;
-    const restrito = /comiss|corretagem|honor[aá]rio|taxa de administra/i;
-    if (despesa.restrita || despesa.rateios.some(r => restrito.test(`${r.categoria ?? ""} ${r.descricao}`)) || restrito.test(`${fonte?.planoContaRotulo ?? ""} ${fonte?.tipoCobrancaRotulo ?? ""}`)) throw new Error("Este documento contém informação restrita ao administrador.");
+    if (despesa.restrita || contemComissaoRestrita([...despesa.rateios.flatMap(r => [r.categoria, r.descricao]), fonte?.planoContaRotulo, fonte?.tipoCobrancaRotulo])) throw new Error("Este documento contém informação restrita ao administrador.");
   }
 }
 

@@ -7,6 +7,7 @@ import { normalizar } from "../dominio/normalizacao";
 import { carregarDadosFontesUnificacao, derivarFontesUnificacao } from "../unificacao/fontes";
 import { projetarUnificados } from "../unificacao/reconciliacao";
 import type { FonteUnificacao } from "../unificacao/tipos";
+import { contemComissaoRestrita } from "../despesas/sigilo";
 
 type TipoFinanceiro = "CAIXA" | "TITULO";
 export type OpcaoFinanceiraGovernanca = {
@@ -46,7 +47,7 @@ function compativel(f: FonteUnificacao, tipo: TipoFinanceiro) {
 // Comissões continuam no módulo próprio, mesmo para quem pode consultá-las.
 function reservado(f: FonteUnificacao) {
   const rotulos = [f.titulo, f.descricao, ...["categoria", "plano", "tipoCobranca", "descricao"].map(c => f.campos[c]?.valor ?? "")];
-  return /COMISS|CORRETAG|HONORARI|TAXA.{0,24}ADMINISTR/.test(normalizar(rotulos.join(" ")));
+  return contemComissaoRestrita(rotulos.map(String));
 }
 function origem(f: FonteUnificacao) {
   if (f.origem === "WIDESYS") return "Widesys";

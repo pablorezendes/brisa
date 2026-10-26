@@ -39,11 +39,19 @@ describe("cadastro de categorias na própria tela", () => {
     expect(html).toContain("Restrita ao administrador");
     expect(actions.gravar).not.toHaveBeenCalled();
   });
-  it("edição preserva nome inicial e torna explícita a proteção irreversível", () => {
+  it("edição preserva nome inicial e a restrição já salva", () => {
     const html = renderToStaticMarkup(<EditorCategoriaDespesa inicial={{ ...categoria, restrita: true }} aoSalvar={vi.fn()} aoCancelar={vi.fn()} />);
     expect(html).toContain('value="Impostos"');
     expect(html).toMatch(/type="checkbox"[^>]*disabled=""[^>]*checked=""/);
-    expect(html).toContain("essa proteção não poderá ser retirada");
+    expect(html).toContain("A proteção já salva é preservada");
+    expect(html).not.toContain("Corrigir restrição indevida");
     expect(html).toContain("Salvar categoria");
+  });
+  it("exceção de honorários exige uma confirmação própria sem liberar documentos antigos", () => {
+    const html = renderToStaticMarkup(<EditorCategoriaDespesa inicial={{ ...categoria, codigo: "CAT_HON", rotulo: "Honorários", padrao: false, restrita: true, podeCorrigirSigiloHonorarios: true }} aoSalvar={vi.fn()} aoCancelar={vi.fn()} />);
+    expect(html).toContain("Corrigir restrição indevida desta categoria de honorários");
+    expect(html).toContain("As despesas já cadastradas e seus anexos continuam restritos");
+    expect(html.match(/checked=""/g)).toHaveLength(1);
+    expect(actions.gravar).not.toHaveBeenCalled();
   });
 });

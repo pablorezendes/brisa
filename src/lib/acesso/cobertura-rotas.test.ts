@@ -103,7 +103,10 @@ function validarImportacao(ast: ts.SourceFile, guarda: string) {
 }
 function permissaoEsperada(arquivo: string, nome: string): string {
   if (arquivo === "financeiro/contas-a-pagar/rateios-consulta.ts") return "despesas.ver";
-  if (arquivo === "financeiro/contas-a-pagar/rateio-actions.ts") return nome === "carregarRateioDespesa" ? "despesas.ver" : "despesas.editar";
+  if (arquivo === "financeiro/contas-a-pagar/rateio-actions.ts") {
+    if (nome === "confirmarRevisaoDespesa") return "unificacao.editar";
+    return ["carregarRateioDespesa", "carregarRevisaoDespesa"].includes(nome) ? "despesas.ver" : "despesas.editar";
+  }
   if (arquivo === "cadastros/governanca/lote-actions.ts") return "governanca.editar";
   if (arquivo === "integracoes/sicoob/actions.ts") return "integracoes.gerenciar";
   if (arquivo === "caixa/actions.ts" && nome === "excluirLancamento") return "governanca.editar";

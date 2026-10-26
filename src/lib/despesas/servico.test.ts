@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { buscarPagamentosDisponiveis, obterEditorDespesa, salvarDespesa } from "./servico";
 import type { SalvarDespesaEntrada } from "./tipos";
 import { criarSchemaSinteticoDespesas } from "./testes-banco";
-import { fonteLancamentoCaixa } from "../unificacao/fontes";
+import { carregarDadosFontesUnificacao, derivarFontesUnificacao, fonteLancamentoCaixa } from "../unificacao/fontes";
 import { filtroCaixaDespesasRestritas } from "./sigilo-caixa";
 import { categoriaWidesys } from "./categorias";
 
@@ -312,6 +312,17 @@ describe("despesa única com rateio manual", () => {
     await legado();
     await db.tituloFinanceiroLegado.update({ where: { id: "legado" }, data: { planoContaRotulo: "Taxa de administração" } });
     await expect(obterEditorDespesa(db, { origemChave: "WIDESYS:PAGAR:legado" }, { id: "fin" })).rejects.toMatchObject({ codigo: "COMISSAO_RESTRITA" });
+  });
+  it("honorários do Widesys não presumem comissão; uma proteção já registrada permanece", async () => {
+    await legado();
+    await db.tituloFinanceiroLegado.update({ where: { id: "legado" }, data: { planoContaRotulo: "Honorários" } });
+    const fonte = async () => (await derivarFontesUnificacao(await carregarDadosFontesUnificacao(db, "PAGAR"))).find(f => f.chave === "WIDESYS:PAGAR:legado");
+    expect((await fonte())?.restrito).toBe(false);
+    expect((await obterEditorDespesa(db, { origemChave: "WIDESYS:PAGAR:legado" }, { id: "fin" })).sigilo?.restrita).toBe(false);
+    const resultado = await salvarDespesa(db, administrativa({ categoriaCodigo: "OUTRAS", descricao: "Honorários contábeis", origemChave: "WIDESYS:PAGAR:legado", origemHash: "hash-v1" }), { id: "fin" });
+    await db.despesaDocumento.update({ where: { id: resultado.id }, data: { restrita: true } });
+    expect((await fonte())?.restrito).toBe(true);
+    await expect(obterEditorDespesa(db, { id: resultado.id }, { id: "fin" })).rejects.toMatchObject({ codigo: "COMISSAO_RESTRITA" });
   });
   it("flag restrita é derivada no servidor e não pode ser apagada enviando parâmetro extra", async () => {
     const dados = { ...entrada({ rateios: [{ empreendimentoId: "e1", descricao: "Honorários de administração", valor: 256000 }] }), restrita: false };
