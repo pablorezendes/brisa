@@ -120,11 +120,15 @@ export function projetarUnificados(fontes: FonteUnificacao[], decisoes: DecisaoU
     if (!d) avisos.push("ANALISE_NECESSARIA");
     if (fonteMudou || alvoInvalido) avisos.push("FONTE_ALTERADA_APOS_DECISAO");
     const origemManual = f.origem === "BRISA" && f.proveniencia?.tipo === "CADASTRO_MANUAL";
-    linhas.set(f.chave, { ...f, estado, origens: [origemManual ? "MANUAL" : f.proveniencia ? "PLANILHA" : f.origem], fontes: [f.chave], versao: d?.versao ?? 0, candidatos, avisos, contabiliza: estado === "ATIVO" && !f.cancelado && !f.informativo, divergencias: [] });
+    const conferidoManualmente = estado === "ATIVO" && d?.decisao === "MANUAL" && d.status === "ATIVO" && !d.destinoChave && hashFonteCorresponde(f, d.hashFonte);
+    linhas.set(f.chave, { ...f, estado, origens: [origemManual ? "MANUAL" : f.proveniencia ? "PLANILHA" : f.origem], fontes: [f.chave], versao: d?.versao ?? 0, candidatos, avisos, contabiliza: estado === "ATIVO" && !f.cancelado && !f.informativo, conferidoManualmente, divergencias: [] });
   }
   for (const d of decisoes) {
     const f = linhas.get(d.chave); const alvo = d.destinoChave ? linhas.get(d.destinoChave) : null;
     if (f?.estado !== "VINCULADO" || !alvo || alvo.estado !== "ATIVO") continue;
+    // A conferência pertence à decisão desta fonte. Vincular manualmente uma
+    // cópia não marca o principal automático como conferido por uma pessoa.
+    f.conferidoManualmente = d.decisao === "MANUAL" && d.status === "VINCULADO" && hashFonteCorresponde(f, d.hashFonte) && hashFonteCorresponde(alvo, d.hashDestino);
     alvo.fontes.push(f.chave); alvo.origens = [...new Set([...alvo.origens, ...f.origens])];
     alvo.papeis = [...new Set([...(alvo.papeis ?? []), ...(f.papeis ?? [])])];
     // Complementa somente lacunas de exibição; dinheiro e dados operacionais

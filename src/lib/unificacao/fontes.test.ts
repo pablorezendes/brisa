@@ -1,9 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  carregarDadosFontesUnificacao, carregarFontesUnificacao, derivarFontesUnificacao,
+  carregarDadosFontesUnificacao, carregarFontesUnificacao, derivarFontesUnificacao, hashUnificacao,
   type BancoUnificacao, type DadosFontesUnificacao,
 } from "./fontes";
+import { chavesRestritasUnificacao } from "./privacidade";
 
 vi.mock("node:fs", () => ({ existsSync: vi.fn(), readFileSync: vi.fn() }));
 
@@ -100,6 +101,28 @@ beforeEach(() => {
 });
 
 describe("fotografia compacta das fontes de unificação", () => {
+  it.each(["planoContaRotulo", "tipoCobrancaRotulo"] as const)("comissão explícita a receber em %s protege título, baixa e movimento sem alterar assinatura financeira", async campo => {
+    const fontes = await derivarFontesUnificacao({ ...dados, titulos: [{ ...dados.titulos[0], [campo]: "Comissão de administração" }] });
+    const chaves = ["WIDESYS:RECEBER:titulo", "WIDESYS:BAIXA_RECEBER:baixa", "WIDESYS:MOVIMENTO:movimento"];
+    const restritas = chavesRestritasUnificacao(fontes, []);
+    for (const chave of chaves) {
+      const f = fontes.find(fonte => fonte.chave === chave)!;
+      expect(f.restrito).toBe(true);
+      expect(restritas.has(chave)).toBe(true);
+      const conteudoAnteriorSemFlag = Object.fromEntries(Object.entries(f).filter(([nome]) => !["hash", "hashesCompativeis", "restrito"].includes(nome)));
+      expect(f.hash).toBe(hashUnificacao(conteudoAnteriorSemFlag));
+    }
+    expect(fontes.find(f => f.chave === "BRISA:RECEBER:recebimento")?.restrito).not.toBe(true);
+  });
+  it("a referência genérica à composição para comissão não restringe aluguel nem honorários contábeis", async () => {
+    for (const planoContaRotulo of ["Locação", "Honorários contábeis"]) {
+      const fontes = await derivarFontesUnificacao({ ...dados, titulos: [{ ...dados.titulos[0], planoContaRotulo }] });
+      const titulo = fontes.find(f => f.chave === "WIDESYS:RECEBER:titulo")!;
+      expect(titulo.campos.composicao.rotulo).toContain("comissão");
+      expect(titulo.restrito).not.toBe(true);
+      expect(chavesRestritasUnificacao(fontes, []).has(titulo.chave)).toBe(false);
+    }
+  });
   const despesaBase: DadosFontesUnificacao["despesas"][number] = {
     id: "despesa-teste", origemChave: null, fornecedorNome: "Fornecedor teste", fornecedorDocumento: null,
     numero: "42", serie: null, tomadorNome: null, tomadorDocumento: null, competencia: "2026-10", emissao: "2026-10-07",

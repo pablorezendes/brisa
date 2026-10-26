@@ -4,6 +4,7 @@ import type { DespesaEditor } from "@/lib/despesas/tipos";
 
 const mocks = vi.hoisted(() => ({ salvar: vi.fn(), carregar: vi.fn(), buscar: vi.fn(), visiveis: false }));
 vi.mock("@/app/(app)/financeiro/contas-a-pagar/rateio-actions", () => ({ salvarRateioDespesa: mocks.salvar, carregarRateioDespesa: mocks.carregar, procurarPagamentoDespesa: mocks.buscar, carregarRevisaoDespesa: vi.fn(), confirmarRevisaoDespesa: vi.fn() }));
+vi.mock("@/app/(app)/recebimentos/revisao-actions", () => ({ carregarRevisaoRecebimento: vi.fn(), confirmarRevisaoRecebimento: vi.fn() }));
 vi.mock("@/app/(app)/financeiro/contas-a-pagar/categorias-actions", () => ({ carregarCategoriasDespesas: vi.fn(), gravarCategoriaDespesa: vi.fn() }));
 vi.mock("@/app/(app)/cadastros/fornecedores/actions", () => ({ pesquisarFornecedores: vi.fn(), salvarCadastroFornecedor: vi.fn(), usarPessoaComoFornecedor: vi.fn() }));
 vi.mock("@/components/botao-sigilo", () => ({ BotaoSigilo: () => <button>Ver valores</button>, useValoresVisiveis: () => mocks.visiveis }));

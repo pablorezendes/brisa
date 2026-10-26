@@ -971,6 +971,33 @@ Histórico de comissão impede essa correção. Comissões continuam restritas.
 Esta atualização não exige alteração de schema, seed ou nova importação. Use o
 deploy habitual e preserve o banco do servidor; os dados de teste não são publicados.
 
+## Conferência no popup de contas a receber (outubro/2026)
+
+Em **Financeiro > A receber**, clique em **Conferir** na linha. O popup mostra
+o título, a competência, o valor recebido, o saldo e os possíveis repetidos.
+Escolha **Mesmo lançamento** para vincular uma cópia ao principal, ou confirme
+que é um lançamento próprio. Informe o motivo, confirme a comparação e conclua.
+A lista, os totais e as pendências são atualizados sem perder os filtros. Se o
+registro sair do filtro de pendências, o popup permanece aberto com o resultado.
+
+Os status em contas a pagar e a receber distinguem:
+
+- **Conferido**: uma pessoa confirmou a decisão para os dados atuais. Se o
+  lançamento participa dos totais, a explicação informa isso expressamente.
+- **Conferido · vinculado**: a cópia foi vinculada ao principal e não soma novamente.
+- **Incluído automaticamente**: participa dos totais, mas ainda não houve uma
+  conferência manual. É possível conferir sem adicionar seu valor uma segunda vez.
+- **Revisar decisão**: os dados relevantes mudaram ou a decisão foi reaberta.
+
+Salvar categoria ou rateio continua sendo diferente de confirmar a duplicidade.
+A conferência não cria título, recebimento, baixa ou saída de caixa. Dados
+inconsistentes e ausentes continuam exigindo correção na origem; meses fechados
+e vínculos com boletos ativos preservam suas regras. Permissões são verificadas
+novamente ao confirmar, inclusive para comissões e carteiras restritas.
+
+Não é necessário alterar o schema, reimportar dados ou executar seed nesta versão.
+Decisões manuais já válidas passam a apresentar **Conferido** automaticamente.
+
 ## Cloudflare — a nuvem laranja e o certificado
 
 O registro `brisa.tescod.com` está no Cloudflare **com proxy** (nuvem

@@ -32,6 +32,9 @@ export type LinhaUnificada = FonteUnificacao & {
   estado: EstadoUnificacao; origens: string[]; fontes: string[]; versao: number;
   candidatos: Array<CandidatoUnificacao & { titulo: string; descricao: string }>;
   avisos: string[]; contabiliza: boolean; divergencias: string[];
+  /** Decisão humana de inclusão/vínculo ainda válida para esta fotografia.
+   * Não equivale a pagamento, nem autoriza somar cancelados/informativos. */
+  conferidoManualmente?: boolean;
 };
 export type FiltrosUnificacao = {
   dominio?: string; estado?: string; q?: string; pagina?: number; porPagina?: number;

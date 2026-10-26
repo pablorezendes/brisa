@@ -20,6 +20,7 @@ import { acessoAtual } from "@/lib/acesso/servidor";
 import { carteiraIrrestrita, pode, podeAbrirRota } from "@/lib/acesso/politica";
 import { alvoExclusaoUnificado } from "@/lib/governanca/alvos-ui";
 import { ProvedorRateioDespesa, RateioDespesaBotao } from "@/components/rateio-despesa-botao";
+import { ProvedorRevisaoRecebimento } from "@/components/revisao-recebimento-botao";
 import { ResumoRateiosDespesas } from "@/components/resumo-rateios-despesas";
 import { CategoriasDespesaBotao } from "@/components/categorias-despesa-botao";
 
@@ -84,6 +85,8 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
   const permiteExcluir = acesso.perfil === "ADMINISTRADOR" && pode(acesso, "governanca.editar") && carteiraIrrestrita(acesso);
   const permiteVerRateio = dominio === "PAGAR" && carteiraIrrestrita(acesso) && pode(acesso, "despesas.ver");
   const permiteEditarRateio = permiteVerRateio && pode(acesso, "despesas.editar");
+  const permiteConferirRecebimento = ["ADMINISTRADOR", "FINANCEIRO"].includes(acesso.perfil) && carteiraIrrestrita(acesso)
+    && pode(acesso, "financeiro.ver") && pode(acesso, "unificacao.ver") && pode(acesso, "cadastros.sensiveis");
   // Somente campos já visíveis na lista atravessam a fronteira RSC/cliente.
   // Nunca enviar o objeto do DAL, candidatos, campos fiscais, documentos ou hashes.
   const itensTabela: LinhaTabelaOperacao[] = dados.itens.map(item => {
@@ -96,6 +99,9 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
       origens: origensDoRegistro(item),
       papeis: item.papeis ?? [],
       estado: item.estado,
+      conferidoManualmente: item.conferidoManualmente,
+      cancelado: item.cancelado,
+      informativo: item.informativo,
       contabiliza: item.contabiliza,
       correspondencias: item.candidatos.length,
       aviso: item.avisos.length ? motivoUnificacao(item.avisos[0]) : null,
@@ -115,6 +121,7 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
       rateio: permiteEditarRateio && item.dominio === "PAGAR" && ["ATIVO", "PENDENTE", "REVISAR", "QUARENTENA"].includes(item.estado)
         ? item.chave.startsWith("BRISA:PAGAR:") ? { id: item.chave.slice("BRISA:PAGAR:".length) } : item.chave.startsWith("WIDESYS:PAGAR:") ? { origemChave: item.chave } : undefined
         : undefined,
+      revisaoRecebimento: permiteConferirRecebimento && item.dominio === "RECEBER" && ["ATIVO", "VINCULADO", "PENDENTE", "REVISAR"].includes(item.estado),
     };
   });
   const hrefLista = (opcoes: { pagina?: number; estado?: string }) => {
@@ -125,10 +132,10 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
     return `${base}?${p}`;
   };
   const hrefPagina = (pagina: number) => hrefLista({ pagina });
-  return <ProvedorRateioDespesa><div>
+  return <ProvedorRateioDespesa><ProvedorRevisaoRecebimento><div>
     <PageHeader titulo={titulo} descricao={listaFinanceira ? "Encontre o lançamento pela origem, confira a situação e abra o registro para resolver." : central ? "Consulta completa de registros e suas origens. Inclusão nos totais não significa conferência manual concluída." : "Consulte registros e pendências em um só lugar. A origem mostra de onde o dado veio; a situação indica seu efeito nos totais, não uma auditoria concluída."} acoes={permiteVerRateio ? <><ResumoRateiosDespesas />{podeAbrirRota(acesso, "/cadastros/fornecedores") && <Link href="/cadastros/fornecedores" prefetch={false} className={btnSecundario}>Fornecedores</Link>}{acesso.perfil === "ADMINISTRADOR" && <CategoriasDespesaBotao />}{permiteEditarRateio && <RateioDespesaBotao />}</> : undefined} />
     <nav aria-label={listaFinanceira ? "Listas do financeiro" : "Operação unificada"} className="mb-5 flex flex-wrap gap-1.5 rounded-xl border border-contorno bg-carta p-2">{abasVisiveis.map((aba) => <Link prefetch={false} key={aba.dominio} href={aba.href} aria-current={(central ? aba.dominio === "CENTRAL" : aba.dominio === dominio) ? "page" : undefined} className={`rounded-lg px-3 py-2 text-xs font-semibold ${(central ? aba.dominio === "CENTRAL" : aba.dominio === dominio) ? "bg-oliva/10 text-oliva-escura" : "text-tinta-suave hover:bg-slate-50"}`}>{aba.titulo}</Link>)}</nav>
-    {listaFinanceira ? <div className="mb-5 flex flex-wrap items-center justify-between gap-3 text-xs leading-relaxed text-tinta-suave"><p><strong className="text-tinta">Como conferir:</strong> escolha uma situação abaixo e clique em <strong className="text-tinta">Revisar e resolver</strong>.{contexto ? " A conferência abre nesta tela, sem perder seus filtros." : " Compare as informações antes de confirmar uma decisão."}</p><a href="#lista-lancamentos" className="shrink-0 font-semibold text-oliva-escura underline underline-offset-4">Ir para os lançamentos ↓</a></div> : null}
+    {listaFinanceira ? <div className="mb-5 flex flex-wrap items-center justify-between gap-3 text-xs leading-relaxed text-tinta-suave"><p><strong className="text-tinta">Como conferir:</strong> escolha uma situação abaixo e clique em <strong className="text-tinta">{dominio === "RECEBER" && permiteConferirRecebimento ? "Conferir" : dominio === "PAGAR" && permiteEditarRateio ? "Organizar despesa" : "Revisar e resolver"}</strong>.{contexto ? " A conferência abre nesta tela, sem perder seus filtros." : " Compare as informações antes de confirmar uma decisão."}</p><a href="#lista-lancamentos" className="shrink-0 font-semibold text-oliva-escura underline underline-offset-4">Ir para os lançamentos ↓</a></div> : null}
     {primeiroParametro(parametros.erro) ? <Card nivel="critico" className="mb-4 p-4 text-sm">{primeiroParametro(parametros.erro)}</Card> : null}
     {primeiroParametro(parametros.ok) ? <Card nivel="otimo" className="mb-4 p-4 text-sm">{mensagemUnificacao(primeiroParametro(parametros.ok)!)}</Card> : null}
     {!dados.sincronizado ? <Card nivel="atencao" className="mb-4 p-4 text-sm">A análise das correspondências ainda não está registrada. Use “Reanalisar correspondências” para conferir os dados já disponíveis no Brisa. Essa ação não importa novas capturas do Widesys nem novas planilhas.</Card> : null}
@@ -172,5 +179,5 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
       {nativo ? <p className="mt-3 text-xs text-tinta-suave">A base original mantém suas próprias regras. Não some seus valores aos desta lista.</p> : null}
     </details>
     {conteudoJanela && contexto ? <JanelaContextual titulo={painel === "excluir" ? "Excluir ou restaurar registro" : "Conferir e resolver registro"} retorno={contexto.retorno} selecao={`${chaveSelecionada}:${painel}`} comparacao={primeiroParametro(parametros.destino)}>{conteudoJanela}</JanelaContextual> : null}
-  </div></ProvedorRateioDespesa>;
+  </div></ProvedorRevisaoRecebimento></ProvedorRateioDespesa>;
 }

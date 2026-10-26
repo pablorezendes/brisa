@@ -75,6 +75,7 @@ const ACTIONS = [
   "financeiro/contas-a-pagar/rateios-consulta.ts",
   "financeiro/notas-fiscais/actions.ts",
   "recebimentos/actions.ts",
+  "recebimentos/revisao-actions.ts",
   "temporada/actions.ts",
   "unificacao/actions.ts"
 ];
@@ -102,6 +103,7 @@ function validarImportacao(ast: ts.SourceFile, guarda: string) {
     && n.importClause.namedBindings.elements.some(e => e.name.text === guarda));
 }
 function permissaoEsperada(arquivo: string, nome: string): string {
+  if (arquivo === "recebimentos/revisao-actions.ts") return nome === "carregarRevisaoRecebimento" ? "financeiro.ver" : "unificacao.editar";
   if (arquivo === "financeiro/contas-a-pagar/rateios-consulta.ts") return "despesas.ver";
   if (arquivo === "financeiro/contas-a-pagar/rateio-actions.ts") {
     if (nome === "confirmarRevisaoDespesa") return "unificacao.editar";

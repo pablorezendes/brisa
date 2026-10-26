@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { avaliarFonte, candidatosPara, projetarUnificados } from "./reconciliacao";
 import type { DecisaoUnificacao, FonteUnificacao } from "./tipos";
+import { DOMINIOS_UNIFICACAO } from "./tipos";
 
 function fonte(chave: string, alteracoes: Partial<FonteUnificacao> = {}): FonteUnificacao {
   return {
@@ -26,6 +27,61 @@ function vinculo(f: FonteUnificacao, alvo: FonteUnificacao): DecisaoUnificacao {
 }
 
 const mapa = (fontes: FonteUnificacao[]) => new Map(fontes.map(f => [f.chave, f]));
+
+describe("conferência manual comprovada", () => {
+  it.each(DOMINIOS_UNIFICACAO)("identifica decisão manual válida em %s sem inferir pela origem ou inclusão automática", dominio => {
+    const f = fonte(`BRISA:${dominio}:1`, { dominio, proveniencia: { tipo: "CADASTRO_MANUAL" } });
+    const nativo = projetarUnificados([f], [])[0];
+    expect(nativo.conferidoManualmente).toBe(false);
+    expect(projetarUnificados([f], [decisao(f, { decisao: "AUTOMATICA" })])[0].conferidoManualmente).toBe(false);
+    expect(projetarUnificados([f], [decisao(f, { decisao: "MANUAL" })])[0]).toMatchObject({ estado: "ATIVO", conferidoManualmente: true });
+  });
+  it.each(DOMINIOS_UNIFICACAO)("vínculo manual em %s confere a cópia, sem conferir automaticamente o principal", dominio => {
+    const principal = fonte(`BRISA:${dominio}:1`, { dominio });
+    const copia = fonte(`WIDESYS:${dominio}:2`, { dominio });
+    const linhas = projetarUnificados([principal, copia], [decisao(principal, { decisao: "AUTOMATICA" }), vinculo(copia, principal)]);
+    expect(linhas[0]).toMatchObject({ estado: "ATIVO", conferidoManualmente: false });
+    expect(linhas[1]).toMatchObject({ estado: "VINCULADO", conferidoManualmente: true, contabiliza: false });
+    const automatico = projetarUnificados([principal, copia], [decisao(principal), { ...vinculo(copia, principal), decisao: "AUTOMATICA" }]);
+    expect(automatico[1].conferidoManualmente).toBe(false);
+  });
+  it("não declara conferência em decisão reaberta, hash alterado, quarentena ou ausência", () => {
+    const f = fonte("WIDESYS:PAGAR:1", { dominio: "PAGAR" });
+    const manual = decisao(f, { decisao: "MANUAL" });
+    const casos = [
+      projetarUnificados([f], [{ ...manual, status: "PENDENTE" }])[0],
+      projetarUnificados([f], [{ ...manual, status: "REVISAR" }])[0],
+      projetarUnificados([{ ...f, hash: "alterado" }], [manual])[0],
+      projetarUnificados([{ ...f, qualidade: "QUARENTENA" }], [manual])[0],
+      projetarUnificados([{ ...f, qualidade: "AUSENTE" }], [manual])[0],
+    ];
+    expect(casos.every(linha => !linha.conferidoManualmente && !linha.contabiliza)).toBe(true);
+  });
+  it("destino inválido ou reaberto retira o selo da cópia vinculada", () => {
+    const principal = fonte("BRISA:RECEBER:1");
+    const copia = fonte("WIDESYS:RECEBER:2");
+    const vinculado = vinculo(copia, principal);
+    for (const [fontes, decisoes] of [
+      [[copia], [vinculado]],
+      [[principal, copia], [decisao(principal, { status: "PENDENTE", decisao: "MANUAL" }), vinculado]],
+      [[{ ...principal, hash: "novo" }, copia], [decisao(principal), vinculado]],
+      [[{ ...principal, qualidade: "QUARENTENA" }, copia], [decisao(principal), vinculado]],
+    ] as Array<[FonteUnificacao[], DecisaoUnificacao[]]>) {
+      expect(projetarUnificados(fontes, decisoes).find(linha => linha.chave === copia.chave)).toMatchObject({ estado: "REVISAR", conferidoManualmente: false, contabiliza: false });
+    }
+  });
+  it("assinatura legada compatível preserva a conferência, sem liberar hash desconhecido", () => {
+    const f = fonte("WIDESYS:PAGAR:1", { dominio: "PAGAR", hashesCompativeis: ["legado-validado"] });
+    expect(projetarUnificados([f], [decisao(f, { decisao: "MANUAL", hashFonte: "legado-validado" })])[0].conferidoManualmente).toBe(true);
+    expect(projetarUnificados([f], [decisao(f, { decisao: "MANUAL", hashFonte: "desconhecido" })])[0].conferidoManualmente).toBe(false);
+  });
+  it("conferência não transforma cancelados ou informativos em valores contabilizados", () => {
+    for (const detalhe of [{ cancelado: true }, { informativo: true }]) {
+      const f = fonte("WIDESYS:PAGAR:1", { dominio: "PAGAR", ...detalhe });
+      expect(projetarUnificados([f], [decisao(f, { decisao: "MANUAL" })])[0]).toMatchObject({ conferidoManualmente: true, contabiliza: false });
+    }
+  });
+});
 
 describe("proveniência manual explícita", () => {
   it("mantém nota manual separada da origem desconhecida e da planilha", () => {

@@ -10,6 +10,7 @@ import type { DominioExclusaoTitulos } from "@/lib/governanca/exclusao-titulos-l
 import { ExclusaoTitulosModal } from "@/components/exclusao-titulos-modal";
 import { alternarSelecao, chavesExcluiveisNaPagina, selecaoVisivel } from "@/components/selecao-exclusao-lote";
 import { RateioDespesaBotao } from "@/components/rateio-despesa-botao";
+import { RevisaoRecebimentoBotao } from "@/components/revisao-recebimento-botao";
 
 /** DTO exclusivo da tabela. Não aceitar LinhaUnificada nem espalhar registros do DAL. */
 export type LinhaTabelaOperacao = {
@@ -20,6 +21,9 @@ export type LinhaTabelaOperacao = {
   origens: OrigemDados[];
   papeis: string[];
   estado: EstadoUnificacao;
+  conferidoManualmente?: boolean;
+  cancelado?: boolean;
+  informativo?: boolean;
   contabiliza: boolean;
   correspondencias: number;
   aviso: string | null;
@@ -34,6 +38,7 @@ export type LinhaTabelaOperacao = {
   hrefCadastro: string | null;
   exclusao: { href: string; rotulo: string } | null;
   rateio?: { id?: string; origemChave?: string };
+  revisaoRecebimento?: boolean;
 };
 
 type PropriedadesTabela = {
@@ -91,13 +96,14 @@ function conteudoTabela({ itens, financeiro, exibirDominio, exibirValor, context
   // Evita depender da transição RSC para abrir detalhes em listas extensas.
   const LinkRegistro = contextual ? "a" : Link;
   const propsLinkRegistro = contextual ? {} : { prefetch: false as const };
+  const rotuloPago = exibirDominio || !itens.length ? "Pago / recebido" : itens.every(item => item.dominio === "RECEBER") ? "Recebido" : "Pago";
   return <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
     <table className={`tabela tabela--acoes${financeiro && !exibirDominio ? " tabela-financeira" : ""}`}>
       <thead><tr>
         <th>{selecao ? <label className="flex items-center gap-3"><input type="checkbox" checked={selecao.todos} disabled={!selecao.permitidas.length} ref={elemento => { if (elemento) elemento.indeterminate = !!selecao.selecionados.length && !selecao.todos; }} onChange={selecao.alternarTodos} aria-label="Selecionar todos os registros desta página" className="h-4 w-4 shrink-0 accent-oliva" /><span>Registro · de onde veio</span></label> : "Registro · de onde veio"}</th>
         {exibirDominio ? <th>Tipo</th> : null}
         <th>Situação · efeito nos totais</th><th>Data / competência</th>
-        {financeiro ? <><th className="tabela-valor-separado text-right!">Devido</th><th className="tabela-valor-separado text-right!">Pago</th><th className="tabela-valor-separado text-right!">Aberto</th>{!exibirDominio ? <th className="tabela-valores-agrupados text-right!">Valores</th> : null}</> : exibirValor ? <th className="text-right!">Valor</th> : null}
+        {financeiro ? <><th className="tabela-valor-separado text-right!">Devido</th><th className="tabela-valor-separado text-right!">{rotuloPago}</th><th className="tabela-valor-separado text-right!">Aberto</th>{!exibirDominio ? <th className="tabela-valores-agrupados text-right!">Valores</th> : null}</> : exibirValor ? <th className="text-right!">Valor</th> : null}
         <th className="text-right!">Ações</th>
       </tr></thead>
       <tbody>{itens.map(item => <tr key={item.chave} className={selecao?.selecionados.includes(item.chave) ? "bg-oliva/5" : undefined}>
@@ -114,7 +120,7 @@ function conteudoTabela({ itens, financeiro, exibirDominio, exibirValor, context
         {exibirDominio ? <td>{ROTULOS_DOMINIO[item.dominio]}</td> : null}
         <td className="max-w-[250px] whitespace-normal!">
           <EstadoUnificado item={item} />
-          {item.correspondencias ? <p className="mt-1 text-[11px] text-amber-800">{item.correspondencias} correspondência(s) para comparar</p> : null}
+          {item.correspondencias && !item.conferidoManualmente ? <p className="mt-1 text-[11px] text-amber-800">{item.correspondencias} correspondência(s) para comparar</p> : null}
           <details className="mt-2 text-xs text-tinta-suave">
             <summary className="cursor-pointer text-[11px] font-medium text-oliva-escura">Entenda a situação</summary>
             {item.aviso ? <p className="mt-2 text-[11px]">{item.aviso}</p> : null}
@@ -124,11 +130,12 @@ function conteudoTabela({ itens, financeiro, exibirDominio, exibirValor, context
         <td className="text-xs text-tinta-suave">{item.data}{item.competencia ? <p className="mt-1 font-mono text-[10px]">{item.competencia}</p> : null}</td>
         {financeiro ? <>
           {[item.valor, item.pago, item.aberto].map((valor, indice) => <td key={indice} className="tabela-valor-separado text-right!"><Sigilo><Dinheiro centavos={valor} /></Sigilo></td>)}
-          {!exibirDominio ? <td className="tabela-valores-agrupados"><dl className="tabela-valores-financeiros">{[{ rotulo: "Devido", valor: item.valor }, { rotulo: "Pago", valor: item.pago }, { rotulo: "Aberto", valor: item.aberto }].map(({ rotulo, valor }) => <div key={rotulo}><dt>{rotulo}</dt><dd><Sigilo><Dinheiro centavos={valor} /></Sigilo></dd></div>)}</dl></td> : null}
+          {!exibirDominio ? <td className="tabela-valores-agrupados"><dl className="tabela-valores-financeiros">{[{ rotulo: "Devido", valor: item.valor }, { rotulo: item.dominio === "RECEBER" ? "Recebido" : "Pago", valor: item.pago }, { rotulo: "Aberto", valor: item.aberto }].map(({ rotulo, valor }) => <div key={rotulo}><dt>{rotulo}</dt><dd><Sigilo><Dinheiro centavos={valor} /></Sigilo></dd></div>)}</dl></td> : null}
         </> : exibirValor ? <td className="text-right!"><span className="block text-[10px] text-tinta-suave">{item.natureza}</span><Sigilo><Dinheiro centavos={item.valor} /></Sigilo></td> : null}
         <td className="text-right!"><div className="flex flex-col items-end gap-2">
           {item.rateio && item.dominio === "PAGAR" ? <RateioDespesaBotao {...item.rateio} compacto /> : null}
-          <LinkRegistro {...propsLinkRegistro} href={item.hrefDetalhe} className="text-xs font-semibold text-oliva-escura hover:underline">{["PENDENTE", "REVISAR", "QUARENTENA"].includes(item.estado) ? "Revisar e resolver" : "Ver detalhes"}</LinkRegistro>
+          {item.revisaoRecebimento && item.dominio === "RECEBER" ? <RevisaoRecebimentoBotao chave={item.chave} conferido={item.conferidoManualmente} /> : null}
+          <LinkRegistro {...propsLinkRegistro} href={item.hrefDetalhe} className="text-xs font-semibold text-oliva-escura hover:underline">{!item.revisaoRecebimento && ["PENDENTE", "REVISAR", "QUARENTENA"].includes(item.estado) ? "Revisar e resolver" : "Ver detalhes"}</LinkRegistro>
           {item.exclusao ? selecao?.permitidas.includes(item.chave) ? <button type="button" onClick={() => selecao.excluir(item.chave)} className="inline-flex min-h-8 items-center rounded-md px-2 py-1 text-xs font-semibold text-erro underline-offset-4 hover:bg-erro/5 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2" title="Conferir e excluir nesta tela">{item.exclusao.rotulo}</button> : <LinkRegistro {...propsLinkRegistro} href={item.exclusao.href} className="inline-flex min-h-8 items-center rounded-md px-2 py-1 text-xs font-semibold text-erro underline-offset-4 hover:bg-erro/5 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2" title="Revisar o impacto e confirmar a exclusão com histórico">{item.exclusao.rotulo}</LinkRegistro> : null}
           {item.hrefCadastro ? <Link prefetch={false} href={item.hrefCadastro} className="text-[11px] text-tinta-suave hover:underline">Abrir cadastro / lançamento</Link> : null}
         </div></td>

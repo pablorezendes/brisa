@@ -317,7 +317,9 @@ describe("despesa única com rateio manual", () => {
     await legado();
     await db.tituloFinanceiroLegado.update({ where: { id: "legado" }, data: { planoContaRotulo: "Honorários" } });
     const fonte = async () => (await derivarFontesUnificacao(await carregarDadosFontesUnificacao(db, "PAGAR"))).find(f => f.chave === "WIDESYS:PAGAR:legado");
-    expect((await fonte())?.restrito).toBe(false);
+    const fonteHonorarios = await fonte();
+    expect(fonteHonorarios).toBeDefined();
+    expect(fonteHonorarios!.restrito).not.toBe(true);
     expect((await obterEditorDespesa(db, { origemChave: "WIDESYS:PAGAR:legado" }, { id: "fin" })).sigilo?.restrita).toBe(false);
     const resultado = await salvarDespesa(db, administrativa({ categoriaCodigo: "OUTRAS", descricao: "Honorários contábeis", origemChave: "WIDESYS:PAGAR:legado", origemHash: "hash-v1" }), { id: "fin" });
     await db.despesaDocumento.update({ where: { id: resultado.id }, data: { restrita: true } });

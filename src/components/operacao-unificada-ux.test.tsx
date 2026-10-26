@@ -50,9 +50,9 @@ describe("origem e situação são informações diferentes", () => {
     expect(html).not.toContain("Excel");
   });
   it("ATIVO financeiro não declara auditoria concluída e cadastro não declara efeito financeiro", () => {
-    expect(renderToStaticMarkup(<EstadoUnificado item={registro()} />)).toContain("Incluído nos totais");
+    expect(renderToStaticMarkup(<EstadoUnificado item={registro()} />)).toContain("Incluído automaticamente");
     expect(renderToStaticMarkup(<EstadoUnificado item={registro({ dominio: "PESSOA" })} />)).toContain("Disponível");
-    expect(explicarConsolidacao(registro())).toContain("não significa conferência manual concluída");
+    expect(explicarConsolidacao(registro())).toContain("Ainda não foi conferido manualmente");
     expect(explicarConsolidacao(registro({ cancelado: true, contabiliza: false }))).toContain("Não entra nos totais");
     expect(explicarConsolidacao(registro({ estado: "VINCULADO", contabiliza: false }))).toContain("Não soma novamente");
     expect(explicarConsolidacao(registro({ estado: "PENDENTE", contabiliza: false }))).toContain("Fora dos totais");
@@ -75,6 +75,27 @@ describe("origem e situação são informações diferentes", () => {
     mocks.perfil.mockResolvedValue("CONTABILIDADE");
     await expect(OperacaoUnificada({ titulo: "Teste", base: "/unificacao" })).rejects.toThrow("ACESSO_NEGADO");
     expect(mocks.listar).not.toHaveBeenCalled();
+  });
+  it("habilita conferência de recebimentos na janela somente para acesso integral e preserva os detalhes", async () => {
+    mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "FINANCEIRO", ativo: true, global: true, regras: [], permissoes: ["financeiro.ver", "unificacao.ver", "cadastros.sensiveis"] });
+    const html = renderToStaticMarkup(await OperacaoUnificada({ titulo: "A receber", base: "/recebimentos", dominioFixo: "RECEBER" }));
+    expect(html).toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*>Conferir<\/button>/);
+    expect(html).toContain("Ver detalhes");
+    expect(html).toContain("Incluído automaticamente");
+    const dados = lista(); dados.itens[0] = registro({ conferidoManualmente: true }); mocks.listar.mockResolvedValue(dados);
+    const conferido = renderToStaticMarkup(await OperacaoUnificada({ titulo: "A receber", base: "/recebimentos", dominioFixo: "RECEBER" }));
+    expect(conferido).toMatch(/<button[^>]*>Conferido<\/button>/);
+    expect(conferido).toContain("Conferido e incluído nos totais");
+    mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "FINANCEIRO", ativo: true, global: true, regras: [], permissoes: ["financeiro.ver", "cadastros.sensiveis"] });
+    const restrito = renderToStaticMarkup(await OperacaoUnificada({ titulo: "A receber", base: "/recebimentos", dominioFixo: "RECEBER" }));
+    expect(restrito).not.toMatch(/<button[^>]*>Conferido<\/button>/);
+  });
+  it("quarentena conserva a revisão da origem sem oferecer conclusão direta no popup", async () => {
+    mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "FINANCEIRO", ativo: true, global: true, regras: [], permissoes: ["financeiro.ver", "unificacao.ver", "cadastros.sensiveis"] });
+    const dados = lista(); dados.itens[0] = registro({ estado: "QUARENTENA", contabiliza: false }); mocks.listar.mockResolvedValue(dados);
+    const html = renderToStaticMarkup(await OperacaoUnificada({ titulo: "A receber", base: "/recebimentos", dominioFixo: "RECEBER" }));
+    expect(html).toContain("Revisar e resolver");
+    expect(html).not.toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*>Conferir<\/button>/);
   });
   it("detalhe mostra evidência da fonte associada sem expor campos de comissão", async () => {
     const principal = registro({ origens: ["BRISA", "PLANILHA"], campos: { pessoa: { rotulo: "Pessoa", valor: "Pessoa permitida" }, taxa: { rotulo: "Taxa reservada", valor: "SEGREDO_TAXA" }, administracao: { rotulo: "Administração", valor: "SEGREDO_ADMINISTRACAO" } } });

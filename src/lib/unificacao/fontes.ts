@@ -187,8 +187,8 @@ export async function derivarFontesUnificacao(dados: DadosFontesUnificacao): Pro
   const cLegado = new Map(contratosLegados.map(c => [c.legadoId, c]));
   const tLegado = new Map(titulos.map(t => [`${t.escopo}:${t.legadoId}`, t]));
   const overlaysRestritos = new Set(despesas.filter(d => d.restrita && d.origemChave).map(d => d.origemChave!));
-  const titulosRestritos = new Set(titulos.filter(t => t.natureza === "PAGAR" && (overlaysRestritos.has(chaveFonte("WIDESYS", "PAGAR", t.id))
-    || contemComissaoRestrita([t.planoContaRotulo, t.tipoCobrancaRotulo]))).map(t => t.id));
+  const titulosRestritos = new Set(titulos.filter(t => (t.natureza === "PAGAR" && overlaysRestritos.has(chaveFonte("WIDESYS", "PAGAR", t.id)))
+    || contemComissaoRestrita([t.planoContaRotulo, t.tipoCobrancaRotulo])).map(t => t.id));
   const locPorPessoa = new Map(locatarios.filter(l => l.pessoaId).map(l => [l.pessoaId!, l]));
   const pessoaContrato = (id?: string | null) => {
     const c = id ? cLegado.get(id) : null;

@@ -180,8 +180,9 @@ describe("popup financeiro integrado à lista SSR", () => {
     expect(itens[24].titulo).toBe("Título 24");
     expect(itens[0].correspondencias).toBe(1);
     expect(JSON.stringify(itens)).not.toContain("SEGREDO");
-    expect(Object.keys(itens[0]).sort()).toEqual(["chave", "dominio", "titulo", "descricao", "origens", "papeis", "estado", "contabiliza", "correspondencias", "aviso", "impacto", "data", "competencia", "valor", "pago", "aberto", "natureza", "hrefDetalhe", "hrefCadastro", "exclusao", "rateio"].sort());
+    expect(Object.keys(itens[0]).sort()).toEqual(["chave", "dominio", "titulo", "descricao", "origens", "papeis", "estado", "conferidoManualmente", "cancelado", "informativo", "contabiliza", "correspondencias", "aviso", "impacto", "data", "competencia", "valor", "pago", "aberto", "natureza", "hrefDetalhe", "hrefCadastro", "exclusao", "rateio", "revisaoRecebimento"].sort());
     expect(itens[0].rateio).toEqual({ origemChave: "WIDESYS:PAGAR:linha_0" });
+    expect(itens[0].revisaoRecebimento).toBe(false);
   });
 
   it("não envia ação de rateio sem permissão própria de edição", async () => {
@@ -193,6 +194,22 @@ describe("popup financeiro integrado à lista SSR", () => {
     expect(html).toContain("Custos por empreendimento");
     expect(html).not.toContain("Nova despesa");
     expect(html).not.toContain("Organizar despesa");
+  });
+
+  it("conferido manual não continua pedindo comparação dos candidatos já decididos", async () => {
+    const dados = lista("RECEBER");
+    dados.itens[0] = { ...dados.itens[0], estado: "ATIVO", contabiliza: true, conferidoManualmente: true, avisos: ["REGISTRO_DISTINTO_CONFIRMADO"], candidatos: [{ chave: "BRISA:RECEBER:outro", titulo: "Outro registro", descricao: "Comparação preservada", motivos: [] }] };
+    mocks.listar.mockResolvedValue(dados);
+    const html = renderToStaticMarkup(await OperacaoUnificada({ dominio: "RECEBER", titulo: "Receber", base: "/recebimentos" }));
+    expect(html).toMatch(/<button[^>]*>Conferido<\/button>/);
+    expect(html).toContain("Conferido e incluído nos totais");
+    expect(html).toContain("Registro confirmado como distinto");
+    expect(html).not.toContain("correspondência(s) para comparar");
+    expect(html).not.toContain("Nenhum vínculo confirmado");
+    dados.itens[0] = { ...dados.itens[0], estado: "REVISAR", conferidoManualmente: false, contabiliza: false };
+    const revisao = renderToStaticMarkup(await OperacaoUnificada({ dominio: "RECEBER", titulo: "Receber", base: "/recebimentos" }));
+    expect(revisao).toContain("correspondência(s) para comparar");
+    expect(revisao).toMatch(/<button[^>]*>Conferir<\/button>/);
   });
 
   it("não envia montantes que não são exibidos em cadastros", async () => {
@@ -252,10 +269,18 @@ describe("popup financeiro integrado à lista SSR", () => {
     mocks.listar.mockResolvedValue(lista(dominio));
     const chave = registro(dominio).chave;
     const html = renderToStaticMarkup(await OperacaoUnificada({ dominio, titulo: "Financeiro", base, parametros: filtros }));
-    for (const texto of ["Registro de teste", "Revisar e resolver"]) {
+    for (const texto of ["Registro de teste", dominio === "RECEBER" ? "Ver detalhes" : "Revisar e resolver"]) {
       const alvos = links(html, texto);
       expect(alvos).toHaveLength(1);
       conferirContexto(alvos[0], base, { registro: chave, painel: "detalhe" });
+    }
+    if (dominio === "RECEBER") {
+      expect(html).toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*aria-expanded="false"[^>]*>Conferir<\/button>/);
+      expect(links(html, "Conferir")).toHaveLength(0);
+      expect(links(html, "Revisar e resolver")).toHaveLength(0);
+      expect(html).toContain('<th class="tabela-valor-separado text-right!">Recebido</th>');
+      expect(html).toContain("<dt>Recebido</dt>");
+      expect(html).not.toContain("<dt>Pago</dt>");
     }
     expect(links(html, "Excluir da plataforma")).toHaveLength(0);
     expect(html).toMatch(/<button[^>]*>Excluir da plataforma<\/button>/);

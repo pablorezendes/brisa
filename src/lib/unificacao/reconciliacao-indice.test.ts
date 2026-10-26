@@ -23,12 +23,14 @@ function projetarSemIndice(fontes: FonteUnificacao[], decisoes: DecisaoUnificaca
     const avisos = listaJson<string>(d?.motivos ?? "[]");
     if (!d) avisos.push("ANALISE_NECESSARIA");
     if (fonteMudou || alvoInvalido) avisos.push("FONTE_ALTERADA_APOS_DECISAO");
-    linhas.set(f.chave, { ...f, estado, origens: [f.proveniencia ? "PLANILHA" : f.origem], fontes: [f.chave], versao: d?.versao ?? 0, candidatos, avisos, contabiliza: estado === "ATIVO" && !f.cancelado && !f.informativo, divergencias: [] });
+    const conferidoManualmente = estado === "ATIVO" && d?.decisao === "MANUAL" && d.status === "ATIVO" && !d.destinoChave && d.hashFonte === f.hash;
+    linhas.set(f.chave, { ...f, estado, origens: [f.proveniencia ? "PLANILHA" : f.origem], fontes: [f.chave], versao: d?.versao ?? 0, candidatos, avisos, contabiliza: estado === "ATIVO" && !f.cancelado && !f.informativo, conferidoManualmente, divergencias: [] });
   }
   for (const d of decisoes) {
     const f = linhas.get(d.chave);
     const alvo = d.destinoChave ? linhas.get(d.destinoChave) : null;
     if (f?.estado !== "VINCULADO" || !alvo || alvo.estado !== "ATIVO") continue;
+    f.conferidoManualmente = d.decisao === "MANUAL" && d.status === "VINCULADO" && f.hash === d.hashFonte && alvo.hash === d.hashDestino;
     alvo.fontes.push(f.chave);
     alvo.origens = [...new Set([...alvo.origens, ...f.origens])];
     alvo.papeis = [...new Set([...(alvo.papeis ?? []), ...(f.papeis ?? [])])];
@@ -107,6 +109,9 @@ describe("projeção com índice por domínio equivale à varredura integral", (
     expect(unificada.fontes).toEqual([principal.chave, ligada.chave]);
     expect(unificada.divergencias).toEqual(["Cidade"]);
     expect(unificada.papeis).toEqual(["INQUILINO", "FIADOR"]);
+    expect(unificada.conferidoManualmente).toBe(true);
+    expect(resultado.find(item => item.chave === ligada.chave)?.conferidoManualmente).toBe(true);
+    expect(resultado.find(item => item.chave === receber.chave)?.conferidoManualmente).toBe(false);
     expect(resultado.find(item => item.chave === receber.chave)?.candidatos).toEqual([]);
   });
 
@@ -117,7 +122,7 @@ describe("projeção com índice por domínio equivale à varredura integral", (
     const decisoes = fontes.map(item => decisao(item, { decisao: "MANUAL", candidatos: JSON.stringify([{ chave: sugestao.chave, motivos: ["SNAPSHOT_PRESERVADO"] }]) }));
     const alteradas = fontes.map(item => item.chave === manual.chave ? { ...item, hash: "hash-manual-alterado" } : item);
     const resultado = conferir(alteradas, decisoes);
-    expect(resultado[0]).toMatchObject({ estado: "REVISAR", contabiliza: false });
+    expect(resultado[0]).toMatchObject({ estado: "REVISAR", contabiliza: false, conferidoManualmente: false });
     expect(resultado[0].candidatos[0].motivos).toEqual(["SNAPSHOT_PRESERVADO"]);
   });
 
