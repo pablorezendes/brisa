@@ -47,6 +47,13 @@ async function decisao(status: string) {
 }
 
 describe("rateios gerenciais sem duplicação e com carteira isolada", () => {
+  it.each(["CONFERIDO", "RASCUNHO"])("despesa administrativa %s não cria custo nem pendência de empreendimento", async statusRateio => {
+    const antes = await consultarResumoRateios(db, politica(), "2026-10");
+    await db.despesaDocumento.create({ data: { id: "administrativa", fornecedorNome: "Serviço administrativo sintético", numero: "", emissao: "", tipoDocumento: "SEM_DOCUMENTO", destinoCusto: "ADMINISTRADORA", categoriaCodigo: "PROGRAMA_WIDESYS", descricao: "Mensalidade sintética", competencia: "2026-10", total: 15000, statusRateio, criadoPorId: "admin", atualizadoPorId: "admin" } });
+    expect(await consultarResumoRateios(db, politica(), "2026-10")).toEqual(antes);
+    expect((await consultarResumoRateios(db, politica("SOCIO", [permitir("EMPREENDIMENTO", "e1")]), "2026-10")).total).toBe(43000);
+  });
+
   it("soma parcelas, não nota + parcelas + pagamento", async () => {
     await db.lancamentoCaixa.create({ data: { id: "pix", tipo: "SAIDA", valor: 256000, data: "2026-10-08", mesReferencia: "2026-10", centroCusto: "BRISA" } });
     await db.despesaDocumento.update({ where: { id: "nota" }, data: { lancamentoCaixaId: "pix" } });

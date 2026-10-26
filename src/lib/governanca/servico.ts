@@ -6,6 +6,7 @@ import { projetarUnificados } from "../unificacao/reconciliacao";
 import { recursoEstaAtivo } from "./filtros";
 import { ErroGovernanca, validarIdentidade, type AtorGovernanca, type TipoGovernanca } from "./tipos";
 import { montarPolitica, pode, carteiraIrrestrita } from "../acesso/politica";
+import { referenciaDocumentoDespesa } from "../despesas/apresentacao";
 
 type Tx = Prisma.TransactionClient;
 type MovimentoVinculo = { tabela: "contrato" | "boleto" | "unidade" | "recebimento" | "unidadeTemporada"; campo: "locatarioId" | "unidadeId" | "empreendimentoId"; ids: string[]; de: string; para: string };
@@ -42,7 +43,7 @@ async function entidade(tx: Tx, tipo: TipoGovernanca, id: string): Promise<{ id:
       if (t) r = { id, nome: `${t.contrato.locatario?.nome ?? "Recebimento"} · ${t.contrato.unidade.identificacao} · ${t.competencia}`, referencia: `Brisa · competência ${t.competencia} · lançamento ${t.mesLancamento}`, valor: t.valor + t.iptu + t.cond, dadosHash: hash(t) };
     } else if (origem === "BRISA" && dominio === "PAGAR") {
       const d = await tx.despesaDocumento.findUnique({ where: { id: identificador }, include: { lancamentoCaixa: true } });
-      if (d && !d.origemChave) r = { id, nome: `${d.fornecedorNome} · NF ${d.numero}`, referencia: `Brisa · competência ${d.competencia} · nota única${d.lancamentoCaixaId ? " · pagamento preservado no caixa" : ""}`, valor: d.total, dadosHash: hash(d) };
+      if (d && !d.origemChave) r = { id, nome: `${d.fornecedorNome} · ${referenciaDocumentoDespesa(d)}`, referencia: `Brisa · competência ${d.competencia} · despesa única${d.lancamentoCaixaId ? " · pagamento preservado no caixa" : ""}`, valor: d.total, dadosHash: hash(d) };
     } else if (origem === "WIDESYS") {
       const t = await tx.tituloFinanceiroLegado.findUnique({ where: { id: identificador } });
       // A lista mantém naturezas inconsistentes em RECEBER para conferência.

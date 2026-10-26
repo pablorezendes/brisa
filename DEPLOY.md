@@ -865,6 +865,44 @@ verificada das locações/planilhas. Títulos Widesys sem separação de aluguel
 IPTU, condomínio e taxa não recebem comissão presumida. Movimentos e baixas
 históricas não disparam pagamento, reemissão ou contato com o banco.
 
+## Despesas administrativas e documento opcional (26/10/2026)
+
+Em **Financeiro → Contas a pagar → Nova despesa**, escolha categoria,
+favorecido, descrição, valor e competência. O responsável pelo custo pode ser
+a administradora, um empreendimento ou vários empreendimentos com rateio manual.
+Documento fiscal/guia/recibo/boleto e comprovantes ficam em seções opcionais.
+
+As categorias administrativas vêm do catálogo operacional. Os IDs comprovados
+do Widesys sugerem a classificação ao organizar um título já importado; não
+criam outro título. O grupo legado “Administração BRISA” não é tratado como
+comissão. A categoria Administração/comissão continua exclusiva do administrador.
+A classificação salva no Brisa aparece junto do plano original nas listas e
+detalhes, sem modificar a fonte financeira nem suas decisões de reconciliação.
+
+O pagamento pode ficar em aberto, ser vinculado a uma saída existente ou ser
+registrado uma única vez quando já ocorreu e ainda está ausente do caixa.
+Informar um pagamento aqui não envia PIX nem executa transação bancária.
+Despesas da administradora não entram nos custos dos empreendimentos.
+
+O schema acrescenta quatro campos em `DespesaDocumento`, com valores padrão
+compatíveis com os documentos existentes. O bootstrap sincroniza o schema.
+Não é necessário executar seed nem reimportar dados.
+
+```bash
+set -e
+cd /srv/stack/acamargo
+git pull --ff-only origin main
+docker compose build brisa
+docker compose stop brisa
+umask 077
+backup="/srv/backups/brisa-despesas-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$backup"
+cp -a dados "$backup/"
+docker compose up -d --no-deps brisa
+docker compose logs --tail 100 brisa
+curl --retry 12 --retry-delay 5 --retry-all-errors -fsSI https://brisa.tescod.com/login
+```
+
 ## Cloudflare — a nuvem laranja e o certificado
 
 O registro `brisa.tescod.com` está no Cloudflare **com proxy** (nuvem

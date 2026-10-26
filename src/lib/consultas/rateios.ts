@@ -28,7 +28,7 @@ export async function consultarResumoRateios(db: PrismaClient, p: PoliticaAcesso
   if (!operacional && !(pode(p, "carteira.ver") && pode(p, "financeiro.ver"))) return vazio();
   if ((mes && !/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) || (!operacional && !mes)) throw new Error("Informe uma competência válida.");
   const [documentos, parcelas, dadosFontes, decisoes, governados, fontesLegadas] = await db.$transaction(tx => Promise.all([
-    tx.despesaDocumento.findMany({ where: { ...(mes ? { competencia: mes } : {}), ...(operacional ? {} : { rateios: { some: filtroRateiosCarteira(p) } }) }, select: {
+    tx.despesaDocumento.findMany({ where: { destinoCusto: "EMPREENDIMENTOS", ...(mes ? { competencia: mes } : {}), ...(operacional ? {} : { rateios: { some: filtroRateiosCarteira(p) } }) }, select: {
       id: true, origemChave: true, origemHash: true, total: true, statusRateio: true, competencia: true, restrita: true,
       rateios: { select: { valor: true, empreendimentoId: true, unidadeId: true,
         empreendimento: { select: { ativo: true } }, unidade: { select: { ativo: true, empreendimentoId: true } } } },

@@ -1,4 +1,6 @@
 export const LIMITE_RATEIOS = 100;
+export type TipoDocumentoDespesa = "NOTA_FISCAL" | "BOLETO" | "GUIA" | "RECIBO" | "OUTRO" | "SEM_DOCUMENTO";
+export type DestinoCustoDespesa = "ADMINISTRADORA" | "EMPREENDIMENTOS";
 
 export type LinhaRateioEntrada = {
   empreendimentoId: string;
@@ -21,6 +23,10 @@ export type SalvarDespesaEntrada = {
   versao?: number;
   fornecedorNome: string;
   fornecedorDocumento?: string | null;
+  categoriaCodigo?: string | null;
+  descricao?: string | null;
+  tipoDocumento?: TipoDocumentoDespesa;
+  destinoCusto?: DestinoCustoDespesa;
   numero: string;
   serie?: string | null;
   tomadorNome?: string | null;
@@ -43,6 +49,10 @@ export type DespesaEditor = {
     versao: number;
     fornecedorNome: string;
     fornecedorDocumento: string | null;
+    categoriaCodigo: string | null;
+    descricao: string | null;
+    tipoDocumento: TipoDocumentoDespesa;
+    destinoCusto: DestinoCustoDespesa;
     numero: string;
     serie: string | null;
     tomadorNome: string | null;
@@ -57,6 +67,7 @@ export type DespesaEditor = {
   pagamento: { origem: "NENHUM" | "CAIXA" | "WIDESYS"; valor: number; data: string | null; lancamentoCaixaId: string | null; situacao: string; ativo: boolean };
   empreendimentos: { id: string; nome: string; unidades: { id: string; identificacao: string }[] }[];
   contas: { id: string; apelido: string }[];
+  categorias: { codigo: string; rotulo: string; restrita: boolean }[];
   permitePagamento: boolean;
   anexos: { id: string; nomeOriginal: string; mimeType: string; tamanho: number }[];
 };

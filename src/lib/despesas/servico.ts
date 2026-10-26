@@ -2,7 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { carteiraIrrestrita, montarPolitica, perfilSomenteLeitura, pode } from "../acesso/politica";
 import { fonteLancamentoCaixa } from "../unificacao/fontes";
-import { ErroDespesa, LIMITE_RATEIOS, type DespesaEditor, type PagamentoDisponivel, type ResultadoSalvarDespesa, type SalvarDespesaEntrada } from "./tipos";
+import { ErroDespesa, LIMITE_RATEIOS, type DespesaEditor, type DestinoCustoDespesa, type TipoDocumentoDespesa, type PagamentoDisponivel, type ResultadoSalvarDespesa, type SalvarDespesaEntrada } from "./tipos";
+import { CATEGORIAS_DESPESA, categoriaDespesa, categoriaWidesys } from "./categorias";
 
 type Tx = Prisma.TransactionClient;
 type Ator = { id: string };
@@ -12,6 +13,7 @@ const selectCaixa = { id: true, data: true, descricao: true, cliente: true, valo
 const caixaAceito = (caixa: Parameters<typeof fonteLancamentoCaixa>[0], decisao?: { status: string; hashFonte: string } | null) => !decisao || (decisao.status === "ATIVO" && decisao.hashFonte === fonteLancamentoCaixa(caixa).hash);
 const selectDocumento = {
   id: true, origemChave: true, origemHash: true, fornecedorNome: true, fornecedorDocumento: true,
+  categoriaCodigo: true, descricao: true, tipoDocumento: true, destinoCusto: true,
   numero: true, serie: true, tomadorNome: true, tomadorDocumento: true, emissao: true, competencia: true,
   vencimento: true, total: true, statusRateio: true, restrita: true, versao: true, lancamentoCaixaId: true,
   contaBancariaId: true, pagamentoVia: true, pagamentoObservacao: true,
@@ -66,22 +68,36 @@ function validarEntrada(input: SalvarDespesaEntrada) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.competencia)) throw new ErroDespesa("COMPETENCIA_INVALIDA", "Informe a competência no formato ano-mês.");
   if (!Array.isArray(input.rateios) || input.rateios.length > LIMITE_RATEIOS) throw new ErroDespesa("LIMITE_RATEIOS", `Use no máximo ${LIMITE_RATEIOS} linhas de rateio.`);
   const total = valorPositivo(input.total);
+  const tipoDocumento = input.tipoDocumento ?? "NOTA_FISCAL";
+  const destinoCusto = input.destinoCusto ?? "EMPREENDIMENTOS";
+  if (!["NOTA_FISCAL", "BOLETO", "GUIA", "RECIBO", "OUTRO", "SEM_DOCUMENTO"].includes(tipoDocumento)) throw new ErroDespesa("DOCUMENTO_INVALIDO", "Escolha o tipo de documento.");
+  if (!["ADMINISTRADORA", "EMPREENDIMENTOS"].includes(destinoCusto)) throw new ErroDespesa("DESTINO_INVALIDO", "Escolha quem assume o custo.");
+  const categoriaCodigo = texto(input.categoriaCodigo, "a categoria", 60);
+  const categoria = categoriaDespesa(categoriaCodigo);
+  const novoFluxo = categoriaCodigo !== null || destinoCusto === "ADMINISTRADORA" || tipoDocumento !== "NOTA_FISCAL";
+  if ((categoriaCodigo && !categoria) || (novoFluxo && !categoria)) throw new ErroDespesa("CATEGORIA_INVALIDA", "Selecione a categoria da despesa.");
+  const descricao = texto(input.descricao, "a descrição da despesa", 1000, novoFluxo);
   const rateios = input.rateios.map((r, ordem) => ({
     ordem, empreendimentoId: texto(r?.empreendimentoId, "o empreendimento", 100, true)!,
     unidadeId: texto(r?.unidadeId, "o imóvel", 100), descricao: texto(r?.descricao, "a descrição do serviço", 1000, true)!,
     categoria: texto(r?.categoria, "a categoria", 120), valor: valorPositivo(r?.valor),
   }));
   const soma = rateios.reduce((s, r) => s + r.valor, 0);
-  if (soma > total || (input.statusRateio === "CONFERIDO" && soma !== total)) throw new ErroDespesa("RATEIO_NAO_FECHA", "O rateio conferido deve somar exatamente o total da nota. Salve incompleto como rascunho.");
+  if (destinoCusto === "ADMINISTRADORA" && rateios.length) throw new ErroDespesa("DESTINO_INVALIDO", "Despesas da administradora não devem ter parcelas de empreendimentos.");
+  if (destinoCusto === "EMPREENDIMENTOS" && (soma > total || (input.statusRateio === "CONFERIDO" && soma !== total))) throw new ErroDespesa("RATEIO_NAO_FECHA", "O rateio conferido deve somar exatamente o total da despesa. Salve incompleto como rascunho.");
   if (!input.pagamento || !["MANTER", "VINCULAR", "REGISTRAR"].includes(input.pagamento.modo)) throw new ErroDespesa("PAGAMENTO_INVALIDO", "Escolha como registrar o pagamento.");
   const fornecedorDocumento = documentoFiscal(input.fornecedorDocumento, "do fornecedor");
-  const numero = texto(input.numero, "o número do documento", 100, true)!;
-  const serie = texto(input.serie, "a série", 50);
-  const identidadeNota = fornecedorDocumento ? hash([fornecedorDocumento, numero.toUpperCase(), (serie ?? "").toUpperCase()]) : null;
+  const numero = tipoDocumento === "SEM_DOCUMENTO" ? "" : texto(input.numero, "o número do documento", 100, tipoDocumento === "NOTA_FISCAL") ?? "";
+  const serie = tipoDocumento === "SEM_DOCUMENTO" ? null : texto(input.serie, "a série", 50);
+  // Notas antigas mantêm a mesma chave. Documento sem número não cria uma
+  // identidade fiscal fictícia que impediria outra despesa do mesmo fornecedor.
+  const identidade = [fornecedorDocumento, numero.toUpperCase(), (serie ?? "").toUpperCase()];
+  const identidadeNota = fornecedorDocumento && numero ? hash(tipoDocumento === "NOTA_FISCAL" ? identidade : [tipoDocumento, ...identidade]) : null;
   return { id, origemChave, rateios, campos: {
     fornecedorNome: texto(input.fornecedorNome, "o fornecedor", 250, true)!, fornecedorDocumento, numero, serie, identidadeNota,
     tomadorNome: texto(input.tomadorNome, "o tomador", 250), tomadorDocumento: documentoFiscal(input.tomadorDocumento, "do tomador"),
-    emissao: dataCivil(input.emissao, "emissão")!, competencia: input.competencia, vencimento: dataCivil(input.vencimento, "vencimento", true),
+    categoriaCodigo, descricao, tipoDocumento, destinoCusto,
+    emissao: tipoDocumento === "SEM_DOCUMENTO" ? "" : dataCivil(input.emissao, "emissão", tipoDocumento !== "NOTA_FISCAL") ?? "", competencia: input.competencia, vencimento: dataCivil(input.vencimento, "vencimento", true),
     total, statusRateio: input.statusRateio,
   } };
 }
@@ -97,7 +113,7 @@ async function carregarFonte(tx: Tx, origemChave: string) {
     id: true, origem: true, natureza: true, numeroDocumento: true, pessoaLegadoId: true, emissao: true, competencia: true,
     vencimento: true, pagamento: true, valorDevido: true, valorPago: true, valorAberto: true, situacaoNormalizada: true,
     snapshotHash: true, statusImportacao: true,
-    planoContaRotulo: true, tipoCobrancaRotulo: true,
+    planoContaLegadoId: true, planoContaRotulo: true, tipoCobrancaRotulo: true,
   } });
   if (!fonte || fonte.origem !== "WIDESYS" || fonte.natureza !== "PAGAR") throw new ErroDespesa("FONTE_NAO_ENCONTRADA", "A conta a pagar de origem não foi encontrada.");
   await exigirAtivo(tx, "TITULO", origemChave);
@@ -117,7 +133,8 @@ export async function obterEditorDespesa(db: PrismaClient, selecao: { id?: strin
     const origem = documento?.origemChave ?? origemChave;
     if (documento) await exigirAtivo(tx, "TITULO", origem ?? `BRISA:PAGAR:${documento.id}`);
     const fonte = origem ? await carregarFonte(tx, origem) : null;
-    if (!pode(politica, "comissoes.ver") && (documento?.restrita || comissaoRestrita([
+    if (!pode(politica, "comissoes.ver") && (documento?.restrita || categoriaDespesa(documento?.categoriaCodigo)?.restrita || comissaoRestrita([
+      documento?.descricao,
       ...(documento?.rateios.flatMap(r => [r.descricao, r.categoria]) ?? []), fonte?.planoContaRotulo, fonte?.tipoCobrancaRotulo,
     ]))) throw new ErroDespesa("COMISSAO_RESTRITA", "Esta nota contém informações de comissão, disponíveis somente ao administrador.");
     const fornecedor = fonte?.pessoaLegadoId ? await tx.pessoa.findUnique({ where: { origem_legadoId: { origem: fonte.origem, legadoId: fonte.pessoaLegadoId } }, select: { nome: true, cpfCnpj: true } }) : null;
@@ -132,6 +149,7 @@ export async function obterEditorDespesa(db: PrismaClient, selecao: { id?: strin
     const caixaDecisao = lancamento ? await tx.unificacaoRegistro.findUnique({ where: { chave: `BRISA:MOVIMENTO:${lancamento.id}` }, select: { status: true, hashFonte: true } }) : null;
     const caixaAtivo = !!lancamento && (!caixaEstado || caixaEstado.status === "ATIVO") && lancamento.tipo === "SAIDA" && lancamento.valor === documento?.total && caixaAceito(lancamento, caixaDecisao);
     const hoje = new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+    const categoriaSugerida = categoriaWidesys(fonte?.planoContaLegadoId);
     return {
       documento: {
         ...(documento ? { id: documento.id } : {}), origemChave: origem, origemHash: fonte?.snapshotHash ?? null,
@@ -139,6 +157,10 @@ export async function obterEditorDespesa(db: PrismaClient, selecao: { id?: strin
         versao: documento?.versao ?? 0,
         fornecedorNome: documento?.fornecedorNome ?? fornecedor?.nome ?? "",
         fornecedorDocumento: documento?.fornecedorDocumento ?? fornecedor?.cpfCnpj ?? null,
+        categoriaCodigo: documento?.categoriaCodigo ?? categoriaSugerida?.codigo ?? null,
+        descricao: documento?.descricao ?? fonte?.planoContaRotulo ?? null,
+        tipoDocumento: (documento?.tipoDocumento ?? (fonte?.numeroDocumento || fonte?.emissao ? "OUTRO" : "SEM_DOCUMENTO")) as TipoDocumentoDespesa,
+        destinoCusto: (documento?.destinoCusto ?? (fonte ? "EMPREENDIMENTOS" : "ADMINISTRADORA")) as DestinoCustoDespesa,
         numero: documento?.numero ?? fonte?.numeroDocumento ?? "", serie: documento?.serie ?? null,
         tomadorNome: documento?.tomadorNome ?? null, tomadorDocumento: documento?.tomadorDocumento ?? null,
         emissao: documento?.emissao ?? fonte?.emissao ?? (fonte ? "" : hoje), competencia: documento?.competencia ?? fonte?.competencia?.slice(0, 7) ?? (fonte ? "" : hoje.slice(0, 7)),
@@ -149,6 +171,7 @@ export async function obterEditorDespesa(db: PrismaClient, selecao: { id?: strin
         : lancamento ? { origem: "CAIXA", valor: lancamento.valor, data: lancamento.data, lancamentoCaixaId: lancamento.id, situacao: caixaAtivo ? "PAGO" : "REVISAR", ativo: caixaAtivo }
         : { origem: "NENHUM", valor: 0, data: null, lancamentoCaixaId: null, situacao: "EM_ABERTO", ativo: true },
       empreendimentos, contas, permitePagamento: pode(politica, "despesas.editar") && pode(politica, "caixa.editar") && !origem && !documento?.lancamentoCaixaId,
+      categorias: CATEGORIAS_DESPESA.filter(categoria => !categoria.restrita || pode(politica, "comissoes.ver")),
       anexos: documento?.anexos ?? [],
     };
   }, { maxWait: 5000, timeout: 15000 });
@@ -193,7 +216,9 @@ export async function salvarDespesa(db: PrismaClient, input: SalvarDespesaEntrad
       const fonte = validado.origemChave ? await carregarFonte(tx, validado.origemChave) : null;
       // Remover uma linha não desclassifica anexos e auditorias anteriores.
       // Não existe desclassificação implícita de uma nota já marcada reservada.
-      const restrita = !!atual?.restrita || comissaoRestrita([
+      const restrita = !!atual?.restrita || !!categoriaDespesa(validado.campos.categoriaCodigo)?.restrita || comissaoRestrita([
+        validado.campos.descricao, atual?.descricao,
+        input.pagamento.modo === "REGISTRAR" && !validado.campos.categoriaCodigo ? input.pagamento.categoria : null,
         ...validado.rateios.flatMap(r => [r.descricao, r.categoria]), fonte?.planoContaRotulo, fonte?.tipoCobrancaRotulo,
       ]);
       if (!pode(politica, "comissoes.ver") && (atual?.restrita || restrita || comissaoRestrita([
@@ -232,17 +257,18 @@ export async function salvarDespesa(db: PrismaClient, input: SalvarDespesaEntrad
         const p = input.pagamento;
         const data = dataCivil(p.data, "pagamento")!;
         if (!["AL", "CH", "BRISA"].includes(p.centroCusto)) throw new ErroDespesa("CAIXA_INVALIDO", "Escolha o caixa responsável pelo pagamento único.");
-        const categoria = texto(p.categoria, "a categoria da saída", 120, true)!;
+        const categoria = categoriaDespesa(validado.campos.categoriaCodigo)?.rotulo ?? texto(p.categoria, "a categoria da saída", 120, true)!;
         contaBancariaId = texto(p.contaBancariaId, "a conta pagadora", 100);
         pagamentoVia = texto(p.via, "a forma de pagamento", 30, true);
-        if (!["PIX", "TRANSFERENCIA", "DINHEIRO", "BOLETO"].includes(pagamentoVia!)) throw new ErroDespesa("VIA_INVALIDA", "Escolha a forma de pagamento.");
+        if (!["PIX", "TRANSFERENCIA", "DINHEIRO", "BOLETO", "CARTAO_CREDITO", "CARTAO_DEBITO"].includes(pagamentoVia!)) throw new ErroDespesa("VIA_INVALIDA", "Escolha a forma de pagamento.");
         pagamentoObservacao = texto(p.observacao, "a observação do pagamento", 500);
         if (contaBancariaId) {
           const conta = await tx.contaBancaria.findUnique({ where: { id: contaBancariaId }, select: { ativa: true } });
           if (!conta?.ativa) throw new ErroDespesa("CONTA_INVALIDA", "Escolha uma conta bancária ativa.");
           await exigirAtivo(tx, "CONTA", contaBancariaId);
         }
-        const saida = await tx.lancamentoCaixa.create({ data: { tipo: "SAIDA", mesReferencia: data.slice(0, 7), data, centroCusto: p.centroCusto, categoria, valor: validado.campos.total, descricao: `Documento ${validado.campos.numero} · ${validado.campos.fornecedorNome}`, caixaOrigem: "BRISA:DESPESA" }, select: { id: true } });
+        const descricaoSaida = `${validado.campos.descricao ?? `Documento ${validado.campos.numero}`} · ${validado.campos.fornecedorNome}`;
+        const saida = await tx.lancamentoCaixa.create({ data: { tipo: "SAIDA", mesReferencia: data.slice(0, 7), data, centroCusto: p.centroCusto, categoria, valor: validado.campos.total, descricao: descricaoSaida, caixaOrigem: "BRISA:DESPESA" }, select: { id: true } });
         lancamentoCaixaId = saida.id;
       }
       const versao = (atual?.versao ?? 0) + 1;

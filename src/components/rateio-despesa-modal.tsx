@@ -6,7 +6,7 @@ import { Dinheiro, Sigilo, btnPrimario, btnSecundario, inputBase } from "@/compo
 import { carregarRateioDespesa, procurarPagamentoDespesa, salvarRateioDespesa } from "@/app/(app)/financeiro/contas-a-pagar/rateio-actions";
 import type { DespesaEditor, PagamentoDisponivel, PagamentoDespesaEntrada, SalvarDespesaEntrada } from "@/lib/despesas/tipos";
 import { LIMITE_RATEIOS } from "@/lib/despesas/tipos";
-import { centavosRateio, conferirValoresRateio, linhasEditaveis, linhaVazia, valorEditavel, type RateioEditavel } from "./rateio-formulario";
+import { conferirValoresRateio, linhasEditaveis, linhaVazia, modoCustoInicial, rateiosDoFormulario, valorEditavel, type ModoCustoDespesa, type RateioEditavel } from "./rateio-formulario";
 
 type Selecao = { id?: string; origemChave?: string };
 const campo = `${inputBase} mt-1.5 w-full min-w-0`;
@@ -48,8 +48,8 @@ export function RateioDespesaModal({ selecao, aoFechar }: { selecao: Selecao; ao
   function fechar() { if (!ocupado) { if (alterado) setConfirmarFechar(true); else aoFechar(); } }
   return <dialog ref={dialogo} className="janela-financeira text-left" style={{ width: "min(1120px, calc(100vw - 24px))" }} aria-labelledby={tituloId} onCancel={event => { event.preventDefault(); fechar(); }}>
     <header className="janela-financeira-cabecalho flex-wrap">
-      <div className="min-w-0 flex-[1_1_24rem]"><p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-oliva">Contas a pagar · rateio manual</p><h2 id={tituloId} ref={titulo} tabIndex={-1} className="text-lg font-bold outline-none">Uma nota. Um pagamento. Vários empreendimentos.</h2><p className="mt-1 text-xs text-tinta-suave">Distribua o custo sem duplicar o documento nem a saída no caixa.</p></div>
-      <div className="flex shrink-0 flex-wrap gap-2"><BotaoSigilo /><button type="button" disabled={ocupado} onClick={fechar} className={btnSecundario} aria-label="Fechar rateio">Fechar ×</button></div>
+      <div className="min-w-0 flex-[1_1_24rem]"><p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-oliva">Contas a pagar</p><h2 id={tituloId} ref={titulo} tabIndex={-1} className="text-lg font-bold outline-none">{selecao.id || selecao.origemChave ? "Organizar despesa" : "Nova despesa"}</h2><p className="mt-1 text-xs text-tinta-suave">Informe o gasto, quem assume o custo e a situação do pagamento.</p></div>
+      <div className="flex shrink-0 flex-wrap gap-2"><BotaoSigilo /><button type="button" disabled={ocupado} onClick={fechar} className={btnSecundario} aria-label="Fechar despesa">Fechar ×</button></div>
     </header>
     <div className="janela-financeira-conteudo">
       {confirmarFechar && <div role="alert" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm"><p className="font-semibold">Há alterações ainda não salvas.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" className={btnPrimario} onClick={() => setConfirmarFechar(false)}>Continuar editando</button><button type="button" className={btnSecundario} onClick={aoFechar}>Sair sem salvar</button></div></div>}
@@ -63,7 +63,7 @@ export function RateioDespesaModal({ selecao, aoFechar }: { selecao: Selecao; ao
 export function ResumoRateio({ total, linhas }: { total: string; linhas: Pick<RateioEditavel, "valor">[] }) {
   const resumo = conferirValoresRateio(total, linhas);
   return <div className="grid grid-cols-1 gap-2 rounded-xl border border-contorno bg-slate-50/80 p-3 sm:grid-cols-3" aria-live="polite">
-    {[{ nome: "Total da nota", valor: resumo.total }, { nome: "Distribuído", valor: resumo.distribuido }, { nome: resumo.restante < 0 ? "Acima do total" : "Falta distribuir", valor: Math.abs(resumo.restante) }].map(item => <div key={item.nome} className="min-w-0 rounded-lg bg-carta p-3"><p className="text-[10px] font-bold uppercase tracking-wide text-tinta-suave">{item.nome}</p><p className={`mt-1 max-w-full break-words text-lg font-semibold ${item.nome === "Acima do total" ? "text-erro" : ""}`}><Sigilo><Dinheiro centavos={item.valor} /></Sigilo></p></div>)}
+    {[{ nome: "Total da despesa", valor: resumo.total }, { nome: "Distribuído", valor: resumo.distribuido }, { nome: resumo.restante < 0 ? "Acima do total" : "Falta distribuir", valor: Math.abs(resumo.restante) }].map(item => <div key={item.nome} className="min-w-0 rounded-lg bg-carta p-3"><p className="text-[10px] font-bold uppercase tracking-wide text-tinta-suave">{item.nome}</p><p className={`mt-1 max-w-full break-words text-lg font-semibold ${item.nome === "Acima do total" ? "text-erro" : ""}`}><Sigilo><Dinheiro centavos={item.valor} /></Sigilo></p></div>)}
     <p className="text-xs leading-relaxed text-tinta-suave sm:col-span-3">{resumo.completo ? "Os valores fecham. Confira os empreendimentos e as descrições antes de confirmar." : "Informe o valor de cada serviço. A conferência só é concluída quando a soma fecha exatamente; você pode salvar um rascunho."}</p>
   </div>;
 }
@@ -71,8 +71,11 @@ export function ResumoRateio({ total, linhas }: { total: string; linhas: Pick<Ra
 export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar, aoFechar }: { inicial: DespesaEditor; aoOcupar: (valor: boolean) => void; aoAlterar: (valor: boolean) => void; aoFechar: () => void }) {
   const visiveis = useValoresVisiveis();
   const [editor, setEditor] = useState(inicial);
-  const [documento, setDocumento] = useState({ ...inicial.documento, totalTexto: valorEditavel(inicial.documento.total) });
+  const [documento, setDocumento] = useState({ ...inicial.documento, descricao: inicial.documento.descricao ?? (inicial.documento.rateios.length === 1 ? inicial.documento.rateios[0].descricao : ""), totalTexto: valorEditavel(inicial.documento.total) });
   const [linhas, setLinhas] = useState(() => linhasEditaveis(inicial));
+  const [modoCusto, setModoCusto] = useState<ModoCustoDespesa>(() => modoCustoInicial(inicial.documento));
+  const [destinoUnico, setDestinoUnico] = useState(() => ({ empreendimentoId: inicial.documento.rateios[0]?.empreendimentoId ?? "", unidadeId: inicial.documento.rateios[0]?.unidadeId ?? "", categoria: inicial.documento.rateios[0]?.categoria ?? null }));
+  const [documentoAberto, setDocumentoAberto] = useState(inicial.documento.tipoDocumento !== "SEM_DOCUMENTO");
   const [modoPagamento, setModoPagamento] = useState<PagamentoDespesaEntrada["modo"]>("MANTER");
   const [busca, setBusca] = useState("");
   const [pagamentos, setPagamentos] = useState<PagamentoDisponivel[]>([]);
@@ -94,6 +97,10 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar, aoFechar
   const legado = Boolean(editor.documento.origemChave);
   const temPagamento = editor.pagamento.origem !== "NENHUM";
   const resumo = conferirValoresRateio(documento.totalTexto, linhas);
+  const categoria = editor.categorias.find(item => item.codigo === documento.categoriaCodigo);
+  const permiteClassificacaoAnterior = Boolean(editor.documento.id || editor.documento.origemChave) && !editor.documento.categoriaCodigo;
+  const conferenciaCompleta = resumo.total !== null && resumo.total > 0 && (modoCusto === "ADMINISTRADORA" || (modoCusto === "UM_EMPREENDIMENTO" ? Boolean(destinoUnico.empreendimentoId && documento.descricao.trim()) : resumo.completo));
+  const unidadesDestino = editor.empreendimentos.find(item => item.id === destinoUnico.empreendimentoId)?.unidades ?? [];
   useEffect(() => { if (erro) aviso.current?.focus(); }, [erro]);
   function alterarDocumento(campoDocumento: keyof typeof documento, valor: string) {
     setDocumento(atual => ({ ...atual, [campoDocumento]: valor })); aoAlterar(true); setSucesso("");
@@ -117,23 +124,26 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar, aoFechar
     const statusRateio = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "CONFERIDO" ? "CONFERIDO" : "RASCUNHO";
     setErro(""); setSucesso("");
     if (resumo.total === null || resumo.total <= 0) { setErro("Informe um total válido, maior que zero, com no máximo dois centavos decimais."); return; }
-    if (statusRateio === "CONFERIDO" && !resumo.completo) { setErro("A soma do rateio precisa fechar exatamente com o total da nota."); return; }
-    const aproveitadas = linhas.filter(linha => linha.empreendimentoId || linha.unidadeId || linha.descricao.trim() || linha.categoria?.trim() || linha.valor.trim());
-    if (aproveitadas.some(linha => !linha.empreendimentoId || !linha.descricao.trim() || !centavosRateio(linha.valor))) { setErro("Em cada linha preenchida, informe o empreendimento, o serviço e um valor maior que zero. Remova as linhas incompletas para salvar um rascunho."); return; }
+    if (statusRateio === "CONFERIDO" && !conferenciaCompleta) { setErro(modoCusto === "VARIOS" ? "A soma do rateio precisa fechar exatamente com o total da despesa." : "Informe quem assume o custo e a descrição da despesa."); return; }
+    let rateios: SalvarDespesaEntrada["rateios"];
+    try { rateios = rateiosDoFormulario({ modo: modoCusto, total: documento.totalTexto, descricao: documento.descricao, categoria: categoria?.rotulo ?? null, unico: destinoUnico, linhas }); }
+    catch (falha) { setErro(falha instanceof Error ? falha.message : "Confira a distribuição dos custos."); return; }
     let pagamento: PagamentoDespesaEntrada = { modo: "MANTER" };
     if (modoPagamento === "VINCULAR") {
       if (!pagamentoSelecionado) { setErro("Busque e selecione a saída já existente no caixa."); return; }
-      pagamento = { modo: "VINCULAR", lancamentoCaixaId: pagamentoSelecionado.id, assinatura: pagamentoSelecionado.assinatura, via: pagamentoNovo.via };
+      pagamento = { modo: "VINCULAR", lancamentoCaixaId: pagamentoSelecionado.id, assinatura: pagamentoSelecionado.assinatura };
     } else if (modoPagamento === "REGISTRAR") {
       if (!cientePagamento) { setErro("Confirme que o pagamento já aconteceu e não existe no caixa."); return; }
-      pagamento = { modo: "REGISTRAR", ...pagamentoNovo, contaBancariaId: pagamentoNovo.contaBancariaId || null };
+      pagamento = { modo: "REGISTRAR", ...pagamentoNovo, categoria: categoria?.rotulo ?? pagamentoNovo.categoria, contaBancariaId: pagamentoNovo.contaBancariaId || null };
     }
     const entrada: SalvarDespesaEntrada = {
       requestId, id: documento.id, origemChave: documento.origemChave, origemHash: documento.origemHash, versao: documento.versao,
       confirmarFonteAlterada: confirmaFonte, fornecedorNome: documento.fornecedorNome, fornecedorDocumento: documento.fornecedorDocumento,
-      numero: documento.numero, serie: documento.serie, tomadorNome: documento.tomadorNome, tomadorDocumento: documento.tomadorDocumento,
-      emissao: documento.emissao, competencia: documento.competencia, vencimento: documento.vencimento,
-      total: resumo.total, statusRateio, rateios: aproveitadas.map(({ empreendimentoId, unidadeId, descricao, categoria, valor }) => ({ empreendimentoId, unidadeId: unidadeId || null, descricao, categoria: categoria || null, valor: centavosRateio(valor)! })), pagamento,
+      numero: documento.tipoDocumento === "SEM_DOCUMENTO" ? "" : documento.numero, serie: documento.tipoDocumento === "SEM_DOCUMENTO" ? null : documento.serie, tomadorNome: documento.tomadorNome, tomadorDocumento: documento.tomadorDocumento,
+      emissao: documento.tipoDocumento === "SEM_DOCUMENTO" ? "" : documento.emissao, competencia: documento.competencia, vencimento: documento.vencimento,
+      categoriaCodigo: documento.categoriaCodigo || null, descricao: documento.descricao || null, tipoDocumento: documento.tipoDocumento,
+      destinoCusto: modoCusto === "ADMINISTRADORA" ? "ADMINISTRADORA" : "EMPREENDIMENTOS",
+      total: resumo.total, statusRateio, rateios, pagamento,
     };
     envio.current = true; setSalvando(true); aoOcupar(true);
     try {
@@ -141,24 +151,20 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar, aoFechar
       if (!resposta.ok) { setErro(resposta.mensagem); return; }
       const atualizado = await carregarRateioDespesa({ id: resposta.resultado.id }).catch(() => null);
       if (atualizado?.ok) {
-        setEditor(atualizado.editor); setDocumento({ ...atualizado.editor.documento, totalTexto: valorEditavel(atualizado.editor.documento.total) });
+        setEditor(atualizado.editor); setDocumento({ ...atualizado.editor.documento, descricao: atualizado.editor.documento.descricao ?? (atualizado.editor.documento.rateios.length === 1 ? atualizado.editor.documento.rateios[0].descricao : ""), totalTexto: valorEditavel(atualizado.editor.documento.total) });
         setLinhas(linhasEditaveis(atualizado.editor));
+        setModoCusto(modoCustoInicial(atualizado.editor.documento));
+        setDestinoUnico({ empreendimentoId: atualizado.editor.documento.rateios[0]?.empreendimentoId ?? "", unidadeId: atualizado.editor.documento.rateios[0]?.unidadeId ?? "", categoria: atualizado.editor.documento.rateios[0]?.categoria ?? null });
       } else {
         setDocumento(atual => ({ ...atual, id: resposta.resultado.id, versao: resposta.resultado.versao }));
         setReabrirNecessario(true);
-        setErro("O rateio foi salvo, mas não foi possível recarregar os detalhes. Feche e abra novamente antes de editar.");
+        setErro("A despesa foi salva, mas não foi possível recarregar os detalhes. Feche e abra novamente antes de editar.");
       }
       setModoPagamento("MANTER"); setCientePagamento(false); setPagamentoSelecionado(null); setConfirmaFonte(false); setRequestId(crypto.randomUUID()); aoAlterar(false);
-      setSucesso(statusRateio === "CONFERIDO" ? "Rateio conferido e salvo. O custo foi distribuído sem duplicar a nota ou o pagamento." : "Rascunho salvo. O valor ainda não distribuído continua pendente de rateio.");
+      setSucesso(statusRateio === "CONFERIDO" ? "Despesa conferida e salva. O documento e o pagamento continuam únicos." : "Rascunho salvo. Você pode completar a conferência depois.");
     } catch { setErro("Não foi possível confirmar o resultado. Você pode tentar salvar novamente sem duplicar a operação; não altere os dados antes de confirmar."); }
     finally { envio.current = false; setSalvando(false); aoOcupar(false); }
   }
-  const dadosTexto = [
-    { chave: "fornecedorNome", nome: "Fornecedor / prestador", obrigatorio: true },
-    { chave: "fornecedorDocumento", nome: "CPF/CNPJ do fornecedor", obrigatorio: false },
-    { chave: "numero", nome: "Número da nota", obrigatorio: true },
-    { chave: "serie", nome: "Série (opcional)", obrigatorio: false },
-  ] as const;
   return <div className="space-y-5">
     <form onSubmit={event => void salvar(event)} className="space-y-5" aria-busy={salvando}>
       {erro && <p ref={aviso} tabIndex={-1} role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">{erro}</p>}
@@ -166,42 +172,68 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar, aoFechar
       {editor.documento.fonteAlterada && <label className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm"><input type="checkbox" checked={confirmaFonte} onChange={event => setConfirmaFonte(event.target.checked)} className="mt-1 shrink-0" /><span>A origem foi atualizada depois do último rateio. Conferi novamente os dados e autorizo salvar o rateio sobre os valores atuais.</span></label>}
       <fieldset disabled={salvando || anexando || reabrirNecessario} className="min-w-0 space-y-5 disabled:opacity-60">
         <section className="rounded-xl border border-contorno p-4">
-          <h3 className="text-sm font-bold">1. Documento único</h3>
-          <p className="mt-1 text-xs leading-relaxed text-tinta-suave">{legado ? "Este título veio do Widesys. Você pode completar os dados locais da nota. O valor, o pagamento e o registro de origem permanecem preservados." : "Cadastre uma vez. O tomador é quem consta na nota original, mesmo quando outros empreendimentos receberam o serviço."}</p>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {dadosTexto.map(item => <label key={item.chave} className={rotulo}>{item.nome}<input value={documento[item.chave] ?? ""} onChange={event => alterarDocumento(item.chave, event.target.value)} required={item.obrigatorio} maxLength={item.chave === "fornecedorNome" ? 200 : 50} className={campo} /></label>)}
-            <label className={rotulo}>Emissão da nota<input type="date" required value={documento.emissao} onChange={event => alterarDocumento("emissao", event.target.value)} className={campo} /></label>
-            <label className={rotulo}>Competência do custo<input type="month" required value={documento.competencia} onChange={event => alterarDocumento("competencia", event.target.value)} className={campo} /></label>
+          <h3 className="text-sm font-bold">1. O que será pago?</h3>
+          {legado && <p className="mt-1 text-xs leading-relaxed text-tinta-suave">Este título veio do Widesys. Você pode completar os dados locais da despesa. O valor, o pagamento e o registro de origem permanecem preservados.</p>}
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <label className={rotulo}>Categoria<select value={documento.categoriaCodigo ?? ""} onChange={event => alterarDocumento("categoriaCodigo", event.target.value)} required={!permiteClassificacaoAnterior || modoCusto === "ADMINISTRADORA" || documento.tipoDocumento !== "NOTA_FISCAL"} className={campo}><option value="">{permiteClassificacaoAnterior ? "Manter classificação anterior" : "Selecione a categoria…"}</option>{editor.categorias.map(item => <option key={item.codigo} value={item.codigo}>{item.rotulo}{item.restrita ? " · restrita" : ""}</option>)}</select></label>
+            <label className={`${rotulo} lg:col-span-2`}>Fornecedor / favorecido<input value={documento.fornecedorNome} onChange={event => alterarDocumento("fornecedorNome", event.target.value)} required maxLength={200} className={campo} placeholder="Quem receberá o pagamento" /></label>
+            <label className={`${rotulo} sm:col-span-2 lg:col-span-3`}>Descrição da despesa<input value={documento.descricao} onChange={event => alterarDocumento("descricao", event.target.value)} required={Boolean(documento.categoriaCodigo) || modoCusto !== "VARIOS" || !permiteClassificacaoAnterior} maxLength={1000} className={campo} placeholder="Ex.: mensalidade do sistema de outubro" /></label>
+            <label className={rotulo}>Valor total (R$)<input type={visiveis ? "text" : "password"} inputMode="decimal" autoComplete="off" required readOnly={!visiveis || legado || temPagamento} value={documento.totalTexto} onChange={event => alterarDocumento("totalTexto", event.target.value)} className={`${campo} font-mono`} aria-describedby={!visiveis ? "rateio-valor-aviso" : undefined} /></label>
+            <label className={rotulo}>Competência<input type="month" required value={documento.competencia} onChange={event => alterarDocumento("competencia", event.target.value)} className={campo} /><span className="mt-1 block text-[11px] font-normal text-tinta-suave">Mês a que a despesa pertence.</span></label>
             <label className={rotulo}>Vencimento (opcional)<input type="date" value={documento.vencimento ?? ""} onChange={event => alterarDocumento("vencimento", event.target.value)} className={campo} /></label>
-            <label className={rotulo}>Total da nota (R$)<input type={visiveis ? "text" : "password"} inputMode="decimal" autoComplete="off" required readOnly={!visiveis || legado || temPagamento} value={documento.totalTexto} onChange={event => alterarDocumento("totalTexto", event.target.value)} className={`${campo} font-mono`} aria-describedby="rateio-valor-aviso" /></label>
-            <label className={`${rotulo} sm:col-span-2`}>Nome do tomador na nota<input value={documento.tomadorNome ?? ""} onChange={event => alterarDocumento("tomadorNome", event.target.value)} maxLength={200} className={campo} placeholder="Informe como está no documento original" /></label>
-            <label className={`${rotulo} sm:col-span-2`}>CPF/CNPJ do tomador<input value={documento.tomadorDocumento ?? ""} onChange={event => alterarDocumento("tomadorDocumento", event.target.value)} maxLength={20} className={campo} placeholder="Opcional, sem alterar o destinatário fiscal" /></label>
           </div>
-          {!documento.fornecedorDocumento?.trim() && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-950">Informe o CPF/CNPJ do fornecedor para proteção adicional contra nota repetida. Sem esse dado, confira o fornecedor e o número antes de cadastrar outra nota.</p>}
+          {!visiveis && <p id="rateio-valor-aviso" className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-tinta-suave">Os valores estão ocultos. Use “Ver valores” no topo desta janela para preencher e conferir a despesa.</p>}
+          {categoria?.restrita && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-950">Administração/comissão: esta despesa e seus anexos são restritos ao administrador.</p>}
+          <details open={documentoAberto} onToggle={event => setDocumentoAberto(event.currentTarget.open)} className="mt-4 rounded-lg border border-contorno p-3">
+            <summary className="cursor-pointer text-xs font-semibold text-oliva-escura">{documento.tipoDocumento === "SEM_DOCUMENTO" ? "Adicionar documento (opcional)" : "Documento da despesa"}</summary>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <label className={rotulo}>Tipo de documento<select value={documento.tipoDocumento} onChange={event => alterarDocumento("tipoDocumento", event.target.value)} className={campo}>{[{ codigo: "SEM_DOCUMENTO", nome: "Sem documento informado" }, { codigo: "NOTA_FISCAL", nome: "Nota fiscal" }, { codigo: "BOLETO", nome: "Boleto" }, { codigo: "GUIA", nome: "Guia de pagamento" }, { codigo: "RECIBO", nome: "Recibo" }, { codigo: "OUTRO", nome: "Outro documento" }].map(item => <option key={item.codigo} value={item.codigo}>{item.nome}</option>)}</select></label>
+              {documento.tipoDocumento !== "SEM_DOCUMENTO" && <>
+                <label className={rotulo}>Número do documento{documento.tipoDocumento !== "NOTA_FISCAL" ? " (opcional)" : ""}<input value={documento.numero} onChange={event => alterarDocumento("numero", event.target.value)} required={documento.tipoDocumento === "NOTA_FISCAL"} maxLength={100} className={campo} /></label>
+                <label className={rotulo}>Emissão{documento.tipoDocumento !== "NOTA_FISCAL" ? " (opcional)" : ""}<input type="date" required={documento.tipoDocumento === "NOTA_FISCAL"} value={documento.emissao} onChange={event => alterarDocumento("emissao", event.target.value)} className={campo} /></label>
+                <label className={rotulo}>CPF/CNPJ do fornecedor (opcional)<input value={documento.fornecedorDocumento ?? ""} onChange={event => alterarDocumento("fornecedorDocumento", event.target.value)} maxLength={30} className={campo} /></label>
+                {documento.tipoDocumento === "NOTA_FISCAL" && <>
+                  <label className={rotulo}>Série (opcional)<input value={documento.serie ?? ""} onChange={event => alterarDocumento("serie", event.target.value)} maxLength={50} className={campo} /></label>
+                  <label className={rotulo}>Tomador na nota (opcional)<input value={documento.tomadorNome ?? ""} onChange={event => alterarDocumento("tomadorNome", event.target.value)} maxLength={200} className={campo} placeholder="Como consta na nota original" /></label>
+                  <label className={rotulo}>CPF/CNPJ do tomador (opcional)<input value={documento.tomadorDocumento ?? ""} onChange={event => alterarDocumento("tomadorDocumento", event.target.value)} maxLength={30} className={campo} /></label>
+                </>}
+              </>}
+            </div>
+            {documento.tipoDocumento === "NOTA_FISCAL" && !documento.fornecedorDocumento?.trim() && <p className="mt-3 text-xs leading-relaxed text-tinta-suave">Informe o CPF/CNPJ do fornecedor para proteção adicional contra nota repetida. Confira o número antes de cadastrar outra nota.</p>}
+          </details>
         </section>
         <section className="space-y-4 rounded-xl border border-contorno p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-sm font-bold">2. Quanto pertence a cada empreendimento?</h3><p className="mt-1 text-xs text-tinta-suave">Digite os valores manualmente. Você pode repetir um empreendimento para descrever serviços diferentes.</p></div><span className="text-xs font-semibold text-tinta-suave">{documento.statusRateio === "CONFERIDO" ? "Rateio conferido" : "Rascunho"}</span></div>
-          {!visiveis && <p id="rateio-valor-aviso" className="rounded-lg bg-slate-50 p-3 text-xs text-tinta-suave">Os valores estão ocultos. Use “Ver valores” no topo desta janela para preencher e conferir o rateio.</p>}
+          <h3 className="text-sm font-bold">2. Quem assume o custo?</h3>
+          <div className="grid gap-2 sm:grid-cols-3">{[{ valor: "ADMINISTRADORA", titulo: "Administradora", detalhe: "Despesa própria da empresa." }, { valor: "UM_EMPREENDIMENTO", titulo: "Um empreendimento", detalhe: "Todo o valor pertence a ele." }, { valor: "VARIOS", titulo: "Vários empreendimentos", detalhe: "Informar os valores do rateio." }].map(item => <label key={item.valor} className={`flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-xs ${modoCusto === item.valor ? "border-oliva bg-oliva/5" : "border-contorno"}`}><input type="radio" name="destinoCusto" value={item.valor} checked={modoCusto === item.valor} onChange={() => { setModoCusto(item.valor as ModoCustoDespesa); aoAlterar(true); setSucesso(""); }} className="mt-0.5" /><span><strong className="block">{item.titulo}</strong><span className="mt-1 block text-tinta-suave">{item.detalhe}</span></span></label>)}</div>
+          {modoCusto === "ADMINISTRADORA" && <p className="text-xs leading-relaxed text-tinta-suave">O valor fica nas despesas da administradora, sem distribuir custos para imóveis ou empreendimentos.</p>}
+          {modoCusto === "UM_EMPREENDIMENTO" && <div className="grid gap-3 rounded-lg bg-slate-50/60 p-3 sm:grid-cols-2">
+            <label className={rotulo}>Empreendimento<select required value={destinoUnico.empreendimentoId} onChange={event => { setDestinoUnico(atual => ({ ...atual, empreendimentoId: event.target.value, unidadeId: "" })); aoAlterar(true); }} className={campo}><option value="">Selecione…</option>{editor.empreendimentos.map(item => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label>
+            <label className={rotulo}>Imóvel (opcional)<select value={destinoUnico.unidadeId} disabled={!destinoUnico.empreendimentoId} onChange={event => { setDestinoUnico(atual => ({ ...atual, unidadeId: event.target.value })); aoAlterar(true); }} className={campo}><option value="">Área comum / sem imóvel</option>{unidadesDestino.map(item => <option key={item.id} value={item.id}>{item.identificacao}</option>)}</select></label>
+            <p className="text-xs text-tinta-suave sm:col-span-2">Todo o valor será atribuído a esse empreendimento: <Sigilo><Dinheiro centavos={resumo.total} /></Sigilo>.</p>
+          </div>}
+          {modoCusto === "VARIOS" && <>
+          <p className="text-xs text-tinta-suave">Digite os valores manualmente. A soma deve fechar com a despesa. Você pode detalhar mais de um serviço no mesmo empreendimento.</p>
           <ResumoRateio total={documento.totalTexto} linhas={linhas} />
           <ol className="space-y-3">{linhas.map((linha, indice) => {
             const unidades = editor.empreendimentos.find(item => item.id === linha.empreendimentoId)?.unidades ?? [];
             return <li key={linha.chave} className="min-w-0 rounded-lg border border-contorno bg-slate-50/40 p-3">
               <div className="mb-3 flex items-center justify-between gap-2"><span className="text-xs font-bold text-tinta-suave">Serviço {indice + 1}</span><button type="button" onClick={() => { setLinhas(atuais => atuais.filter(item => item.chave !== linha.chave)); aoAlterar(true); }} className="min-h-8 rounded px-2 text-xs font-semibold text-erro hover:bg-erro/5" aria-label={`Remover serviço ${indice + 1}`}>Remover linha</button></div>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <label className={rotulo}>Empreendimento<select value={linha.empreendimentoId} onChange={event => alterarLinha(linha.chave, { empreendimentoId: event.target.value, unidadeId: "" })} className={campo}><option value="">Selecione…</option>{editor.empreendimentos.map(item => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label>
                 <label className={rotulo}>Imóvel (opcional)<select value={linha.unidadeId ?? ""} disabled={!linha.empreendimentoId} onChange={event => alterarLinha(linha.chave, { unidadeId: event.target.value })} className={campo}><option value="">Área comum / sem imóvel</option>{unidades.map(item => <option key={item.id} value={item.id}>{item.identificacao}</option>)}</select></label>
-                <label className={rotulo}>Categoria (opcional)<input value={linha.categoria ?? ""} onChange={event => alterarLinha(linha.chave, { categoria: event.target.value })} maxLength={100} className={campo} placeholder="Ex.: manutenção elétrica" /></label>
                 <label className={rotulo}>Valor deste serviço (R$)<input type={visiveis ? "text" : "password"} inputMode="decimal" autoComplete="off" readOnly={!visiveis} value={linha.valor} onChange={event => alterarLinha(linha.chave, { valor: event.target.value })} className={`${campo} font-mono`} placeholder={visiveis ? "0,00" : ""} /></label>
-                <label className={`${rotulo} sm:col-span-2 lg:col-span-4`}>Serviço realizado<input value={linha.descricao} onChange={event => alterarLinha(linha.chave, { descricao: event.target.value })} maxLength={500} className={campo} placeholder="Descreva o serviço que pertence a este empreendimento" /></label>
+                <label className={`${rotulo} sm:col-span-2 lg:col-span-3`}>Descrição deste custo<input value={linha.descricao} onChange={event => alterarLinha(linha.chave, { descricao: event.target.value })} maxLength={1000} className={campo} placeholder="O que pertence a este empreendimento" /></label>
+                {(!categoria || linha.categoria && linha.categoria !== categoria.rotulo) && <details className="sm:col-span-2 lg:col-span-3"><summary className="cursor-pointer text-xs text-tinta-suave">Classificação desta linha{linha.categoria ? `: ${linha.categoria}` : " (opcional)"}</summary><label className={`${rotulo} mt-2`}>Categoria anterior / detalhamento<input value={linha.categoria ?? ""} onChange={event => alterarLinha(linha.chave, { categoria: event.target.value })} maxLength={100} className={campo} placeholder={categoria?.rotulo ?? "Ex.: manutenção elétrica"} /></label></details>}
               </div>
             </li>;
           })}</ol>
           <button type="button" disabled={linhas.length >= LIMITE_RATEIOS} onClick={() => { setLinhas(atuais => [...atuais, linhaVazia()]); aoAlterar(true); }} className={btnSecundario}>+ Adicionar empreendimento ou serviço</button>
+          </>}
         </section>
         <section className="rounded-xl border border-contorno p-4">
-          <h3 className="text-sm font-bold">3. Um único pagamento</h3>
-          {temPagamento ? <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm"><p className="font-semibold">{editor.pagamento.origem === "WIDESYS" ? "Pagamento preservado da origem Widesys" : "Saída já vinculada no caixa"}</p><p className="mt-2 flex flex-wrap gap-2 text-xs text-tinta-suave"><span>{editor.pagamento.situacao}</span><span>{editor.pagamento.data || "Sem data informada"}</span><Sigilo><Dinheiro centavos={editor.pagamento.valor} /></Sigilo></p><p className="mt-2 text-xs text-tinta-suave">Salvar o rateio não registra outro pagamento.{!editor.pagamento.ativo ? " Atenção: o movimento vinculado não está ativo. Confira a origem." : ""}</p></div>
-            : !editor.permitePagamento || legado ? <p className="mt-2 text-xs text-tinta-suave">{legado ? "O pagamento segue o registro de origem. Nenhuma saída será criada por este rateio." : "Seu acesso permite distribuir os custos, mas não registrar pagamentos no caixa."}</p>
+          <h3 className="text-sm font-bold">3. Já foi pago?</h3>
+          {temPagamento ? <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm"><p className="font-semibold">{editor.pagamento.origem === "WIDESYS" ? "Situação do pagamento preservada do Widesys" : "Saída já vinculada no caixa"}</p><p className="mt-2 flex flex-wrap gap-2 text-xs text-tinta-suave"><span>{editor.pagamento.situacao}</span><span>{editor.pagamento.data || "Sem data informada"}</span><Sigilo><Dinheiro centavos={editor.pagamento.valor} /></Sigilo></p><p className="mt-2 text-xs text-tinta-suave">Salvar a despesa não registra outro pagamento.{!editor.pagamento.ativo ? " Atenção: o movimento vinculado não está ativo. Confira a origem." : ""}</p></div>
+            : !editor.permitePagamento || legado ? <p className="mt-2 text-xs text-tinta-suave">{legado ? "O pagamento segue o registro de origem. Nenhuma saída será criada ao organizar esta despesa." : "Seu acesso permite organizar os custos, mas não registrar pagamentos no caixa."}</p>
               : <div className="mt-3 space-y-4">
                 <div className="grid gap-2 sm:grid-cols-3">{[{ valor: "MANTER", titulo: "Ainda não foi pago", detalhe: "Somente a conta a pagar." }, { valor: "VINCULAR", titulo: "Já está no caixa", detalhe: "Vincular uma saída existente, sem repetir." }, { valor: "REGISTRAR", titulo: "Foi pago, mas não está no caixa", detalhe: "Registrar uma única saída." }].map(item => <label key={item.valor} className={`flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-xs ${modoPagamento === item.valor ? "border-oliva bg-oliva/5" : "border-contorno"}`}><input type="radio" name="modoPagamento" value={item.valor} checked={modoPagamento === item.valor} onChange={() => { setModoPagamento(item.valor as PagamentoDespesaEntrada["modo"]); setCientePagamento(false); aoAlterar(true); }} className="mt-0.5" /><span><strong className="block">{item.titulo}</strong><span className="mt-1 block text-tinta-suave">{item.detalhe}</span></span></label>)}</div>
                 {modoPagamento === "VINCULAR" && <div className="space-y-3"><div className="flex flex-wrap items-end gap-2"><label className={`${rotulo} min-w-48 flex-1`}>Localizar saída com o mesmo valor<input value={busca} onChange={event => setBusca(event.target.value)} className={campo} maxLength={100} placeholder="Descrição ou fornecedor" /></label><button type="button" disabled={buscando || !resumo.total} onClick={() => void buscar()} className={btnSecundario}>{buscando ? "Buscando…" : "Buscar no caixa"}</button></div>
@@ -211,17 +243,18 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar, aoFechar
                 {modoPagamento === "REGISTRAR" && <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/50 p-3"><p className="text-xs leading-relaxed text-amber-950">Este registro é interno: não envia PIX nem movimenta sua conta bancária. Use somente para um pagamento já realizado e ainda ausente do caixa.</p>
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     <label className={rotulo}>Data real do pagamento<input type="date" required value={pagamentoNovo.data} onChange={event => { setPagamentoNovo(atual => ({ ...atual, data: event.target.value })); aoAlterar(true); }} className={campo} /></label>
-                    <label className={rotulo}>Caixa / centro de origem<select required value={pagamentoNovo.centroCusto} onChange={event => { setPagamentoNovo(atual => ({ ...atual, centroCusto: event.target.value })); aoAlterar(true); }} className={campo}><option value="">Selecione…</option><option value="AL">A. Camargo</option><option value="CH">Chácara</option><option value="BRISA">Brisa Azul</option></select></label>
-                    <label className={rotulo}>Categoria no caixa<input required value={pagamentoNovo.categoria} maxLength={100} onChange={event => { setPagamentoNovo(atual => ({ ...atual, categoria: event.target.value })); aoAlterar(true); }} className={campo} placeholder="Ex.: manutenção" /></label>
-                    <label className={rotulo}>Forma de pagamento<select value={pagamentoNovo.via} onChange={event => { setPagamentoNovo(atual => ({ ...atual, via: event.target.value })); aoAlterar(true); }} className={campo}>{["PIX", "TRANSFERENCIA", "BOLETO", "DINHEIRO"].map(via => <option key={via} value={via}>{via}</option>)}</select></label>
+                    <label className={rotulo}>Caixa que pagou<select required value={pagamentoNovo.centroCusto} onChange={event => { setPagamentoNovo(atual => ({ ...atual, centroCusto: event.target.value })); aoAlterar(true); }} className={campo}><option value="">Selecione…</option><option value="AL">A. Camargo</option><option value="CH">Chácara</option><option value="BRISA">Brisa Azul</option></select><span className="mt-1 block text-[11px] font-normal text-tinta-suave">Quem assume o custo foi definido no passo 2.</span></label>
+                    {!categoria && <label className={rotulo}>Categoria no caixa<input required value={pagamentoNovo.categoria} maxLength={100} onChange={event => { setPagamentoNovo(atual => ({ ...atual, categoria: event.target.value })); aoAlterar(true); }} className={campo} placeholder="Ex.: manutenção" /></label>}
+                    <label className={rotulo}>Forma de pagamento<select value={pagamentoNovo.via} onChange={event => { setPagamentoNovo(atual => ({ ...atual, via: event.target.value })); aoAlterar(true); }} className={campo}>{[{ codigo: "PIX", nome: "PIX" }, { codigo: "TRANSFERENCIA", nome: "Transferência" }, { codigo: "BOLETO", nome: "Boleto" }, { codigo: "DINHEIRO", nome: "Dinheiro" }, { codigo: "CARTAO_CREDITO", nome: "Cartão de crédito" }, { codigo: "CARTAO_DEBITO", nome: "Cartão de débito" }].map(via => <option key={via.codigo} value={via.codigo}>{via.nome}</option>)}</select></label>
                     <label className={`${rotulo} lg:col-span-2`}>Conta bancária pagadora (opcional)<select value={pagamentoNovo.contaBancariaId} onChange={event => { setPagamentoNovo(atual => ({ ...atual, contaBancariaId: event.target.value })); aoAlterar(true); }} className={campo}><option value="">Não informada</option>{editor.contas.map(conta => <option key={conta.id} value={conta.id}>{conta.apelido}</option>)}</select></label>
                   </div>
-                  <label className="flex items-start gap-2 text-xs leading-relaxed"><input type="checkbox" checked={cientePagamento} onChange={event => setCientePagamento(event.target.checked)} className="mt-1" /><span>Conferi: este pagamento já aconteceu, pelo valor integral da nota, e ainda não existe no caixa.</span></label>
+                  {categoria && <p className="text-xs text-tinta-suave">Categoria do pagamento: <strong>{categoria.rotulo}</strong>, a mesma da despesa.</p>}
+                  <label className="flex items-start gap-2 text-xs leading-relaxed"><input type="checkbox" checked={cientePagamento} onChange={event => setCientePagamento(event.target.checked)} className="mt-1" /><span>Conferi: este pagamento já aconteceu, pelo valor integral da despesa, e ainda não existe no caixa.</span></label>
                 </div>}
               </div>}
         </section>
-        <p className="text-xs leading-relaxed text-tinta-suave">O rateio é gerencial: separa custos por empreendimento sem emitir outra nota, gerar reembolso ou alterar o tomador fiscal. No caixa, continua existindo somente o pagamento único.</p>
-        <div className="flex flex-wrap items-center gap-3 border-t border-contorno pt-4"><button type="submit" value="CONFERIDO" className={btnPrimario} disabled={!visiveis || !resumo.completo || editor.documento.fonteAlterada && !confirmaFonte}>{salvando ? "Salvando…" : "Salvar e concluir conferência"}</button><button type="submit" value="RASCUNHO" className={btnSecundario} disabled={!visiveis || editor.documento.fonteAlterada && !confirmaFonte}>Salvar rascunho</button><button type="button" className={btnSecundario} onClick={aoFechar}>Fechar</button></div>
+        {modoCusto === "VARIOS" && <p className="text-xs leading-relaxed text-tinta-suave">O rateio separa custos por empreendimento. O documento e o pagamento continuam únicos.</p>}
+        <div className="flex flex-wrap items-center gap-3 border-t border-contorno pt-4"><button type="submit" value="CONFERIDO" className={btnPrimario} disabled={!visiveis || !conferenciaCompleta || editor.documento.fonteAlterada && !confirmaFonte}>{salvando ? "Salvando…" : "Salvar e concluir conferência"}</button><button type="submit" value="RASCUNHO" className={btnSecundario} disabled={!visiveis || editor.documento.fonteAlterada && !confirmaFonte}>Salvar rascunho</button><button type="button" className={btnSecundario} onClick={aoFechar}>Fechar</button></div>
       </fieldset>
     </form>
     <AnexosDespesa despesaId={documento.id} iniciais={editor.anexos} bloqueado={salvando || reabrirNecessario} aoOcupar={valor => { setAnexando(valor); aoOcupar(valor); }} />
@@ -251,12 +284,12 @@ function AnexosDespesa({ despesaId, iniciais, bloqueado, aoOcupar }: { despesaId
     } catch { setErro(true); setMensagem("Não foi possível anexar. Confira seu acesso, o tamanho e o formato do arquivo e tente novamente."); }
     finally { setEnviando(false); aoOcupar(false); }
   }
-  return <section className="rounded-xl border border-contorno p-4"><h3 className="text-sm font-bold">Nota e comprovante</h3><p className="mt-1 text-xs leading-relaxed text-tinta-suave">Acesso restrito ao documento completo. Os anexos não são compartilhados com a visão de carteira dos sócios.</p>
-    {!despesaId ? <p className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-tinta-suave">Salve a despesa primeiro para anexar a nota e o comprovante (PDF, JPG ou PNG, até 5 MB cada).</p> : <>
+  return <details className="rounded-xl border border-contorno p-4"><summary className="cursor-pointer text-sm font-bold">Documentos e comprovantes (opcional){anexos.length > 0 ? ` · ${anexos.length} arquivo(s)` : ""}</summary><p className="mt-3 text-xs leading-relaxed text-tinta-suave">Acesso restrito ao documento completo. Os anexos não são compartilhados com a visão de carteira dos sócios.</p>
+    {!despesaId ? <p className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-tinta-suave">Salve a despesa primeiro para anexar documentos e comprovantes (PDF, JPG ou PNG, até 5 MB cada).</p> : <>
       <ul className="mt-3 space-y-2">{anexos.map(anexo => <li key={anexo.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 p-3 text-xs"><span className="min-w-0 break-all font-semibold">{anexo.nomeOriginal}<span className="ml-2 font-normal text-tinta-suave">{Math.ceil(anexo.tamanho / 1024)} KB</span></span><a href={`/financeiro/contas-a-pagar/anexos?id=${encodeURIComponent(anexo.id)}`} className="font-semibold text-oliva-escura underline" download>Baixar arquivo</a></li>)}</ul>
-      <form onSubmit={event => void enviar(event)} className="mt-3 flex flex-wrap items-end gap-3"><label className={`${rotulo} min-w-0 flex-1`}>Anexar nota ou comprovante<input ref={input} type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={enviando || bloqueado} onChange={event => setArquivo(event.target.files?.[0] ?? null)} className="mt-2 block w-full min-w-0 text-xs" /></label><button type="submit" disabled={!arquivo || enviando || bloqueado || anexos.length >= 10} className={btnSecundario}>{enviando ? "Enviando…" : "Anexar arquivo"}</button></form>
+      <form onSubmit={event => void enviar(event)} className="mt-3 flex flex-wrap items-end gap-3"><label className={`${rotulo} min-w-0 flex-1`}>Anexar documento ou comprovante<input ref={input} type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={enviando || bloqueado} onChange={event => setArquivo(event.target.files?.[0] ?? null)} className="mt-2 block w-full min-w-0 text-xs" /></label><button type="submit" disabled={!arquivo || enviando || bloqueado || anexos.length >= 10} className={btnSecundario}>{enviando ? "Enviando…" : "Anexar arquivo"}</button></form>
       <p className="mt-2 text-[11px] text-tinta-suave">Até 10 arquivos de 5 MB. PDFs ou imagens JPG/PNG.</p>
       {mensagem && <p role={erro ? "alert" : "status"} className={`mt-3 text-xs ${erro ? "text-erro" : "text-oliva-escura"}`}>{mensagem}</p>}
     </>}
-  </section>;
+  </details>;
 }

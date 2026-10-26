@@ -191,8 +191,8 @@ describe("popup financeiro integrado à lista SSR", () => {
     expect(linhasEnviadasAoCliente(arvore)[0].rateio).toBeUndefined();
     const html = renderToStaticMarkup(arvore);
     expect(html).toContain("Custos por empreendimento");
-    expect(html).not.toContain("Nova despesa com rateio");
-    expect(html).not.toContain("Ratear despesa");
+    expect(html).not.toContain("Nova despesa");
+    expect(html).not.toContain("Organizar despesa");
   });
 
   it("não envia montantes que não são exibidos em cadastros", async () => {

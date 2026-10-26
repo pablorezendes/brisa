@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { referenciaDocumentoDespesa } from "../despesas/apresentacao";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { carteiraIrrestrita, montarPolitica, pode } from "../acesso/politica";
 import { ErroGovernanca } from "./tipos";
@@ -113,8 +114,8 @@ async function carregarPrevia(tx: Tx, selecao: Identidade[]) {
     if (item.origem === "BRISA" && item.dominio === "PAGAR") {
       const d = despesasPorId.get(item.id);
       if (!d) throw new ErroGovernanca("NAO_ENCONTRADO", "Uma das notas selecionadas não existe mais ou pertence a um título Widesys. Atualize a lista.");
-      nome = `${d.fornecedorNome} · NF ${d.numero}`;
-      referencia = `Brisa · competência ${d.competencia} · nota única${d.lancamentoCaixaId ? " · pagamento preservado no caixa" : ""}`;
+      nome = `${d.fornecedorNome} · ${referenciaDocumentoDespesa(d)}`;
+      referencia = `Brisa · competência ${d.competencia} · despesa única${d.lancamentoCaixaId ? " · pagamento preservado no caixa" : ""}`;
       valor = d.total;
       dados = d;
       links = { pagamentos: d.lancamentoCaixa ? [d.lancamentoCaixa] : [], boletos: [], baixas: [] };

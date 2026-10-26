@@ -100,6 +100,39 @@ beforeEach(() => {
 });
 
 describe("fotografia compacta das fontes de unificação", () => {
+  const despesaBase: DadosFontesUnificacao["despesas"][number] = {
+    id: "despesa-teste", origemChave: null, fornecedorNome: "Fornecedor teste", fornecedorDocumento: null,
+    numero: "42", serie: null, tomadorNome: null, tomadorDocumento: null, competencia: "2026-10", emissao: "2026-10-07",
+    vencimento: "2026-10-30", total: 15000, restrita: false, lancamentoCaixaId: null, lancamentoCaixa: null, pagamentoVia: null,
+    categoriaCodigo: null, descricao: null, tipoDocumento: "NOTA_FISCAL", destinoCusto: "EMPREENDIMENTOS",
+  };
+
+  it("campos de classificação adicionados pelo schema preservam a projeção de notas antigas", async () => {
+    const fotografia = { ...dados, despesas: [despesaBase] };
+    const atual = (await derivarFontesUnificacao(fotografia)).find(f => f.chave === "BRISA:PAGAR:despesa-teste")!;
+    const antigo = Object.fromEntries(Object.entries(despesaBase).filter(([chave]) => !["categoriaCodigo", "descricao", "tipoDocumento", "destinoCusto"].includes(chave))) as unknown as typeof despesaBase;
+    const semNovosCampos = (await derivarFontesUnificacao({ ...dados, despesas: [antigo] })).find(f => f.chave === atual.chave)!;
+    expect(atual).toEqual(semNovosCampos);
+    expect(atual.descricao).toBe("NF 42");
+    expect(atual.campos).not.toHaveProperty("categoria");
+    expect(atual.campos.tratamento.valor).toBe("Uma nota e uma obrigação. O rateio apenas distribui custos; o pagamento permanece uma única saída no caixa.");
+  });
+
+  it("despesa sem documento mostra classificação e responsabilidade sem inventar NF ou pagamento", async () => {
+    const fontes = await derivarFontesUnificacao({ ...dados, despesas: [{ ...despesaBase, numero: "", emissao: "", tipoDocumento: "SEM_DOCUMENTO", destinoCusto: "ADMINISTRADORA", categoriaCodigo: "PROGRAMA_WIDESYS", descricao: "Mensalidade administrativa" }] });
+    const despesas = fontes.filter(f => f.dominio === "PAGAR");
+    expect(despesas).toHaveLength(1);
+    expect(despesas[0]).toMatchObject({ valor: 15000, pago: 0, aberto: 15000, proveniencia: { tipo: "CADASTRO_MANUAL" } });
+    expect(despesas[0].descricao).toBe("Programa Widesys · Mensalidade administrativa · Administradora");
+    expect(despesas[0].campos.tipoDocumento.valor).toBe("Sem documento");
+  });
+
+  it("classificação administrativa de título Widesys não cria conta a pagar nativa adicional", async () => {
+    const fontes = await derivarFontesUnificacao({ ...dados, despesas: [{ ...despesaBase, origemChave: "WIDESYS:PAGAR:existente", tipoDocumento: "SEM_DOCUMENTO", destinoCusto: "ADMINISTRADORA", categoriaCodigo: "IMPOSTOS" }] });
+    expect(fontes.some(f => f.chave === "BRISA:PAGAR:despesa-teste")).toBe(false);
+    expect(fontes).toHaveLength(13);
+  });
+
   it("seleciona apenas os insumos e conserva todas as fontes, hashes e proveniência", async () => {
     const { db, mocks } = bancoArtificial();
     const esperadas = await derivarFontesUnificacao(dados);

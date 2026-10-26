@@ -1192,6 +1192,10 @@ model DespesaDocumento {
   identidadeNota        String? @unique
   fornecedorNome        String
   fornecedorDocumento   String?
+  categoriaCodigo       String?
+  descricao             String?
+  tipoDocumento         String @default("NOTA_FISCAL")
+  destinoCusto          String @default("EMPREENDIMENTOS")
   numero                String
   serie                 String?
   tomadorNome           String?

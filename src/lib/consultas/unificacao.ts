@@ -8,6 +8,7 @@ import { normalizar } from "../dominio/normalizacao";
 import { operacaoNaRequisicao } from "./operacao-na-requisicao";
 import { dataOperacionalUnificada, mesOperacionalUnificado } from "../unificacao/periodo";
 import { correspondeOrigem, resumirOrganizacaoFinanceira } from "../unificacao/origens";
+import { apresentarClassificacaoDespesa, carregarClassificacoesApresentacao } from "../despesas/classificacao-apresentacao";
 import { DOMINIOS_UNIFICACAO, type FiltrosUnificacao, type LinhaUnificada, type ListaUnificada } from "../unificacao/tipos";
 
 const ler = cache(async (dominio?: "RECEBER" | "PAGAR") => {
@@ -52,11 +53,20 @@ export function hojeUnificacao(): string {
 const venceu = (linha: LinhaUnificada, hoje: string) => !linha.cancelado && (linha.aberto ?? 0) > 0 && Boolean(linha.vencimento && linha.vencimento < hoje);
 
 export async function listarUnificados(filtros: FiltrosUnificacao = {}): Promise<ListaUnificada> {
-  return filtrarLista(await ler(), filtros);
+  const dados = await ler();
+  const lista = filtrarLista(dados, filtros);
+  return filtros.dominio === "PAGAR" ? apresentarClassificacaoLista(lista, dados.perfil) : lista;
 }
 
 export async function listarTitulosFinanceiros(filtros: FiltrosUnificacao & { dominio: "RECEBER" | "PAGAR" }): Promise<ListaUnificada> {
-  return filtrarLista(await ler(filtros.dominio), filtros);
+  const dados = await ler(filtros.dominio);
+  const lista = filtrarLista(dados, filtros);
+  return filtros.dominio === "PAGAR" ? apresentarClassificacaoLista(lista, dados.perfil) : lista;
+}
+
+async function apresentarClassificacaoLista(lista: ListaUnificada, perfil: string): Promise<ListaUnificada> {
+  const classificacoes = await carregarClassificacoesApresentacao(prisma, lista.itens, perfil);
+  return classificacoes.size ? { ...lista, itens: lista.itens.map(item => apresentarClassificacaoDespesa(item, classificacoes)) } : lista;
 }
 
 function filtrarLista({ linhas, decisoes, perfil }: Awaited<ReturnType<typeof ler>>, filtros: FiltrosUnificacao): ListaUnificada {
@@ -120,7 +130,13 @@ export async function detalheUnificado(chave: string, buscaDestino?: string) {
   // Detalhes financeiros ficam ligados ao título. As baixas não entram de novo
   // nos totais; a ligação reversa usa os IDs capturados pelo importador.
   const baixas = linhas.filter(l => l.dominio.startsWith("BAIXA_") && l.estado !== "VINCULADO" && l.estado !== "AUSENTE" && l.tituloChave && chavesFonte.has(l.tituloChave));
-  return { registro, candidatos, fontes: associadas, historico, baixas };
+  const classificacoes = await carregarClassificacoesApresentacao(prisma, [registro, ...candidatos, ...associadas], perfil);
+  return {
+    registro: apresentarClassificacaoDespesa(registro, classificacoes),
+    candidatos: candidatos.map(candidato => apresentarClassificacaoDespesa(candidato, classificacoes)),
+    fontes: associadas.map(fonte => apresentarClassificacaoDespesa(fonte, classificacoes)),
+    historico, baixas,
+  };
 }
 
 export async function resumoUnificacao() {

@@ -8,6 +8,7 @@ import type { SalvarDespesaEntrada } from "./tipos";
 import { criarSchemaSinteticoDespesas } from "./testes-banco";
 import { fonteLancamentoCaixa } from "../unificacao/fontes";
 import { filtroCaixaDespesasRestritas } from "./sigilo-caixa";
+import { categoriaWidesys } from "./categorias";
 
 let diretorio: string;
 let contador = 0;
@@ -50,6 +51,129 @@ async function caixa(extra: Prisma.LancamentoCaixaUncheckedCreateInput = { id: "
 async function legado() {
   return db.tituloFinanceiroLegado.create({ data: { id: "legado", origem: "WIDESYS", escopo: "TITULO_PAGAR", legadoId: "42", ultimoItemId: "item", natureza: "PAGAR", numeroDocumento: "42", valorDevido: 256000, valorPago: 256000, valorAberto: 0, emissao: "2026-10-07", competencia: "2026-10", pagamento: "2026-10-08", situacaoNormalizada: "PAGO", capturadoEm: new Date(), snapshot: "{\"sintetico\":true}", snapshotHash: "hash-v1" } });
 }
+
+function administrativa(extra: Partial<SalvarDespesaEntrada> = {}) {
+  return entrada({ categoriaCodigo: "PROGRAMA_WIDESYS", descricao: "Mensalidade do sistema", tipoDocumento: "SEM_DOCUMENTO", destinoCusto: "ADMINISTRADORA", numero: "", emissao: "", rateios: [], ...extra });
+}
+
+describe("despesas administrativas simplificadas", () => {
+  it("conclui uma despesa da administradora sem inventar empreendimento, nota ou pagamento", async () => {
+    const r = await salvarDespesa(db, administrativa(), ator);
+    const documento = await db.despesaDocumento.findUniqueOrThrow({ where: { id: r.id } });
+    expect(documento).toMatchObject({ destinoCusto: "ADMINISTRADORA", tipoDocumento: "SEM_DOCUMENTO", categoriaCodigo: "PROGRAMA_WIDESYS", descricao: "Mensalidade do sistema", numero: "", emissao: "", identidadeNota: null, statusRateio: "CONFERIDO" });
+    expect(await db.despesaRateio.count()).toBe(0);
+    expect(await db.lancamentoCaixa.count()).toBe(0);
+    const editor = await obterEditorDespesa(db, { id: r.id }, ator);
+    expect(editor.documento).toMatchObject({ destinoCusto: "ADMINISTRADORA", categoriaCodigo: "PROGRAMA_WIDESYS", tipoDocumento: "SEM_DOCUMENTO" });
+    expect(editor.pagamento.situacao).toBe("EM_ABERTO");
+  });
+
+  it("paga uma vez, usa a categoria principal no caixa e mantém a descrição sem NF fictícia", async () => {
+    const dados = administrativa({ pagamento: { modo: "REGISTRAR", data: "2026-10-08", centroCusto: "BRISA", categoria: "Texto diferente não confiável", via: "CARTAO_CREDITO" } });
+    const r = await salvarDespesa(db, dados, ator);
+    expect((await salvarDespesa(db, dados, ator)).repetido).toBe(true);
+    expect(await db.despesaDocumento.count()).toBe(1);
+    expect(await db.lancamentoCaixa.count()).toBe(1);
+    const pagamento = await db.lancamentoCaixa.findUniqueOrThrow({ where: { id: r.lancamentoCaixaId! } });
+    expect(pagamento).toMatchObject({ categoria: "Programa Widesys", descricao: "Mensalidade do sistema · Fornecedor sintético", valor: 256000, centroCusto: "BRISA" });
+    const doc = await db.despesaDocumento.findUniqueOrThrow({ where: { id: r.id } });
+    expect(doc.pagamentoVia).toBe("CARTAO_CREDITO");
+  });
+
+  it("vincula saída existente sem reclassificar sua origem nem criar outra", async () => {
+    await caixa();
+    const [p] = await buscarPagamentosDisponiveis(db, { total: 256000 }, ator);
+    await salvarDespesa(db, administrativa({ pagamento: { modo: "VINCULAR", lancamentoCaixaId: p.id, assinatura: p.assinatura } }), ator);
+    expect(await db.lancamentoCaixa.count()).toBe(1);
+    expect((await db.lancamentoCaixa.findUniqueOrThrow({ where: { id: p.id } })).categoria).toBe("Manutenção");
+    await expect(salvarDespesa(db, administrativa({ pagamento: { modo: "VINCULAR", lancamentoCaixaId: p.id, assinatura: p.assinatura } }), ator)).rejects.toMatchObject({ codigo: "PAGAMENTO_JA_VINCULADO" });
+  });
+
+  it("categoria e descrição são exigidas no fluxo simplificado, e categoria desconhecida é rejeitada", async () => {
+    await expect(salvarDespesa(db, administrativa({ categoriaCodigo: null }), ator)).rejects.toMatchObject({ codigo: "CATEGORIA_INVALIDA" });
+    await expect(salvarDespesa(db, administrativa({ categoriaCodigo: "INEXISTENTE" }), ator)).rejects.toMatchObject({ codigo: "CATEGORIA_INVALIDA" });
+    await expect(salvarDespesa(db, administrativa({ descricao: " " }), ator)).rejects.toMatchObject({ codigo: "CAMPO_INVALIDO" });
+    expect(await db.despesaDocumento.count()).toBe(0);
+  });
+
+  it("não mistura administradora e rateios nem permite concluir empreendimento sem distribuir", async () => {
+    await expect(salvarDespesa(db, administrativa({ rateios: [{ empreendimentoId: "e1", descricao: "Parcela", valor: 256000 }] }), ator)).rejects.toMatchObject({ codigo: "DESTINO_INVALIDO" });
+    await expect(salvarDespesa(db, administrativa({ destinoCusto: "EMPREENDIMENTOS" }), ator)).rejects.toMatchObject({ codigo: "RATEIO_NAO_FECHA" });
+    await salvarDespesa(db, administrativa({ destinoCusto: "EMPREENDIMENTOS", rateios: [{ empreendimentoId: "e1", descricao: "Despesa única do empreendimento", categoria: "Programa Widesys", valor: 256000 }] }), ator);
+    expect(await db.despesaRateio.count()).toBe(1);
+  });
+
+  it("documentos opcionais sem número não colidem; guia e NF têm identidades distintas", async () => {
+    await salvarDespesa(db, administrativa({ tipoDocumento: "GUIA" }), ator);
+    await salvarDespesa(db, administrativa({ tipoDocumento: "GUIA" }), ator);
+    expect(await db.despesaDocumento.count({ where: { identidadeNota: null } })).toBe(2);
+    await salvarDespesa(db, administrativa({ tipoDocumento: "NOTA_FISCAL", numero: "42", emissao: "2026-10-07" }), ator);
+    await salvarDespesa(db, administrativa({ tipoDocumento: "GUIA", numero: "42" }), ator);
+    await expect(salvarDespesa(db, administrativa({ tipoDocumento: "GUIA", numero: "42" }), ator)).rejects.toMatchObject({ codigo: "DUPLICIDADE" });
+    await expect(salvarDespesa(db, administrativa({ tipoDocumento: "NOTA_FISCAL" }), ator)).rejects.toMatchObject({ codigo: "CAMPO_INVALIDO" });
+  });
+
+  it("preserva identidade fiscal de notas anteriores ao novo formulário", async () => {
+    await salvarDespesa(db, entrada(), ator);
+    await expect(salvarDespesa(db, administrativa({ tipoDocumento: "NOTA_FISCAL", numero: "42", emissao: "2026-10-07" }), ator)).rejects.toMatchObject({ codigo: "DUPLICIDADE" });
+    expect(await db.despesaDocumento.count()).toBe(1);
+  });
+
+  it("categoria explícita e descrição de comissão protegem editor, caixa e catálogo do financeiro", async () => {
+    const fin = { id: "fin" };
+    const editor = await obterEditorDespesa(db, {}, fin);
+    expect(editor.categorias.some(c => c.codigo === "ADMINISTRACAO_COMISSAO")).toBe(false);
+    expect((await obterEditorDespesa(db, {}, ator)).categorias.some(c => c.codigo === "ADMINISTRACAO_COMISSAO")).toBe(true);
+    await expect(salvarDespesa(db, administrativa({ categoriaCodigo: "ADMINISTRACAO_COMISSAO" }), fin)).rejects.toMatchObject({ codigo: "COMISSAO_RESTRITA" });
+    await expect(salvarDespesa(db, administrativa({ descricao: "Comissão de administração" }), fin)).rejects.toMatchObject({ codigo: "COMISSAO_RESTRITA" });
+    const r = await salvarDespesa(db, administrativa({ categoriaCodigo: "ADMINISTRACAO_COMISSAO", pagamento: { modo: "REGISTRAR", data: "2026-10-08", centroCusto: "BRISA", categoria: "Outra", via: "PIX" } }), ator);
+    expect((await db.despesaDocumento.findUniqueOrThrow({ where: { id: r.id } })).restrita).toBe(true);
+    expect(await db.lancamentoCaixa.count({ where: filtroCaixaDespesasRestritas("FINANCEIRO") })).toBe(0);
+    await salvarDespesa(db, administrativa({ id: r.id, versao: r.versao }), ator);
+    await expect(obterEditorDespesa(db, { id: r.id }, fin)).rejects.toMatchObject({ codigo: "COMISSAO_RESTRITA" });
+  });
+
+  it("sugere somente mapeamentos comprovados e preserva obrigação e pagamento Widesys", async () => {
+    await legado();
+    await db.tituloFinanceiroLegado.update({ where: { id: "legado" }, data: { planoContaLegadoId: "637", planoContaRotulo: "Programa WIDESYS" } });
+    const fonteAntes = await db.tituloFinanceiroLegado.findUniqueOrThrow({ where: { id: "legado" } });
+    const editor = await obterEditorDespesa(db, { origemChave: "WIDESYS:PAGAR:legado" }, ator);
+    expect(editor.documento).toMatchObject({ categoriaCodigo: "PROGRAMA_WIDESYS", descricao: "Programa WIDESYS" });
+    const r = await salvarDespesa(db, administrativa({ origemChave: "WIDESYS:PAGAR:legado", origemHash: "hash-v1" }), ator);
+    expect(r.chave).toBe("WIDESYS:PAGAR:legado");
+    expect(await db.tituloFinanceiroLegado.findUniqueOrThrow({ where: { id: "legado" } })).toEqual(fonteAntes);
+    expect(await db.lancamentoCaixa.count()).toBe(0);
+    expect(await db.despesaDocumento.count()).toBe(1);
+    expect(categoriaWidesys("333")).toBeNull();
+    await db.tituloFinanceiroLegado.update({ where: { id: "legado" }, data: { planoContaLegadoId: "333", planoContaRotulo: "Administração BRISA" } });
+    expect((await obterEditorDespesa(db, { id: r.id }, { id: "fin" })).documento.categoriaCodigo).toBe("PROGRAMA_WIDESYS");
+  });
+
+  it("novo overlay não atribui custo à administradora nem descarta documento legado sem tipo conhecido", async () => {
+    await legado();
+    await db.tituloFinanceiroLegado.update({ where: { id: "legado" }, data: { planoContaLegadoId: "637", planoContaRotulo: "Programa WIDESYS" } });
+    const fonteAntes = await db.tituloFinanceiroLegado.findUniqueOrThrow({ where: { id: "legado" } });
+    const editor = await obterEditorDespesa(db, { origemChave: "WIDESYS:PAGAR:legado" }, ator);
+    expect(editor.documento).toMatchObject({ destinoCusto: "EMPREENDIMENTOS", tipoDocumento: "OUTRO", numero: "42", emissao: "2026-10-07" });
+    const dados = entrada({ ...editor.documento, fornecedorNome: "Fornecedor sintético", statusRateio: "CONFERIDO", rateios: [] });
+    await expect(salvarDespesa(db, dados, ator)).rejects.toMatchObject({ codigo: "RATEIO_NAO_FECHA" });
+    const r = await salvarDespesa(db, { ...dados, destinoCusto: "ADMINISTRADORA" }, ator);
+    expect((await obterEditorDespesa(db, { id: r.id }, ator)).documento).toMatchObject({ tipoDocumento: "OUTRO", numero: "42", emissao: "2026-10-07", destinoCusto: "ADMINISTRADORA" });
+    expect(await db.tituloFinanceiroLegado.findUniqueOrThrow({ where: { id: "legado" } })).toEqual(fonteAntes);
+    expect(await db.despesaDocumento.count()).toBe(1);
+    expect(await db.lancamentoCaixa.count()).toBe(0);
+  });
+
+  it("emissão isolada do legado também é preservada sem inventar número ou nota fiscal", async () => {
+    await legado();
+    await db.tituloFinanceiroLegado.update({ where: { id: "legado" }, data: { numeroDocumento: null, planoContaLegadoId: "619", planoContaRotulo: "Impostos Brisa" } });
+    const editor = await obterEditorDespesa(db, { origemChave: "WIDESYS:PAGAR:legado" }, ator);
+    expect(editor.documento).toMatchObject({ tipoDocumento: "OUTRO", numero: "", emissao: "2026-10-07" });
+    const r = await salvarDespesa(db, entrada({ ...editor.documento, fornecedorNome: "Fornecedor sintético", destinoCusto: "ADMINISTRADORA", rateios: [] }), ator);
+    expect((await db.despesaDocumento.findUniqueOrThrow({ where: { id: r.id } })).identidadeNota).toBeNull();
+    expect((await obterEditorDespesa(db, { id: r.id }, ator)).documento.emissao).toBe("2026-10-07");
+  });
+});
 describe("despesa única com rateio manual", () => {
   it("cria uma nota e rateios sem gerar pagamento ou alterar financeiro externo", async () => {
     const r = await salvarDespesa(db, entrada(), ator);
