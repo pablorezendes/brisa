@@ -2018,3 +2018,18 @@ describe("staging da operação Widesys", () => {
     expect(transacoes).toBe(2);
   });
 });
+
+describe("data de pagamento versus forma de pagamento", () => {
+  it.each(["Cobrança Bancária", "Cartão de Crédito", "PIX"])("preserva vencimento futuro com tipo %s", (forma) => {
+    const diretorio = fixtureOperacao();
+    alterarShard(diretorio, "pagar.json", raiz => {
+      const titulo = (raiz.records as Array<Record<string, unknown>>).find(t => t.legacyId === "pagar-2")!;
+      const campos = titulo.fields as Record<string, unknown>;
+      campos.tipo_de_pagamento = [forma];
+      campos.vencimento = "10-06-2027";
+      titulo.baixas = [];
+    });
+    const titulo = carregarPlanoOperacaoWidesys(diretorio).registros.find(t => t.legadoId === "pagar-2");
+    expect(titulo).toMatchObject({ vencimento: "2027-06-10", pagamento: null, valorPago: 0, statusImportacao: "STAGING" });
+  });
+});

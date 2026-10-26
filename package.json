@@ -31,7 +31,8 @@
     "diagnosticar:widesys": "tsx scripts/diagnosticar-widesys.ts",
     "importar:planilhas-financeiras": "tsx scripts/importar-planilhas-financeiras.ts",
     "test": "vitest run",
-    "usuario": "tsx scripts/usuario.ts"
+    "usuario": "tsx scripts/usuario.ts",
+    "revalidar:pagamento-widesys": "tsx scripts/revalidar-pagamento-widesys.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

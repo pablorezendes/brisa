@@ -1062,6 +1062,39 @@ e usuários financeiros com carteira integral e permissões de conferência pode
 usar a ação. Esta versão requer somente atualizar o código e reconstruir o
 container: não há alteração de schema, seed ou reimportação.
 
+## Revalidar falso erro de data de pagamento do Widesys (outubro/2026)
+
+O importador confundia `tipo_de_pagamento` com a data de pagamento quando esta
+estava ausente. Vencimentos futuros, inclusive de 2027, devem ser preservados.
+
+Após atualizar o código e construir a imagem, execute a correção com o serviço
+parado, para evitar leituras antigas durante a atualização:
+
+```bash
+set -e
+cd /srv/stack/acamargo
+git pull --ff-only origin main
+docker compose build brisa
+docker compose stop brisa
+docker compose run --rm --no-deps brisa npm run revalidar:pagamento-widesys -- --dry-run
+docker compose run --rm --no-deps brisa npm run revalidar:pagamento-widesys -- --aplicar
+docker compose up -d --no-deps brisa
+```
+
+`--aplicar` cria antes um backup SQLite consistente em `/data/backups-unificacao`.
+A correção atua somente em títulos Widesys em quarentena pelo erro específico,
+com valor pago zero, sem data real e com evidência do campo de forma de pagamento.
+Datas, valores, identificadores e snapshots originais não são alterados; a captura
+e os lotes antigos permanecem como evidência histórica. Nenhum título ou pagamento
+é criado. Decisões manuais e vínculos existentes são preservados. Outros erros
+permanecem em quarentena. Correspondências continuam pendentes para evitar somar
+uma possível cópia. Cada revalidação operacional fica auditada, sem atribuir o
+status de conferência manual. Repetir o comando não duplica lançamentos ou auditorias.
+
+Não execute seed nem reimporte planilhas para aplicar esta correção. Se a correção
+falhar, conserve o backup e consulte o erro; o serviço pode ser reiniciado com
+`docker compose up -d --no-deps brisa`.
+
 ## Cloudflare — a nuvem laranja e o certificado
 
 O registro `brisa.tescod.com` está no Cloudflare **com proxy** (nuvem

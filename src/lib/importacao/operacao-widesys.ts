@@ -4,6 +4,7 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { conteudoHashManifestoOperacao } from "./manifesto-operacao-widesys";
+import { buscarCampoData } from "./campos-data";
 import {
   extrairPartesContratoWidesys,
   type CampoParteContratoWidesys,
@@ -925,7 +926,8 @@ function normalizarData(valor: string | null): string | null {
 }
 
 function lerData(campos: Campos, aliases: string[], motivos: string[], codigo: string): string | null {
-  const bruto = buscar(campos, aliases);
+  const bruto = codigo === "TITULO_PAGAMENTO_INVALIDO"
+    ? buscarCampoData(campos, aliases.map(normalizarChave)) : buscar(campos, aliases);
   if (!bruto) return null;
   const normalizada = normalizarData(bruto);
   if (!normalizada) motivos.push(codigo);
