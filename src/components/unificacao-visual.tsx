@@ -7,8 +7,13 @@ export const ESTADOS_UNIFICACAO: Record<EstadoUnificacao, string> = {
   ATIVO: "Disponível / incluído", PENDENTE: "Aguardando conferência", VINCULADO: "Vinculado ao principal", QUARENTENA: "Dado inconsistente", REVISAR: "Revisar decisão", AUSENTE: "Ausente na origem",
 };
 
-export function EstadoUnificado({ item }: { item: Pick<LinhaUnificada, "estado"> & Partial<Pick<LinhaUnificada, "contabiliza" | "dominio" | "conferidoManualmente" | "cancelado" | "informativo">> }) {
-  const conferido = !!item.conferidoManualmente && ["ATIVO", "VINCULADO"].includes(item.estado);
+export function registroConferido(item: Pick<LinhaUnificada, "estado" | "conferidoManualmente" | "conferidoPorRegra">) {
+  return (!!item.conferidoManualmente && ["ATIVO", "VINCULADO"].includes(item.estado))
+    || (!!item.conferidoPorRegra && item.estado === "ATIVO");
+}
+
+export function EstadoUnificado({ item }: { item: Pick<LinhaUnificada, "estado"> & Partial<Pick<LinhaUnificada, "contabiliza" | "dominio" | "conferidoManualmente" | "conferidoPorRegra" | "cancelado" | "informativo">> }) {
+  const conferido = registroConferido(item);
   const rotulo = item.estado === "ATIVO"
     ? item.cancelado ? "Cancelado" : conferido ? item.informativo ? "Conferido · informativo" : "Conferido"
       : item.contabiliza && ["RECEBER", "PAGAR", "MOVIMENTO"].includes(item.dominio ?? "") ? "Incluído automaticamente" : "Disponível"

@@ -52,7 +52,7 @@ describe("conferência financeira na janela da despesa", () => {
     expect(html).not.toContain("Confirmar decisão e concluir");
     expect(render({ ...revisao, podeConcluir: false })).not.toContain("Confirmar decisão e concluir");
   });
-  it("só apresenta revisão resolvida com decisão manual válida retornada pelo servidor", () => {
+  it("apresenta revisão humana resolvida com decisão manual válida retornada pelo servidor", () => {
     const ativo = render({ ...revisao, estado: "ATIVO", conferidoManualmente: true, pendente: false, podeConcluir: false, incluidoNosTotais: true, motivo: "Lançamento disponível." });
     expect(ativo).toContain(">Conferido</p>");
     expect(ativo).toContain("incluído uma única vez nos totais");
@@ -61,6 +61,23 @@ describe("conferência financeira na janela da despesa", () => {
     expect(vinculado).toContain("não soma novamente");
     const ausente = render({ ...revisao, estado: "AUSENTE", pendente: false, podeConcluir: false });
     expect(ausente).not.toContain(">Conferido</p>");
+  });
+  it.each(["PAGAR", "RECEBER"] as const)("apresenta %s conferido pela regra, sem nova confirmação nem comparação", dominio => {
+    const html = render({ ...revisao, dominio, estado: "ATIVO", conferidoPorRegra: true, pendente: false, podeConcluir: false, incluidoNosTotais: true, motivo: "Conferido pela regra: valores totais diferentes. São lançamentos separados; a regra não cria títulos nem pagamentos." });
+    expect(html).toContain("Conferido pela regra de valores diferentes");
+    expect(html).toContain("border-emerald-200");
+    expect(html).toContain("incluído uma única vez nos totais");
+    expect(html).not.toContain("Ainda não conferido manualmente");
+    expect(html).not.toContain("Confirmar decisão e concluir");
+    expect(html).not.toContain("Compare os possíveis repetidos");
+    expect(html).not.toContain("A conclusão exige permissão");
+    expect(mocks.confirmar).not.toHaveBeenCalled();
+  });
+  it("não mantém o selo de conferido pela regra quando a origem voltou para revisão", () => {
+    const html = render({ ...revisao, conferidoPorRegra: true });
+    expect(html).toContain("Ainda precisa de uma decisão");
+    expect(html).not.toContain("Conferido pela regra de valores diferentes");
+    expect(html).toContain("Confirmar decisão e concluir");
   });
   it("não afirma inclusão de cancelados nem ausência de semelhantes indisponíveis", () => {
     const cancelado = render({ ...revisao, estado: "ATIVO", conferidoManualmente: true, pendente: false, podeConcluir: false, incluidoNosTotais: false });

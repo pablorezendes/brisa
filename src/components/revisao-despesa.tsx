@@ -52,7 +52,7 @@ function PainelRevisaoFinanceira({ selecao, chave, dominio, alterado, bloqueado,
       const resposta = dominio === "RECEBER" ? await confirmarRevisaoRecebimento(entrada) : await confirmarRevisaoDespesa(entrada);
       if (!resposta.ok) { setErro(resposta.mensagem); return; }
       setRevisao(resposta.revisao);
-      setSucesso(resposta.revisao?.conferidoManualmente && !resposta.revisao.pendente && ["ATIVO", "VINCULADO"].includes(resposta.revisao.estado)
+      setSucesso((resposta.revisao?.conferidoManualmente || resposta.revisao?.conferidoPorRegra) && !resposta.revisao.pendente && ["ATIVO", "VINCULADO"].includes(resposta.revisao.estado)
         ? "Conferência concluída. A situação e os totais da lista foram atualizados. Nenhum título ou pagamento foi criado."
         : "Decisão registrada. Confira abaixo a situação atual antes de encerrar.");
     } catch { setErro("Não foi possível confirmar o resultado. Atualize a conferência para verificar se a decisão foi registrada antes de tentar de novo."); }
@@ -90,11 +90,13 @@ export function ConteudoRevisaoFinanceira({ revisao, alterado, bloqueado, confir
   const [ciente, setCiente] = useState(false);
   const destino = revisao.candidatos.find(item => item.chave === destinoChave);
   const impedido = alterado || bloqueado || !visiveis;
-  const podeEnviar = !impedido && revisao.podeConcluir && Boolean(acao) && (acao !== "VINCULAR" || Boolean(destino)) && justificativa.trim().length >= 8 && ciente;
   const receber = revisao.dominio === "RECEBER";
   const nomeRegistro = receber ? "este título" : "esta despesa";
-  const concluida = revisao.conferidoManualmente && !revisao.pendente && (revisao.estado === "ATIVO" || revisao.estado === "VINCULADO");
-  const automatico = !revisao.conferidoManualmente && !revisao.pendente && (revisao.estado === "ATIVO" || revisao.estado === "VINCULADO");
+  const conferidoPelaRegra = !!revisao.conferidoPorRegra && !revisao.pendente && revisao.estado === "ATIVO";
+  const concluida = conferidoPelaRegra || (revisao.conferidoManualmente && !revisao.pendente && (revisao.estado === "ATIVO" || revisao.estado === "VINCULADO"));
+  const automatico = !concluida && !revisao.pendente && (revisao.estado === "ATIVO" || revisao.estado === "VINCULADO");
+  const podeConcluir = revisao.podeConcluir && !concluida;
+  const podeEnviar = !impedido && podeConcluir && Boolean(acao) && (acao !== "VINCULAR" || Boolean(destino)) && justificativa.trim().length >= 8 && ciente;
   async function enviar(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!podeEnviar || !acao) return;
@@ -102,16 +104,16 @@ export function ConteudoRevisaoFinanceira({ revisao, alterado, bloqueado, confir
   }
   return <div className="mt-4 space-y-4">
     <div className={`rounded-lg border p-3 ${concluida ? "border-emerald-200 bg-emerald-50 text-emerald-950" : automatico ? "border-contorno bg-slate-50 text-tinta" : "border-amber-200 bg-amber-50 text-amber-950"}`}>
-      <p className="text-sm font-semibold">{concluida ? "Conferido" : automatico ? "Ainda não conferido manualmente" : revisao.estado === "QUARENTENA" ? "Dados inconsistentes: ainda fora dos totais" : "Ainda precisa de uma decisão"}</p>
+      <p className="text-sm font-semibold">{conferidoPelaRegra ? "Conferido pela regra de valores diferentes" : concluida ? "Conferido" : automatico ? "Ainda não conferido manualmente" : revisao.estado === "QUARENTENA" ? "Dados inconsistentes: ainda fora dos totais" : "Ainda precisa de uma decisão"}</p>
       <p className="mt-1 text-xs leading-relaxed">{revisao.motivo}</p>
       {concluida && <p className="mt-1 text-xs leading-relaxed">{revisao.estado === "VINCULADO" ? "Esta origem está vinculada a um registro principal e não soma novamente." : revisao.incluidoNosTotais ? "Este lançamento está incluído uma única vez nos totais." : "A decisão de duplicidade está concluída. Este registro permanece fora dos totais por sua situação financeira."}</p>}
       {automatico && <p className="mt-1 text-xs leading-relaxed">{revisao.incluidoNosTotais ? "Este lançamento já participa dos totais por uma regra automática. Conferir não soma seu valor de novo." : "A situação foi definida por uma regra automática. Não há uma conferência manual registrada para esta versão dos dados."}</p>}
     </div>
-    {alterado && <p role="status" className="rounded-lg bg-slate-100 p-3 text-xs">Você alterou os dados. Clique em <strong>Salvar dados da despesa</strong> antes de tomar a decisão abaixo.</p>}
-    {!visiveis && revisao.podeConcluir && <p className="text-xs text-tinta-suave">Revele os valores para comparar os lançamentos e confirmar a decisão.</p>}
-    {(revisao.pendente || automatico) && !revisao.podeConcluir && <p className="text-xs leading-relaxed text-tinta-suave">Seu acesso permite consultar este lançamento. A conclusão exige permissão para conciliar pagamentos e revisar duplicidades.</p>}
-    {!revisao.podeConcluir && <ResumoRegistro registro={revisao.registro} titulo={receber ? "Este título" : "Esta despesa"} receber={receber} />}
-    {revisao.podeConcluir && <form onSubmit={event => void enviar(event)} className="space-y-4">
+    {alterado && <p role="status" className="rounded-lg bg-slate-100 p-3 text-xs">Você alterou os dados. Clique em <strong>Salvar dados da despesa</strong>{concluida ? " para atualizar a organização desta despesa." : " antes de tomar a decisão abaixo."}</p>}
+    {!visiveis && podeConcluir && <p className="text-xs text-tinta-suave">Revele os valores para comparar os lançamentos e confirmar a decisão.</p>}
+    {(revisao.pendente || automatico) && !podeConcluir && <p className="text-xs leading-relaxed text-tinta-suave">Seu acesso permite consultar este lançamento. A conclusão exige permissão para conciliar pagamentos e revisar duplicidades.</p>}
+    {!podeConcluir && <ResumoRegistro registro={revisao.registro} titulo={receber ? "Este título" : "Esta despesa"} receber={receber} />}
+    {podeConcluir && <form onSubmit={event => void enviar(event)} className="space-y-4">
       <fieldset disabled={impedido} className="min-w-0 space-y-4 disabled:opacity-60">
         {revisao.candidatosIndisponiveis > 0 && <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-950">Há {revisao.candidatosIndisponiveis} registro(s) semelhante(s) que precisam ser conferidos antes de vincular. Eles ainda não podem ser usados como principal. Confira sua origem antes de decidir que {nomeRegistro} é um lançamento separado.</p>}
         {revisao.candidatos.length > 0 ? <div className="space-y-3"><p className="text-sm font-semibold">Compare os possíveis repetidos</p><p className="text-xs text-tinta-suave">Selecione um registro para comparar lado a lado. Nome ou valor parecido não confirma duplicidade: confira a competência, o documento e o pagamento.</p><div className="max-h-72 space-y-2 overflow-y-auto rounded-lg">{revisao.candidatos.map(item => <label key={item.chave} className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-xs ${destinoChave === item.chave ? "border-oliva bg-oliva/5" : "border-contorno"}`}><input type="radio" name={`${nomeSelecao}-destino`} checked={destinoChave === item.chave} onChange={() => { setDestinoChave(item.chave); setCiente(false); }} className="mt-1" /><span className="min-w-0 flex-1"><strong className="block break-words">{item.titulo}</strong><span className="mt-1 block break-words text-tinta-suave">{item.origem} · {item.competencia || "Sem competência"} · {item.descricao}</span><span className="mt-1 block"><Sigilo><Dinheiro centavos={item.valor} /></Sigilo></span></span></label>)}</div></div>

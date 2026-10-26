@@ -100,6 +100,7 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
       papeis: item.papeis ?? [],
       estado: item.estado,
       conferidoManualmente: item.conferidoManualmente,
+      conferidoPorRegra: item.conferidoPorRegra,
       cancelado: item.cancelado,
       informativo: item.informativo,
       contabiliza: item.contabiliza,

@@ -8,6 +8,7 @@ export type ResumoRevisaoFinanceira = {
 export type RevisaoFinanceira = {
   chave: string; dominio: DominioRevisaoFinanceira; estado: EstadoUnificacao;
   pendente: boolean; podeConcluir: boolean; conferidoManualmente: boolean;
+  conferidoPorRegra?: boolean;
   motivo: string; versao: number; hashFonte: string; assinatura: string;
   incluidoNosTotais: boolean; candidatosIndisponiveis: number;
   registro: ResumoRevisaoFinanceira; candidatos: ResumoRevisaoFinanceira[];

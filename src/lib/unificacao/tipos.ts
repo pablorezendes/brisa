@@ -35,6 +35,8 @@ export type LinhaUnificada = FonteUnificacao & {
   /** Decisão humana de inclusão/vínculo ainda válida para esta fotografia.
    * Não equivale a pagamento, nem autoriza somar cancelados/informativos. */
   conferidoManualmente?: boolean;
+  /** Conferência persistida pela regra de valores distintos, sem decisão humana individual. */
+  conferidoPorRegra?: boolean;
 };
 export type FiltrosUnificacao = {
   dominio?: string; estado?: string; q?: string; pagina?: number; porPagina?: number;

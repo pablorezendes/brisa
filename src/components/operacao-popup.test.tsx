@@ -180,7 +180,7 @@ describe("popup financeiro integrado à lista SSR", () => {
     expect(itens[24].titulo).toBe("Título 24");
     expect(itens[0].correspondencias).toBe(1);
     expect(JSON.stringify(itens)).not.toContain("SEGREDO");
-    expect(Object.keys(itens[0]).sort()).toEqual(["chave", "dominio", "titulo", "descricao", "origens", "papeis", "estado", "conferidoManualmente", "cancelado", "informativo", "contabiliza", "correspondencias", "aviso", "impacto", "data", "competencia", "valor", "pago", "aberto", "natureza", "hrefDetalhe", "hrefCadastro", "exclusao", "rateio", "revisaoRecebimento"].sort());
+    expect(Object.keys(itens[0]).sort()).toEqual(["chave", "dominio", "titulo", "descricao", "origens", "papeis", "estado", "conferidoManualmente", "conferidoPorRegra", "cancelado", "informativo", "contabiliza", "correspondencias", "aviso", "impacto", "data", "competencia", "valor", "pago", "aberto", "natureza", "hrefDetalhe", "hrefCadastro", "exclusao", "rateio", "revisaoRecebimento"].sort());
     expect(itens[0].rateio).toEqual({ origemChave: "WIDESYS:PAGAR:linha_0" });
     expect(itens[0].revisaoRecebimento).toBe(false);
   });
@@ -210,6 +210,22 @@ describe("popup financeiro integrado à lista SSR", () => {
     const revisao = renderToStaticMarkup(await OperacaoUnificada({ dominio: "RECEBER", titulo: "Receber", base: "/recebimentos" }));
     expect(revisao).toContain("correspondência(s) para comparar");
     expect(revisao).toMatch(/<button[^>]*>Conferir<\/button>/);
+  });
+  it("recebimento conferido pela regra mostra resultado na lista e reabre como Conferido", async () => {
+    const dados = lista("RECEBER");
+    dados.itens[0] = { ...dados.itens[0], estado: "ATIVO", contabiliza: true, conferidoPorRegra: true, candidatos: [{ chave: "BRISA:RECEBER:outro", titulo: "Outro registro", descricao: "Comparação anterior", motivos: [] }] };
+    mocks.listar.mockResolvedValue(dados);
+    const arvore = await OperacaoUnificada({ dominio: "RECEBER", titulo: "Receber", base: "/recebimentos" });
+    expect(linhasEnviadasAoCliente(arvore)[0].conferidoPorRegra).toBe(true);
+    const html = renderToStaticMarkup(arvore);
+    expect(html).toMatch(/<button[^>]*>Conferido<\/button>/);
+    expect(html).toContain("Conferido pela regra: valores totais diferentes. Incluído nos totais.");
+    expect(html).not.toContain("correspondência(s) para comparar");
+    expect(html).not.toContain("Ainda não foi conferido manualmente");
+    dados.itens[0] = { ...dados.itens[0], estado: "REVISAR", contabiliza: false };
+    const revisao = renderToStaticMarkup(await OperacaoUnificada({ dominio: "RECEBER", titulo: "Receber", base: "/recebimentos" }));
+    expect(revisao).toMatch(/<button[^>]*>Conferir<\/button>/);
+    expect(revisao).toContain("correspondência(s) para comparar");
   });
 
   it("não envia montantes que não são exibidos em cadastros", async () => {

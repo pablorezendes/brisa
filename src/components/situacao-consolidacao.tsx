@@ -1,6 +1,6 @@
 import type { LinhaUnificada } from "@/lib/unificacao/tipos";
 
-type Situacao = Pick<LinhaUnificada, "estado" | "contabiliza" | "dominio" | "cancelado" | "informativo" | "conferidoManualmente">;
+type Situacao = Pick<LinhaUnificada, "estado" | "contabiliza" | "dominio" | "cancelado" | "informativo" | "conferidoManualmente" | "conferidoPorRegra">;
 
 /** Origem responde de onde veio; esta mensagem responde o efeito da decisão. */
 export function explicarConsolidacao(item: Situacao): string {
@@ -11,6 +11,7 @@ export function explicarConsolidacao(item: Situacao): string {
   if (item.estado === "PENDENTE") return "Aguardando conferência: verifique possíveis correspondências antes de incluir. Fora dos totais.";
   if (item.cancelado) return "Registro cancelado. Não entra nos totais.";
   if (item.informativo || !item.contabiliza) return item.conferidoManualmente ? "Conferido para consulta. Não soma valores novamente." : "Disponível para consulta. Não soma valores novamente.";
+  if (item.conferidoPorRegra) return "Conferido pela regra: valores totais diferentes. Incluído nos totais.";
   if (item.conferidoManualmente) return ["RECEBER", "PAGAR", "MOVIMENTO"].includes(item.dominio)
     ? "Conferido e incluído nos totais."
     : "Cadastro conferido e disponível na operação. A origem permanece identificada.";

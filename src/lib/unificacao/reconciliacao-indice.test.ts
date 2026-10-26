@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { avaliarFonte, candidatosPara, listaJson, projetarUnificados } from "./reconciliacao";
 import { DOMINIOS_UNIFICACAO, type CandidatoUnificacao, type DecisaoUnificacao, type EstadoUnificacao, type FonteUnificacao, type LinhaUnificada } from "./tipos";
+import { DECISAO_VALOR_DIFERENTE, valoresDevidosDiferentes } from "./valores-diferentes";
 
 /** Referência anterior à indexação: varre todos os domínios em cada recálculo. */
 function projetarSemIndice(fontes: FonteUnificacao[], decisoes: DecisaoUnificacao[]): LinhaUnificada[] {
   const porChave = new Map(fontes.map(f => [f.chave, f]));
   const decisoesPorChave = new Map(decisoes.map(d => [d.chave, d]));
+  const destinosRegra = new Map<string, string>();
+  for (const f of fontes) if (f.vinculoExplicito) destinosRegra.set(f.chave, f.vinculoExplicito);
+  for (const d of decisoes) if (d.status === "VINCULADO" && d.destinoChave && porChave.get(d.chave)?.hash === d.hashFonte
+    && porChave.get(d.destinoChave)?.hash === d.hashDestino) destinosRegra.set(d.chave, d.destinoChave);
   const linhas = new Map<string, LinhaUnificada>();
   for (const f of fontes) {
     const d = decisoesPorChave.get(f.chave);
@@ -14,17 +19,27 @@ function projetarSemIndice(fontes: FonteUnificacao[], decisoes: DecisaoUnificaca
     const alvo = d?.destinoChave ? porChave.get(d.destinoChave) : null;
     const alvoDecisao = d?.destinoChave ? decisoesPorChave.get(d.destinoChave) : null;
     const alvoInvalido = d?.destinoChave && (!alvo || alvo.dominio !== f.dominio || alvo.hash !== d.hashDestino || alvo.qualidade !== "OK" || alvoDecisao?.status !== "ATIVO" || alvoDecisao?.hashFonte !== alvo.hash);
-    const propostas = d && !reavaliarNativo ? listaJson<CandidatoUnificacao>(d.candidatos) : candidatosPara(f, fontes, new Map());
+    const propostas = d?.decisao === DECISAO_VALOR_DIFERENTE
+      ? candidatosPara(f, fontes, destinosRegra).filter(c => {
+        const outra = porChave.get(c.chave), decisao = decisoesPorChave.get(c.chave);
+        return outra?.vinculoExplicito !== f.chave && !(outra && decisao?.status === "VINCULADO"
+          && decisao.destinoChave === f.chave && outra.hash === decisao.hashFonte && f.hash === decisao.hashDestino);
+      }) : d && !reavaliarNativo ? listaJson<CandidatoUnificacao>(d.candidatos) : candidatosPara(f, fontes, new Map());
+    const regraReaberta = d?.decisao === DECISAO_VALOR_DIFERENTE && d.status === "ATIVO" && propostas.length > 0;
     const estadoNovo = (!d || reavaliarNativo) && f.origem === "BRISA"
       ? avaliarFonte(f, propostas, porChave, d, decisoesPorChave).status : "PENDENTE";
     const estado: EstadoUnificacao = f.qualidade !== "OK" ? (f.qualidade === "AUSENTE" ? "AUSENTE" : "QUARENTENA")
-      : !d || reavaliarNativo ? estadoNovo : fonteMudou || alvoInvalido ? "REVISAR" : d.status as EstadoUnificacao;
-    const candidatos = propostas.flatMap(c => { const o = porChave.get(c.chave); return o ? [{ ...c, titulo: o.titulo, descricao: o.descricao }] : []; });
+      : !d || reavaliarNativo ? estadoNovo : fonteMudou || alvoInvalido || regraReaberta ? "REVISAR" : d.status as EstadoUnificacao;
+    const candidatos = propostas.flatMap(c => { const o = porChave.get(c.chave); return o && !valoresDevidosDiferentes(f, o) ? [{ ...c, titulo: o.titulo, descricao: o.descricao }] : []; });
     const avisos = listaJson<string>(d?.motivos ?? "[]");
     if (!d) avisos.push("ANALISE_NECESSARIA");
     if (fonteMudou || alvoInvalido) avisos.push("FONTE_ALTERADA_APOS_DECISAO");
+    if (regraReaberta) avisos.push("CORRESPONDENCIA_APOS_REGRA_VALOR_DIFERENTE");
     const conferidoManualmente = estado === "ATIVO" && d?.decisao === "MANUAL" && d.status === "ATIVO" && !d.destinoChave && d.hashFonte === f.hash;
-    linhas.set(f.chave, { ...f, estado, origens: [f.proveniencia ? "PLANILHA" : f.origem], fontes: [f.chave], versao: d?.versao ?? 0, candidatos, avisos, contabiliza: estado === "ATIVO" && !f.cancelado && !f.informativo, conferidoManualmente, divergencias: [] });
+    const conferidoPorRegra = (f.dominio === "PAGAR" || f.dominio === "RECEBER") && estado === "ATIVO"
+      && d?.decisao === DECISAO_VALOR_DIFERENTE && d.status === "ATIVO" && !d.destinoChave
+      && !f.cancelado && !f.informativo && d.hashFonte === f.hash;
+    linhas.set(f.chave, { ...f, estado, origens: [f.proveniencia ? "PLANILHA" : f.origem], fontes: [f.chave], versao: d?.versao ?? 0, candidatos, avisos, contabiliza: estado === "ATIVO" && !f.cancelado && !f.informativo, conferidoManualmente, conferidoPorRegra, divergencias: [] });
   }
   for (const d of decisoes) {
     const f = linhas.get(d.chave);
@@ -78,6 +93,15 @@ function conferir(fontes: FonteUnificacao[], decisoes: DecisaoUnificacao[]) {
 }
 
 describe("projeção com índice por domínio equivale à varredura integral", () => {
+  it("revalida regras de valores pela fotografia atual sem reabrir cópias já vinculadas", () => {
+    const a = fonte("PAGAR", "principal", "BRISA");
+    const copia = fonte("PAGAR", "copia", "WIDESYS");
+    const mesmaPessoa = fonte("PAGAR", "alterado", "WIDESYS", { valor: a.valor });
+    const da = decisao(a, { decisao: DECISAO_VALOR_DIFERENTE });
+    const dc = decisao(copia, { decisao: "MANUAL", status: "VINCULADO", destinoChave: a.chave, hashDestino: a.hash });
+    expect(conferir([a, copia], [da, dc])[0]).toMatchObject({ estado: "ATIVO", conferidoPorRegra: true });
+    expect(conferir([a, copia, mesmaPessoa], [da, dc])[0]).toMatchObject({ estado: "REVISAR", conferidoPorRegra: false });
+  });
   it("preserva candidatos, ordenação, hashes e estados de fontes novas nos nove domínios", () => {
     const fontes = baseMista();
     const resultado = conferir(fontes, []);

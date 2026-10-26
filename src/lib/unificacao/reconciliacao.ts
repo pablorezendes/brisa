@@ -1,6 +1,7 @@
 import type { CandidatoUnificacao, DecisaoUnificacao, EstadoUnificacao, FonteUnificacao, LinhaUnificada } from "./tipos";
 import { criarIndiceCandidatos } from "./candidatos-indice";
 import { hashFonteCorresponde } from "./hashes";
+import { DECISAO_VALOR_DIFERENTE, valoresDevidosDiferentes } from "./valores-diferentes";
 
 export function listaJson<T>(valor: string): T[] {
   try { const v: unknown = JSON.parse(valor); return Array.isArray(v) ? v as T[] : []; } catch { return []; }
@@ -31,6 +32,7 @@ export function candidatosPara(f: FonteUnificacao, fontes: FonteUnificacao[], de
       if (mesmaPessoa || mesmoImovel) razoes.push(mesmaPessoa && mesmoImovel ? "PESSOA_E_IMOVEL" : mesmaPessoa ? "MESMA_PESSOA" : "MESMO_IMOVEL");
       if (f.origem !== outro.origem && mesmoValor && f.valor! > 0) razoes.push("ALUGUEL_IGUAL_CONFERIR_IMOVEL");
     } else if (f.dominio === "RECEBER" || f.dominio === "PAGAR") {
+      if (valoresDevidosDiferentes(f, outro)) continue;
       if (mesmoMes && (mesmoContrato || mesmaPessoa || mesmoImovel)) razoes.push("MES_E_VINCULO");
       if (mesmoMes && mesmoValor && f.valor! > 0 && (f.origem !== outro.origem || nomeIgual)) razoes.push("MES_E_VALOR");
       if (f.origem === outro.origem && mesmoMes && mesmoValor && nomeIgual && f.data === outro.data && f.pago === outro.pago && f.descricao === outro.descricao) razoes.push("CONTEUDO_REPETIDO");
@@ -45,12 +47,26 @@ export function candidatosPara(f: FonteUnificacao, fontes: FonteUnificacao[], de
   return candidatos.sort((a,b) => b.motivos.length - a.motivos.length || a.chave.localeCompare(b.chave));
 }
 
+/** Uma cópia já vinculada a este principal não é uma nova pendência. */
+function candidatosPendentesDaRegra(f: FonteUnificacao, candidatos: CandidatoUnificacao[], fontes: Map<string, FonteUnificacao>, decisoes: Map<string, DecisaoUnificacao>) {
+  return candidatos.filter(c => {
+    const outra = fontes.get(c.chave), decisao = decisoes.get(c.chave);
+    if (outra?.vinculoExplicito === f.chave) return false;
+    return !(outra && decisao?.status === "VINCULADO" && decisao.destinoChave === f.chave
+      && hashFonteCorresponde(outra, decisao.hashFonte) && hashFonteCorresponde(f, decisao.hashDestino));
+  });
+}
+
 export function avaliarFonte(f: FonteUnificacao, candidatos: CandidatoUnificacao[], fontes: Map<string, FonteUnificacao>, anterior?: DecisaoUnificacao, decisoes = new Map<string, DecisaoUnificacao>(), competenciasReceberBrisa?: ReadonlySet<FonteUnificacao["competencia"]>): { status: EstadoUnificacao; destinoChave: string | null; motivos: string[] } {
   if (f.qualidade !== "OK") return { status: f.qualidade === "AUSENTE" ? "AUSENTE" : "QUARENTENA", destinoChave: anterior?.destinoChave ?? null, motivos: f.motivos };
-  if (anterior?.decisao === "MANUAL") {
+  if (anterior?.decisao === "MANUAL" || anterior?.decisao === DECISAO_VALOR_DIFERENTE) {
     const alvo = anterior.destinoChave ? fontes.get(anterior.destinoChave) : null;
     if (!hashFonteCorresponde(f, anterior.hashFonte) || (anterior.destinoChave && (!alvo || alvo.dominio !== f.dominio || !hashFonteCorresponde(alvo, anterior.hashDestino) || alvo.qualidade !== "OK"))) {
       return { status: "REVISAR", destinoChave: anterior.destinoChave, motivos: ["FONTE_ALTERADA_APOS_DECISAO"] };
+    }
+    if (anterior.decisao === DECISAO_VALOR_DIFERENTE && anterior.status === "ATIVO"
+      && candidatosPendentesDaRegra(f, candidatos, fontes, decisoes).length) {
+      return { status: "REVISAR", destinoChave: null, motivos: ["CORRESPONDENCIA_APOS_REGRA_VALOR_DIFERENTE"] };
     }
     return { status: anterior.status as EstadoUnificacao, destinoChave: anterior.destinoChave, motivos: listaJson<string>(anterior.motivos) };
   }
@@ -95,6 +111,18 @@ export function projetarUnificados(fontes: FonteUnificacao[], decisoes: DecisaoU
   const linhas = new Map<string,LinhaUnificada>();
   const destinosSemVinculo = new Map<string, string>();
   let indiceCandidatos: ReturnType<typeof criarIndiceCandidatos> | undefined;
+  let indiceRegra: ReturnType<typeof criarIndiceCandidatos> | undefined;
+  const destinosRegra = new Map<string, string>();
+  const candidatosAtuaisDaRegra = (f: FonteUnificacao) => {
+    if (!indiceRegra) {
+      for (const fonte of fontes) if (fonte.vinculoExplicito) destinosRegra.set(fonte.chave, fonte.vinculoExplicito);
+      for (const d of decisoes) if (d.status === "VINCULADO" && d.destinoChave
+        && hashFonteCorresponde(porChave.get(d.chave), d.hashFonte)
+        && hashFonteCorresponde(porChave.get(d.destinoChave), d.hashDestino)) destinosRegra.set(d.chave, d.destinoChave);
+      indiceRegra = criarIndiceCandidatos(fontes, destinosRegra);
+    }
+    return candidatosPendentesDaRegra(f, candidatosPara(f, indiceRegra.para(f), destinosRegra), porChave, decisoesPorChave);
+  };
   const candidatosNovos = (f: FonteUnificacao) => {
     // A fotografia já analisada não precisa reconstruir o índice.
     indiceCandidatos ??= criarIndiceCandidatos(fontes, destinosSemVinculo);
@@ -107,21 +135,27 @@ export function projetarUnificados(fontes: FonteUnificacao[], decisoes: DecisaoU
     const alvo = d?.destinoChave ? porChave.get(d.destinoChave) : null;
     const alvoDecisao = d?.destinoChave ? decisoesPorChave.get(d.destinoChave) : null;
     const alvoInvalido = d?.destinoChave && (!alvo || alvo.dominio !== f.dominio || !hashFonteCorresponde(alvo, d.hashDestino) || alvo.qualidade !== "OK" || alvoDecisao?.status !== "ATIVO" || !hashFonteCorresponde(alvo, alvoDecisao?.hashFonte));
-    const propostas = d && !reavaliarNativo ? listaJson<CandidatoUnificacao>(d.candidatos) : candidatosNovos(f);
+    const propostas = d?.decisao === DECISAO_VALOR_DIFERENTE ? candidatosAtuaisDaRegra(f)
+      : d && !reavaliarNativo ? listaJson<CandidatoUnificacao>(d.candidatos) : candidatosNovos(f);
+    const regraReaberta = d?.decisao === DECISAO_VALOR_DIFERENTE && d.status === "ATIVO" && propostas.length > 0;
     // Cadastros e lançamentos novos do próprio Brisa não exigem uma migração
     // para funcionar. Ainda passam pela mesma checagem de repetição interna.
     const estadoNovo = (!d || reavaliarNativo) && f.origem === "BRISA"
       ? avaliarFonte(f, propostas, porChave, d, decisoesPorChave, indiceCandidatos?.competenciasReceberBrisa).status
       : "PENDENTE";
     const estado: EstadoUnificacao = f.qualidade !== "OK" ? (f.qualidade === "AUSENTE" ? "AUSENTE" : "QUARENTENA")
-      : !d || reavaliarNativo ? estadoNovo : fonteMudou || alvoInvalido ? "REVISAR" : d.status as EstadoUnificacao;
-    const candidatos = propostas.flatMap(c => { const o = porChave.get(c.chave); return o ? [{ ...c, titulo: o.titulo, descricao: o.descricao }] : []; });
+      : !d || reavaliarNativo ? estadoNovo : fonteMudou || alvoInvalido || regraReaberta ? "REVISAR" : d.status as EstadoUnificacao;
+    const candidatos = propostas.flatMap(c => { const o = porChave.get(c.chave); return o && !valoresDevidosDiferentes(f, o) ? [{ ...c, titulo: o.titulo, descricao: o.descricao }] : []; });
     const avisos = listaJson<string>(d?.motivos ?? "[]");
     if (!d) avisos.push("ANALISE_NECESSARIA");
     if (fonteMudou || alvoInvalido) avisos.push("FONTE_ALTERADA_APOS_DECISAO");
+    if (regraReaberta) avisos.push("CORRESPONDENCIA_APOS_REGRA_VALOR_DIFERENTE");
     const origemManual = f.origem === "BRISA" && f.proveniencia?.tipo === "CADASTRO_MANUAL";
     const conferidoManualmente = estado === "ATIVO" && d?.decisao === "MANUAL" && d.status === "ATIVO" && !d.destinoChave && hashFonteCorresponde(f, d.hashFonte);
-    linhas.set(f.chave, { ...f, estado, origens: [origemManual ? "MANUAL" : f.proveniencia ? "PLANILHA" : f.origem], fontes: [f.chave], versao: d?.versao ?? 0, candidatos, avisos, contabiliza: estado === "ATIVO" && !f.cancelado && !f.informativo, conferidoManualmente, divergencias: [] });
+    const conferidoPorRegra = (f.dominio === "PAGAR" || f.dominio === "RECEBER") && estado === "ATIVO"
+      && d?.decisao === DECISAO_VALOR_DIFERENTE && d.status === "ATIVO" && !d.destinoChave
+      && !f.cancelado && !f.informativo && hashFonteCorresponde(f, d.hashFonte);
+    linhas.set(f.chave, { ...f, estado, origens: [origemManual ? "MANUAL" : f.proveniencia ? "PLANILHA" : f.origem], fontes: [f.chave], versao: d?.versao ?? 0, candidatos, avisos, contabiliza: estado === "ATIVO" && !f.cancelado && !f.informativo, conferidoManualmente, conferidoPorRegra, divergencias: [] });
   }
   for (const d of decisoes) {
     const f = linhas.get(d.chave); const alvo = d.destinoChave ? linhas.get(d.destinoChave) : null;
@@ -145,6 +179,8 @@ export function projetarUnificados(fontes: FonteUnificacao[], decisoes: DecisaoU
 }
 
 export const MOTIVOS_UNIFICACAO: Record<string,string> = {
+  CORRESPONDENCIA_APOS_REGRA_VALOR_DIFERENTE: "Surgiu outro título com valor igual ou não comprovado. Confira novamente antes de incluir este lançamento nos totais.",
+  VALORES_DIFERENTES_CONFIRMADOS: "Conferido pela regra de valores diferentes: os títulos permanecem separados e cada valor entra uma única vez nos totais.",
   PAGAMENTO_DESPESA_CONFERIR: "A saída vinculada à nota foi alterada ou excluída. Confira o vínculo; o sistema não cria outro pagamento nem uma nova cobrança.",
   POSSIVEL_DUPLICIDADE: "Existe um registro semelhante. Compare antes de incorporar.", POSSIVEL_DUPLICIDADE_INTERNA: "O próprio sistema contém uma possível repetição.", POSSIVEIS_CORRESPONDENCIAS: "Há registros que podem complementar esta informação.",
   CONFERIR_IMOVEL_E_INQUILINO: "Confirme o imóvel e o inquilino para identificar o contrato existente.", PERIODO_JA_EXISTE_NA_PLANILHA: "Já existem cobranças neste período nas planilhas. Identifique o contrato antes de somar.",

@@ -982,8 +982,9 @@ registro sair do filtro de pendências, o popup permanece aberto com o resultado
 
 Os status em contas a pagar e a receber distinguem:
 
-- **Conferido**: uma pessoa confirmou a decisão para os dados atuais. Se o
-  lançamento participa dos totais, a explicação informa isso expressamente.
+- **Conferido**: a decisão está confirmada para os dados atuais, por uma pessoa
+  ou pela regra de valores diferentes descrita abaixo. A explicação identifica
+  a regra e informa expressamente quando o lançamento participa dos totais.
 - **Conferido · vinculado**: a cópia foi vinculada ao principal e não soma novamente.
 - **Incluído automaticamente**: participa dos totais, mas ainda não houve uma
   conferência manual. É possível conferir sem adicionar seu valor uma segunda vez.
@@ -997,6 +998,41 @@ novamente ao confirmar, inclusive para comissões e carteiras restritas.
 
 Não é necessário alterar o schema, reimportar dados ou executar seed nesta versão.
 Decisões manuais já válidas passam a apresentar **Conferido** automaticamente.
+
+## Conferência por valores diferentes (outubro/2026)
+
+Em contas a pagar e a receber, lançamentos do mesmo fornecedor/cliente, imóvel ou
+contrato e competência com **valores totais devidos diferentes** são distintos.
+A comparação usa centavos exatos. Diferenças apenas no pagamento ou saldo não
+resolvem a duplicidade: podem representar pagamentos parciais do mesmo título.
+
+Quando essa era a única causa da pendência, a regra registra **Conferido** e inclui
+cada lançamento uma vez nos totais. A explicação identifica a conferência pela
+regra de valores diferentes, sem atribuí-la a uma pessoa. Por exemplo, R$ 461,50
+e R$ 195,00 separados somam R$ 656,50. Nenhum título, baixa ou movimento é criado.
+
+Correspondências com o mesmo valor ou valor desconhecido continuam exigindo
+conferência. Decisões manuais, vínculos explícitos, inconsistências, cancelamentos
+e exclusões são preservados. Recebimentos nativos protegidos por mês fechado,
+boleto ativo ou reserva de emissão não são liberados por essa regra. Se os dados
+relevantes mudarem depois da confirmação, a decisão volta para revisão.
+
+Para corrigir as pendências antigas no banco do servidor, após atualizar o código
+e construir a imagem, execute com o serviço parado:
+
+```bash
+docker compose stop brisa
+# Prévia opcional, somente leitura:
+docker compose run --rm --no-deps brisa npm run unificar:valores-diferentes
+# Aplicação idempotente, com backup SQLite consistente antes da escrita:
+docker compose run --rm --no-deps brisa npm run unificar:valores-diferentes -- --aplicar
+docker compose up -d --no-deps brisa
+```
+
+O comando informa quantos registros foram conferidos em cada domínio e salva o
+backup em `/data/backups-unificacao`. Repetir o comando não duplica registros nem
+decisões. **Reanalisar correspondências** também usa a nova regra para os próximos
+dados. Não é necessário alterar o schema, executar seed ou reimportar planilhas.
 
 ## Cloudflare — a nuvem laranja e o certificado
 

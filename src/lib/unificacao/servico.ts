@@ -8,6 +8,7 @@ import { criarIndiceCandidatos } from "./candidatos-indice";
 import { hashFonteCorresponde } from "./hashes";
 import { carteiraIrrestrita, montarPolitica, pode } from "../acesso/politica";
 import { chavesRestritasUnificacao } from "./privacidade";
+import { auditoriaConferenciaPorValores, dadosConferenciaPorValores, planejarConferenciaPorValores } from "./persistencia-valores-diferentes";
 
 export class ErroUnificacao extends Error {
   constructor(public codigo: string, mensagem: string) { super(mensagem); this.name = "ErroUnificacao"; }
@@ -24,20 +25,32 @@ export async function analisarUnificacao(db: PrismaClient, usuarioId: string, dr
     for (const f of fontes) if (f.vinculoExplicito) destinos.set(f.chave,f.vinculoExplicito);
     for (const d of existentes) if (d.status === "VINCULADO" && d.destinoChave && hashFonteCorresponde(porChave.get(d.chave), d.hashFonte) && hashFonteCorresponde(porChave.get(d.destinoChave), d.hashDestino)) destinos.set(d.chave,d.destinoChave);
     const indiceCandidatos = criarIndiceCandidatos(fontes, destinos);
+    const regraValores = await planejarConferenciaPorValores(tx, { fontes, existentes, destinos, indice: indiceCandidatos });
+    const decididoEm = new Date();
+    const auditoriaValores: Prisma.UnificacaoDecisaoCreateManyInput[] = [];
     const novos: Prisma.UnificacaoRegistroCreateManyInput[] = [];
     const estados: Record<string,number> = {};
     let criados = 0, atualizados = 0, inalterados = 0;
     for (const f of fontes) {
       const anterior = anteriores.get(f.chave);
+      if (anterior && regraValores.chavesProtegidas.has(f.chave)) {
+        // A remoção dos falsos candidatos não deve contornar fechamento ou
+        // emissão bancária pela classificação automática da análise geral.
+        estados[anterior.status] = (estados[anterior.status] ?? 0) + 1;
+        inalterados++;
+        continue;
+      }
       const candidatos = candidatosPara(f, indiceCandidatos.para(f), destinos);
       const decisao = avaliarFonte(f,candidatos,porChave,anterior,anteriores,indiceCandidatos.competenciasReceberBrisa);
       const alvo = decisao.destinoChave ? porChave.get(decisao.destinoChave) : null;
+      const conferenciaValor = regraValores.elegiveis.get(f.chave);
       const dados = {
         dominio: f.dominio, origem: f.origem, origemId: f.origemId,
         status: decisao.status, destinoChave: decisao.destinoChave,
         hashFonte: f.hash, hashDestino: alvo?.hash ?? null,
         candidatos: JSON.stringify(candidatos), motivos: JSON.stringify(decisao.motivos),
         proveniencia: JSON.stringify(f.proveniencia ?? {}),
+        ...(conferenciaValor ? dadosConferenciaPorValores(conferenciaValor, decididoEm) : {}),
       };
       estados[dados.status] = (estados[dados.status] ?? 0) + 1;
       if (!anterior) {
@@ -47,15 +60,18 @@ export async function analisarUnificacao(db: PrismaClient, usuarioId: string, dr
         atualizados++;
         if (!dryRun) await tx.unificacaoRegistro.update({ where: { chave: f.chave }, data: { ...dados, versao: { increment: 1 } } });
       } else inalterados++;
+      if (!dryRun && conferenciaValor) auditoriaValores.push(auditoriaConferenciaPorValores(conferenciaValor));
     }
     if (!dryRun) for (let i=0;i<novos.length;i+=200) await tx.unificacaoRegistro.createMany({ data: novos.slice(i,i+200) });
+    for (let i=0;i<auditoriaValores.length;i+=200) await tx.unificacaoDecisao.createMany({ data: auditoriaValores.slice(i,i+200) });
     const ausentes = existentes.filter(d => !porChave.has(d.chave) && d.status !== "AUSENTE");
     if (!dryRun && ausentes.length) await tx.unificacaoRegistro.updateMany({ where: { chave: { in: ausentes.map(d => d.chave) } }, data: { status: "AUSENTE", versao: { increment: 1 }, motivos: JSON.stringify(["REGISTRO_REMOVIDO_NA_FONTE"]) } });
     if (!dryRun && (criados || atualizados || ausentes.length)) await tx.unificacaoDecisao.create({ data: {
       registroChave: "ANALISE", acao: "ANALISAR", estadoAnterior: "", estadoNovo: "", hashFonte: "", usuarioId,
       justificativa: JSON.stringify({ criados, atualizados, inalterados, ausentes: ausentes.length, estados }),
     } });
-    return { modo: dryRun ? "DRY_RUN" : "APLICADO", total: fontes.length, criados, atualizados, inalterados, ausentes: ausentes.length, estados };
+    return { modo: dryRun ? "DRY_RUN" : "APLICADO", total: fontes.length, criados, atualizados, inalterados, ausentes: ausentes.length, estados,
+      conferidosPorValoresDiferentes: regraValores.elegiveis.size, protegidosDaRegra: regraValores.protegidos };
   }, { maxWait: 15000, timeout: 120000 });
 }
 

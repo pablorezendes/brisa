@@ -7,7 +7,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/autorizacao", () => ({ perfilAtual: mocks.perfil }));
 vi.mock("@/lib/acesso/servidor", () => ({ acessoAtual: mocks.acesso, exigirPaginaAcesso: mocks.pagina, exigirPermissaoAcesso: mocks.permissao }));
 vi.mock("@/lib/consultas/unificacao", () => ({ listarUnificados: mocks.listar, listarTitulosFinanceiros: mocks.listar, detalheUnificado: mocks.detalhe }));
-vi.mock("@/app/(app)/unificacao/actions", () => ({ sincronizarUnificacao: vi.fn(), resolverUnificacao: vi.fn() }));
+vi.mock("@/app/(app)/unificacao/actions", () => ({ sincronizarUnificacao: vi.fn(), sincronizarUnificacaoNaTela: vi.fn(), resolverUnificacao: vi.fn() }));
 vi.mock("@/components/acao-autorizada", () => ({ AcaoAutorizada: () => null, podeExibirAcao: () => false }));
 vi.mock("@/components/link-governanca", () => ({ LinkGovernanca: () => null }));
 vi.mock("@/components/excluir-registro-link", () => ({ ExcluirRegistroLink: () => null, ExcluirUnificadoLink: ({ registro }: { registro: Pick<LinhaUnificada, "chave"> }) => <span data-revisao-exclusao={registro.chave}>Excluir da plataforma</span> }));
@@ -78,22 +78,22 @@ describe("origem e situação são informações diferentes", () => {
   });
   it("habilita conferência de recebimentos na janela somente para acesso integral e preserva os detalhes", async () => {
     mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "FINANCEIRO", ativo: true, global: true, regras: [], permissoes: ["financeiro.ver", "unificacao.ver", "cadastros.sensiveis"] });
-    const html = renderToStaticMarkup(await OperacaoUnificada({ titulo: "A receber", base: "/recebimentos", dominioFixo: "RECEBER" }));
+    const html = renderToStaticMarkup(await OperacaoUnificada({ titulo: "A receber", base: "/recebimentos", dominio: "RECEBER" }));
     expect(html).toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*>Conferir<\/button>/);
     expect(html).toContain("Ver detalhes");
     expect(html).toContain("Incluído automaticamente");
     const dados = lista(); dados.itens[0] = registro({ conferidoManualmente: true }); mocks.listar.mockResolvedValue(dados);
-    const conferido = renderToStaticMarkup(await OperacaoUnificada({ titulo: "A receber", base: "/recebimentos", dominioFixo: "RECEBER" }));
+    const conferido = renderToStaticMarkup(await OperacaoUnificada({ titulo: "A receber", base: "/recebimentos", dominio: "RECEBER" }));
     expect(conferido).toMatch(/<button[^>]*>Conferido<\/button>/);
     expect(conferido).toContain("Conferido e incluído nos totais");
     mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "FINANCEIRO", ativo: true, global: true, regras: [], permissoes: ["financeiro.ver", "cadastros.sensiveis"] });
-    const restrito = renderToStaticMarkup(await OperacaoUnificada({ titulo: "A receber", base: "/recebimentos", dominioFixo: "RECEBER" }));
+    const restrito = renderToStaticMarkup(await OperacaoUnificada({ titulo: "A receber", base: "/recebimentos", dominio: "RECEBER" }));
     expect(restrito).not.toMatch(/<button[^>]*>Conferido<\/button>/);
   });
   it("quarentena conserva a revisão da origem sem oferecer conclusão direta no popup", async () => {
     mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "FINANCEIRO", ativo: true, global: true, regras: [], permissoes: ["financeiro.ver", "unificacao.ver", "cadastros.sensiveis"] });
     const dados = lista(); dados.itens[0] = registro({ estado: "QUARENTENA", contabiliza: false }); mocks.listar.mockResolvedValue(dados);
-    const html = renderToStaticMarkup(await OperacaoUnificada({ titulo: "A receber", base: "/recebimentos", dominioFixo: "RECEBER" }));
+    const html = renderToStaticMarkup(await OperacaoUnificada({ titulo: "A receber", base: "/recebimentos", dominio: "RECEBER" }));
     expect(html).toContain("Revisar e resolver");
     expect(html).not.toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*>Conferir<\/button>/);
   });

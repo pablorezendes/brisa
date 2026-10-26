@@ -71,16 +71,18 @@ function montarRevisao(atual: Fotografia, chave: string, dominio: DominioRevisao
     && (pode(politica, "comissoes.ver") || !atual.restritas.has(f.chave)) && !candidatos.some(c => c.chave === f.chave)).length;
   const pendente = ["PENDENTE", "REVISAR"].includes(linha.estado);
   const conferidoManualmente = Boolean(linha.conferidoManualmente);
-  const podeConcluir = podeDecidir(politica) && (pendente || (linha.estado === "ATIVO" && !conferidoManualmente));
-  const motivo = conferidoManualmente ? "Conferência concluída. Sua decisão está registrada."
+  const conferidoPorRegra = Boolean(linha.conferidoPorRegra) && linha.estado === "ATIVO";
+  const podeConcluir = podeDecidir(politica) && (pendente || (linha.estado === "ATIVO" && !conferidoManualmente && !conferidoPorRegra));
+  const motivo = conferidoPorRegra ? "Conferido pela regra: valores totais diferentes. São lançamentos separados; a regra não cria títulos nem pagamentos."
+    : conferidoManualmente ? "Conferência concluída. Sua decisão está registrada."
     : linha.estado === "ATIVO" ? "Este lançamento já está disponível. Confira os dados e confirme abaixo para marcá-lo como conferido."
     : linha.estado === "VINCULADO" ? "O registro está vinculado ao principal e não soma novamente."
     : linha.estado === "QUARENTENA" || linha.estado === "AUSENTE" ? "Há uma inconsistência na origem. Resolva em Revisar e resolver antes de concluir a conferência."
     : dominio === "PAGAR" ? "Salvar a categoria e o rateio organiza a despesa. Para retirar a pendência, confirme abaixo se é uma despesa distinta ou uma cópia de outro lançamento."
     : "Compare o valor, o pagamento e a competência. Confirme se é uma cobrança distinta ou uma cópia de outro lançamento.";
-  const assinatura = hashUnificacao({ chave, hash: fonte.hash, versao: anterior?.versao ?? 0, estado: linha.estado, conferidoManualmente,
+  const assinatura = hashUnificacao({ chave, hash: fonte.hash, versao: anterior?.versao ?? 0, estado: linha.estado, conferidoManualmente, conferidoPorRegra,
     comparacao: [...candidatoIds].sort().map(id => ({ chave: id, hash: porChave.get(id)?.hash, versao: decisoes.get(id)?.versao, status: atual.linhas.find(l => l.chave === id)?.estado })) });
-  return { chave, dominio, estado: linha.estado, pendente, podeConcluir, conferidoManualmente, motivo,
+  return { chave, dominio, estado: linha.estado, pendente, podeConcluir, conferidoManualmente, conferidoPorRegra, motivo,
     incluidoNosTotais: linha.contabiliza, candidatosIndisponiveis,
     versao: anterior?.versao ?? 0, hashFonte: fonte.hash, assinatura, registro: resumo(fonte), candidatos: candidatos.map(resumo) };
 }

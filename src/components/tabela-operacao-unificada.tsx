@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Dinheiro, Sigilo, btnSecundario } from "@/components/ui";
-import { EstadoUnificado, OrigensUnificadas } from "@/components/unificacao-visual";
+import { EstadoUnificado, OrigensUnificadas, registroConferido } from "@/components/unificacao-visual";
 import { ROTULOS_DOMINIO, type DominioUnificacao, type EstadoUnificacao } from "@/lib/unificacao/tipos";
 import type { OrigemDados } from "@/lib/unificacao/origens";
 import type { DominioExclusaoTitulos } from "@/lib/governanca/exclusao-titulos-lote-tipos";
@@ -22,6 +22,7 @@ export type LinhaTabelaOperacao = {
   papeis: string[];
   estado: EstadoUnificacao;
   conferidoManualmente?: boolean;
+  conferidoPorRegra?: boolean;
   cancelado?: boolean;
   informativo?: boolean;
   contabiliza: boolean;
@@ -120,7 +121,7 @@ function conteudoTabela({ itens, financeiro, exibirDominio, exibirValor, context
         {exibirDominio ? <td>{ROTULOS_DOMINIO[item.dominio]}</td> : null}
         <td className="max-w-[250px] whitespace-normal!">
           <EstadoUnificado item={item} />
-          {item.correspondencias && !item.conferidoManualmente ? <p className="mt-1 text-[11px] text-amber-800">{item.correspondencias} correspondência(s) para comparar</p> : null}
+          {item.correspondencias && !registroConferido(item) ? <p className="mt-1 text-[11px] text-amber-800">{item.correspondencias} correspondência(s) para comparar</p> : null}
           <details className="mt-2 text-xs text-tinta-suave">
             <summary className="cursor-pointer text-[11px] font-medium text-oliva-escura">Entenda a situação</summary>
             {item.aviso ? <p className="mt-2 text-[11px]">{item.aviso}</p> : null}
@@ -134,7 +135,7 @@ function conteudoTabela({ itens, financeiro, exibirDominio, exibirValor, context
         </> : exibirValor ? <td className="text-right!"><span className="block text-[10px] text-tinta-suave">{item.natureza}</span><Sigilo><Dinheiro centavos={item.valor} /></Sigilo></td> : null}
         <td className="text-right!"><div className="flex flex-col items-end gap-2">
           {item.rateio && item.dominio === "PAGAR" ? <RateioDespesaBotao {...item.rateio} compacto /> : null}
-          {item.revisaoRecebimento && item.dominio === "RECEBER" ? <RevisaoRecebimentoBotao chave={item.chave} conferido={item.conferidoManualmente} /> : null}
+          {item.revisaoRecebimento && item.dominio === "RECEBER" ? <RevisaoRecebimentoBotao chave={item.chave} conferido={registroConferido(item)} /> : null}
           <LinkRegistro {...propsLinkRegistro} href={item.hrefDetalhe} className="text-xs font-semibold text-oliva-escura hover:underline">{!item.revisaoRecebimento && ["PENDENTE", "REVISAR", "QUARENTENA"].includes(item.estado) ? "Revisar e resolver" : "Ver detalhes"}</LinkRegistro>
           {item.exclusao ? selecao?.permitidas.includes(item.chave) ? <button type="button" onClick={() => selecao.excluir(item.chave)} className="inline-flex min-h-8 items-center rounded-md px-2 py-1 text-xs font-semibold text-erro underline-offset-4 hover:bg-erro/5 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2" title="Conferir e excluir nesta tela">{item.exclusao.rotulo}</button> : <LinkRegistro {...propsLinkRegistro} href={item.exclusao.href} className="inline-flex min-h-8 items-center rounded-md px-2 py-1 text-xs font-semibold text-erro underline-offset-4 hover:bg-erro/5 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2" title="Revisar o impacto e confirmar a exclusão com histórico">{item.exclusao.rotulo}</LinkRegistro> : null}
           {item.hrefCadastro ? <Link prefetch={false} href={item.hrefCadastro} className="text-[11px] text-tinta-suave hover:underline">Abrir cadastro / lançamento</Link> : null}
