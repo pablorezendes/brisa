@@ -20,16 +20,17 @@ export async function carregarClassificacoesApresentacao(
   if (!chaves.length || !["ADMINISTRADOR", "FINANCEIRO"].includes(perfil)) return resultado;
   const documentos = await db.despesaDocumento.findMany({
     where: { origemChave: { in: chaves }, categoriaCodigo: { not: null }, ...(perfil === "ADMINISTRADOR" ? {} : { restrita: false }) },
-    select: { origemChave: true, categoriaCodigo: true, destinoCusto: true, restrita: true },
+    select: { origemChave: true, categoriaCodigo: true, categoriaRotulo: true, destinoCusto: true, restrita: true },
   });
   const autorizadas = new Set(chaves);
   for (const documento of documentos) {
     const categoria = categoriaDespesa(documento.categoriaCodigo);
-    if (!documento.origemChave || !autorizadas.has(documento.origemChave) || !categoria
-      || (perfil !== "ADMINISTRADOR" && (documento.restrita || categoria.restrita))) continue;
+    const rotulo = documento.categoriaRotulo ?? categoria?.rotulo;
+    if (!documento.origemChave || !autorizadas.has(documento.origemChave) || !rotulo
+      || (perfil !== "ADMINISTRADOR" && (documento.restrita || categoria?.restrita))) continue;
     const responsavel = documento.destinoCusto === "ADMINISTRADORA" ? "Administradora"
       : documento.destinoCusto === "EMPREENDIMENTOS" ? "Empreendimentos" : null;
-    if (responsavel) resultado.set(documento.origemChave, { categoria: categoria.rotulo, responsavel });
+    if (responsavel) resultado.set(documento.origemChave, { categoria: rotulo, responsavel });
   }
   return resultado;
 }

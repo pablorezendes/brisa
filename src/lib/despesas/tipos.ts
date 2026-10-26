@@ -23,6 +23,7 @@ export type SalvarDespesaEntrada = {
   versao?: number;
   fornecedorNome: string;
   fornecedorDocumento?: string | null;
+  fornecedorPessoaId?: string | null;
   categoriaCodigo?: string | null;
   descricao?: string | null;
   tipoDocumento?: TipoDocumentoDespesa;
@@ -49,6 +50,7 @@ export type DespesaEditor = {
     versao: number;
     fornecedorNome: string;
     fornecedorDocumento: string | null;
+    fornecedorPessoaId?: string | null;
     categoriaCodigo: string | null;
     descricao: string | null;
     tipoDocumento: TipoDocumentoDespesa;
@@ -67,7 +69,9 @@ export type DespesaEditor = {
   pagamento: { origem: "NENHUM" | "CAIXA" | "WIDESYS"; valor: number; data: string | null; lancamentoCaixaId: string | null; situacao: string; ativo: boolean };
   empreendimentos: { id: string; nome: string; unidades: { id: string; identificacao: string }[] }[];
   contas: { id: string; apelido: string }[];
-  categorias: { codigo: string; rotulo: string; restrita: boolean }[];
+  categorias: { codigo: string; rotulo: string; restrita: boolean; ativa?: boolean }[];
+  gerenciaCategorias?: boolean;
+  permiteCadastrarFornecedor?: boolean;
   permitePagamento: boolean;
   anexos: { id: string; nomeOriginal: string; mimeType: string; tamanho: number }[];
 };

@@ -6,6 +6,7 @@ export type SecaoCadastro =
   | "inicio"
   | "base-unificada"
   | "pessoas"
+  | "fornecedores"
   | "imoveis-legado"
   | "empreendimentos"
   | "unidades"
@@ -40,6 +41,13 @@ const SECOES: {
     href: "/cadastros/pessoas",
     rotulo: "Pessoas",
     descricao: "Pessoas, empresas e seus papéis",
+    icone: "pessoas",
+  },
+  {
+    id: "fornecedores",
+    href: "/cadastros/fornecedores",
+    rotulo: "Fornecedores",
+    descricao: "Prestadores e empresas de apoio",
     icone: "pessoas",
   },
   {

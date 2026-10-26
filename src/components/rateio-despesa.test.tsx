@@ -4,6 +4,8 @@ import type { DespesaEditor } from "@/lib/despesas/tipos";
 
 const mocks = vi.hoisted(() => ({ salvar: vi.fn(), carregar: vi.fn(), buscar: vi.fn(), visiveis: false }));
 vi.mock("@/app/(app)/financeiro/contas-a-pagar/rateio-actions", () => ({ salvarRateioDespesa: mocks.salvar, carregarRateioDespesa: mocks.carregar, procurarPagamentoDespesa: mocks.buscar }));
+vi.mock("@/app/(app)/financeiro/contas-a-pagar/categorias-actions", () => ({ carregarCategoriasDespesas: vi.fn(), gravarCategoriaDespesa: vi.fn() }));
+vi.mock("@/app/(app)/cadastros/fornecedores/actions", () => ({ pesquisarFornecedores: vi.fn(), salvarCadastroFornecedor: vi.fn(), usarPessoaComoFornecedor: vi.fn() }));
 vi.mock("@/components/botao-sigilo", () => ({ BotaoSigilo: () => <button>Ver valores</button>, useValoresVisiveis: () => mocks.visiveis }));
 import { FormularioRateioDespesa, RateioDespesaModal, ResumoRateio } from "./rateio-despesa-modal";
 import { RateioDespesaBotao } from "./rateio-despesa-botao";
@@ -113,5 +115,29 @@ describe("rateio manual na própria tela", () => {
     expect(html).toMatch(/Número do documento \(opcional\)<input(?![^>]*required)/);
     expect(html).toMatch(/Emissão \(opcional\)<input(?![^>]*required)/);
     expect(html).not.toContain("Tomador na nota");
+  });
+  it("cadastro rápido de categoria só aparece para acesso autorizado", () => {
+    expect(formulario()).not.toContain("+ Nova categoria");
+    const html = formulario({ ...editor, gerenciaCategorias: true });
+    expect(html).toContain("+ Nova categoria");
+    expect(html).toContain('aria-expanded="false"');
+    expect(mocks.salvar).not.toHaveBeenCalled();
+  });
+  it("mantém a categoria inativa usada na despesa, mas não oferece outras inativas", () => {
+    const html = formulario({ ...editor, documento: { ...editor.documento, categoriaCodigo: "IMPOSTOS" }, categorias: [...editor.categorias.map(item => ({ ...item, ativa: item.codigo !== "IMPOSTOS" })), { codigo: "ANTIGA", rotulo: "Categoria antiga indisponível", ativa: false, restrita: false }] });
+    expect(html).toContain("Impostos · inativa (já vinculada)");
+    expect(html).toContain("Você pode mantê-la nesta despesa");
+    expect(html).not.toContain("Categoria antiga indisponível");
+  });
+  it("permite selecionar fornecedor já cadastrado e abrir cadastro rápido sem sair da despesa", () => {
+    const html = formulario({ ...editor, permiteCadastrarFornecedor: true });
+    expect(html).toContain("Buscar fornecedor por nome ou CPF/CNPJ");
+    expect(html).toContain("+ Novo fornecedor");
+    expect(html).toContain("Gerenciar fornecedores");
+    expect(html.match(/CPF\/CNPJ do fornecedor<input/g)).toHaveLength(1);
+    const vinculado = formulario({ ...editor, documento: { ...editor.documento, fornecedorPessoaId: "pessoa-1" } });
+    expect(vinculado).toContain("Cadastro vinculado");
+    expect(vinculado).toContain("Trocar fornecedor");
+    expect(vinculado).not.toContain("+ Novo fornecedor");
   });
 });

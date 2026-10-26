@@ -67,6 +67,47 @@ Abra https://brisa.tescod.com — o app pede o login criado no primeiro acesso.
 
 ## 4) Atualizações futuras
 
+### Categorias de despesas e fornecedores (26/10/2026)
+
+Em **Financeiro → Contas a pagar → Categorias**, o administrador pode criar,
+renomear, inativar e reativar classificações. As categorias iniciais continuam
+disponíveis; não é necessário executar seed. Uma categoria inativa deixa de ser
+oferecida em novas despesas, mas permanece nos lançamentos que já a usam.
+Renomear a categoria não altera a classificação histórica nem o pagamento.
+Categorias de comissão são reservadas ao administrador; essa proteção também
+se aplica às despesas que já utilizam uma categoria marcada como restrita.
+
+Em **Cadastros → Fornecedores**, consulte os fornecedores importados e cadastre
+os novos. Uma pessoa existente pode ganhar o papel de fornecedor sem ser
+duplicada. O sistema confere CPF/CNPJ e oferece o cadastro já localizado para
+vinculação explícita. As alterações de cadastro exigem a permissão de edição
+de cadastros; consulta e seleção exigem acesso aos dados pessoais e carteira
+global autorizada.
+
+Em **Contas a pagar → Nova despesa**, selecione o fornecedor e a categoria.
+É possível cadastrar ambos durante o preenchimento sem perder a despesa.
+Fornecedor, categoria e rateio não criam pagamentos: a seção de pagamento
+continua decidindo entre manter em aberto, vincular uma saída existente ou
+registrar uma única saída. Cadastros novos não reimportam dados do Widesys.
+
+Esta versão adiciona o catálogo persistente e vínculos opcionais na despesa.
+Atualize com backup consistente; não execute seed nem reimportação:
+
+```bash
+set -e
+cd /srv/stack/acamargo
+git pull --ff-only origin main
+docker compose build brisa
+docker compose stop brisa
+umask 077
+backup="/srv/backups/brisa-cadastros-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$backup"
+cp -a dados "$backup/"
+docker compose up -d --no-deps brisa
+docker compose logs --tail 80 brisa
+curl --retry 12 --retry-delay 5 --retry-all-errors -fsSI https://brisa.tescod.com/login
+```
+
 ### Nota única com rateio manual de despesas (23/10/2026)
 
 Em **Financeiro → Contas a pagar**, use **Nova despesa com rateio**, ou

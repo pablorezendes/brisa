@@ -3,7 +3,8 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { carteiraIrrestrita, montarPolitica, perfilSomenteLeitura, pode } from "../acesso/politica";
 import { fonteLancamentoCaixa } from "../unificacao/fontes";
 import { ErroDespesa, LIMITE_RATEIOS, type DespesaEditor, type DestinoCustoDespesa, type TipoDocumentoDespesa, type PagamentoDisponivel, type ResultadoSalvarDespesa, type SalvarDespesaEntrada } from "./tipos";
-import { CATEGORIAS_DESPESA, categoriaDespesa, categoriaWidesys } from "./categorias";
+import { categoriaDespesa, categoriaWidesys } from "./categorias";
+import { carregarCatalogoDespesas } from "./catalogo-servico";
 
 type Tx = Prisma.TransactionClient;
 type Ator = { id: string };
@@ -12,8 +13,8 @@ const comissaoRestrita = (textos: Array<string | null | undefined>) => /comiss|c
 const selectCaixa = { id: true, data: true, descricao: true, cliente: true, valor: true, centroCusto: true, caixaOrigem: true, tipo: true, categoria: true, mesReferencia: true } satisfies Prisma.LancamentoCaixaSelect;
 const caixaAceito = (caixa: Parameters<typeof fonteLancamentoCaixa>[0], decisao?: { status: string; hashFonte: string } | null) => !decisao || (decisao.status === "ATIVO" && decisao.hashFonte === fonteLancamentoCaixa(caixa).hash);
 const selectDocumento = {
-  id: true, origemChave: true, origemHash: true, fornecedorNome: true, fornecedorDocumento: true,
-  categoriaCodigo: true, descricao: true, tipoDocumento: true, destinoCusto: true,
+  id: true, origemChave: true, origemHash: true, fornecedorNome: true, fornecedorDocumento: true, fornecedorPessoaId: true,
+  categoriaCodigo: true, categoriaRotulo: true, descricao: true, tipoDocumento: true, destinoCusto: true,
   numero: true, serie: true, tomadorNome: true, tomadorDocumento: true, emissao: true, competencia: true,
   vencimento: true, total: true, statusRateio: true, restrita: true, versao: true, lancamentoCaixaId: true,
   contaBancariaId: true, pagamentoVia: true, pagamentoObservacao: true,
@@ -73,9 +74,8 @@ function validarEntrada(input: SalvarDespesaEntrada) {
   if (!["NOTA_FISCAL", "BOLETO", "GUIA", "RECIBO", "OUTRO", "SEM_DOCUMENTO"].includes(tipoDocumento)) throw new ErroDespesa("DOCUMENTO_INVALIDO", "Escolha o tipo de documento.");
   if (!["ADMINISTRADORA", "EMPREENDIMENTOS"].includes(destinoCusto)) throw new ErroDespesa("DESTINO_INVALIDO", "Escolha quem assume o custo.");
   const categoriaCodigo = texto(input.categoriaCodigo, "a categoria", 60);
-  const categoria = categoriaDespesa(categoriaCodigo);
   const novoFluxo = categoriaCodigo !== null || destinoCusto === "ADMINISTRADORA" || tipoDocumento !== "NOTA_FISCAL";
-  if ((categoriaCodigo && !categoria) || (novoFluxo && !categoria)) throw new ErroDespesa("CATEGORIA_INVALIDA", "Selecione a categoria da despesa.");
+  if (novoFluxo && !categoriaCodigo) throw new ErroDespesa("CATEGORIA_INVALIDA", "Selecione a categoria da despesa.");
   const descricao = texto(input.descricao, "a descrição da despesa", 1000, novoFluxo);
   const rateios = input.rateios.map((r, ordem) => ({
     ordem, empreendimentoId: texto(r?.empreendimentoId, "o empreendimento", 100, true)!,
@@ -133,7 +133,8 @@ export async function obterEditorDespesa(db: PrismaClient, selecao: { id?: strin
     const origem = documento?.origemChave ?? origemChave;
     if (documento) await exigirAtivo(tx, "TITULO", origem ?? `BRISA:PAGAR:${documento.id}`);
     const fonte = origem ? await carregarFonte(tx, origem) : null;
-    if (!pode(politica, "comissoes.ver") && (documento?.restrita || categoriaDespesa(documento?.categoriaCodigo)?.restrita || comissaoRestrita([
+    const catalogo = await carregarCatalogoDespesas(tx);
+    if (!pode(politica, "comissoes.ver") && (documento?.restrita || catalogo.find(categoria => categoria.codigo === documento?.categoriaCodigo)?.restrita || comissaoRestrita([
       documento?.descricao,
       ...(documento?.rateios.flatMap(r => [r.descricao, r.categoria]) ?? []), fonte?.planoContaRotulo, fonte?.tipoCobrancaRotulo,
     ]))) throw new ErroDespesa("COMISSAO_RESTRITA", "Esta nota contém informações de comissão, disponíveis somente ao administrador.");
@@ -149,7 +150,7 @@ export async function obterEditorDespesa(db: PrismaClient, selecao: { id?: strin
     const caixaDecisao = lancamento ? await tx.unificacaoRegistro.findUnique({ where: { chave: `BRISA:MOVIMENTO:${lancamento.id}` }, select: { status: true, hashFonte: true } }) : null;
     const caixaAtivo = !!lancamento && (!caixaEstado || caixaEstado.status === "ATIVO") && lancamento.tipo === "SAIDA" && lancamento.valor === documento?.total && caixaAceito(lancamento, caixaDecisao);
     const hoje = new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
-    const categoriaSugerida = categoriaWidesys(fonte?.planoContaLegadoId);
+    const categoriaSugerida = catalogo.find(categoria => categoria.codigo === categoriaWidesys(fonte?.planoContaLegadoId)?.codigo && categoria.ativa);
     return {
       documento: {
         ...(documento ? { id: documento.id } : {}), origemChave: origem, origemHash: fonte?.snapshotHash ?? null,
@@ -157,6 +158,7 @@ export async function obterEditorDespesa(db: PrismaClient, selecao: { id?: strin
         versao: documento?.versao ?? 0,
         fornecedorNome: documento?.fornecedorNome ?? fornecedor?.nome ?? "",
         fornecedorDocumento: documento?.fornecedorDocumento ?? fornecedor?.cpfCnpj ?? null,
+        fornecedorPessoaId: documento?.fornecedorPessoaId ?? null,
         categoriaCodigo: documento?.categoriaCodigo ?? categoriaSugerida?.codigo ?? null,
         descricao: documento?.descricao ?? fonte?.planoContaRotulo ?? null,
         tipoDocumento: (documento?.tipoDocumento ?? (fonte?.numeroDocumento || fonte?.emissao ? "OUTRO" : "SEM_DOCUMENTO")) as TipoDocumentoDespesa,
@@ -171,7 +173,9 @@ export async function obterEditorDespesa(db: PrismaClient, selecao: { id?: strin
         : lancamento ? { origem: "CAIXA", valor: lancamento.valor, data: lancamento.data, lancamentoCaixaId: lancamento.id, situacao: caixaAtivo ? "PAGO" : "REVISAR", ativo: caixaAtivo }
         : { origem: "NENHUM", valor: 0, data: null, lancamentoCaixaId: null, situacao: "EM_ABERTO", ativo: true },
       empreendimentos, contas, permitePagamento: pode(politica, "despesas.editar") && pode(politica, "caixa.editar") && !origem && !documento?.lancamentoCaixaId,
-      categorias: CATEGORIAS_DESPESA.filter(categoria => !categoria.restrita || pode(politica, "comissoes.ver")),
+      categorias: catalogo.filter(categoria => (categoria.ativa || categoria.codigo === documento?.categoriaCodigo) && (!categoria.restrita || pode(politica, "comissoes.ver"))),
+      gerenciaCategorias: politica.perfil === "ADMINISTRADOR",
+      permiteCadastrarFornecedor: pode(politica, "cadastros.editar") && pode(politica, "cadastros.sensiveis"),
       anexos: documento?.anexos ?? [],
     };
   }, { maxWait: 5000, timeout: 15000 });
@@ -213,10 +217,36 @@ export async function salvarDespesa(db: PrismaClient, input: SalvarDespesaEntrad
       if (validado.id && !atual) throw new ErroDespesa("NAO_ENCONTRADA", "A despesa não foi encontrada.");
       if (atual && (atual.versao !== input.versao || atual.origemChave !== validado.origemChave)) throw new ErroDespesa("VERSAO_DESATUALIZADA", "A despesa foi alterada. Reabra antes de salvar para não perder alterações.");
       if (atual) await exigirAtivo(tx, "TITULO", atual.origemChave ?? `BRISA:PAGAR:${atual.id}`);
+      const fornecedorPessoaId = input.fornecedorPessoaId === undefined
+        ? atual?.fornecedorPessoaId ?? null : texto(input.fornecedorPessoaId, "o fornecedor cadastrado", 100);
+      if (fornecedorPessoaId) {
+        if (!pode(politica, "cadastros.ver") || !pode(politica, "cadastros.sensiveis")) throw new ErroDespesa("SEM_PERMISSAO", "Você não tem permissão para selecionar fornecedores cadastrados.");
+        // Um cadastro alterado ou inativado não reescreve a identificação da
+        // despesa histórica. Novos vínculos sempre são conferidos no servidor.
+        const fornecedor = atual?.fornecedorPessoaId === fornecedorPessoaId ? {
+          nome: atual.fornecedorNome, cpfCnpj: atual.fornecedorDocumento,
+        } : await tx.pessoa.findFirst({ where: { id: fornecedorPessoaId, ativo: true, papeis: { some: { papel: "FORNECEDOR" } } }, select: { nome: true, cpfCnpj: true } });
+        if (!fornecedor) throw new ErroDespesa("FORNECEDOR_INVALIDO", "Escolha um fornecedor ativo no cadastro.");
+        if (atual?.fornecedorPessoaId !== fornecedorPessoaId) await exigirAtivo(tx, "PESSOA", fornecedorPessoaId);
+        validado.campos.fornecedorNome = fornecedor.nome;
+        validado.campos.fornecedorDocumento = documentoFiscal(fornecedor.cpfCnpj, "do fornecedor cadastrado");
+        const identidade = [validado.campos.fornecedorDocumento, validado.campos.numero.toUpperCase(), (validado.campos.serie ?? "").toUpperCase()];
+        validado.campos.identidadeNota = validado.campos.fornecedorDocumento && validado.campos.numero
+          ? hash(validado.campos.tipoDocumento === "NOTA_FISCAL" ? identidade : [validado.campos.tipoDocumento, ...identidade]) : null;
+      }
+      const catalogo = await carregarCatalogoDespesas(tx);
+      const categoriaSelecionada = catalogo.find(categoria => categoria.codigo === validado.campos.categoriaCodigo);
+      if (validado.campos.categoriaCodigo && !categoriaSelecionada) throw new ErroDespesa("CATEGORIA_INVALIDA", "Selecione uma categoria cadastrada.");
+      if (categoriaSelecionada && !categoriaSelecionada.ativa && atual?.categoriaCodigo !== categoriaSelecionada.codigo) throw new ErroDespesa("CATEGORIA_INATIVA", "Esta categoria está inativa. Escolha uma categoria ativa.");
+      // Renomear o catálogo não altera a classificação histórica, a projeção
+      // financeira nem a categoria de uma saída já registrada.
+      const categoriaRotulo = atual?.categoriaCodigo === validado.campos.categoriaCodigo
+        ? atual?.categoriaRotulo ?? categoriaDespesa(atual?.categoriaCodigo)?.rotulo ?? categoriaSelecionada?.rotulo ?? null
+        : categoriaSelecionada?.rotulo ?? null;
       const fonte = validado.origemChave ? await carregarFonte(tx, validado.origemChave) : null;
       // Remover uma linha não desclassifica anexos e auditorias anteriores.
       // Não existe desclassificação implícita de uma nota já marcada reservada.
-      const restrita = !!atual?.restrita || !!categoriaDespesa(validado.campos.categoriaCodigo)?.restrita || comissaoRestrita([
+      const restrita = !!atual?.restrita || !!categoriaSelecionada?.restrita || comissaoRestrita([
         validado.campos.descricao, atual?.descricao,
         input.pagamento.modo === "REGISTRAR" && !validado.campos.categoriaCodigo ? input.pagamento.categoria : null,
         ...validado.rateios.flatMap(r => [r.descricao, r.categoria]), fonte?.planoContaRotulo, fonte?.tipoCobrancaRotulo,
@@ -257,7 +287,7 @@ export async function salvarDespesa(db: PrismaClient, input: SalvarDespesaEntrad
         const p = input.pagamento;
         const data = dataCivil(p.data, "pagamento")!;
         if (!["AL", "CH", "BRISA"].includes(p.centroCusto)) throw new ErroDespesa("CAIXA_INVALIDO", "Escolha o caixa responsável pelo pagamento único.");
-        const categoria = categoriaDespesa(validado.campos.categoriaCodigo)?.rotulo ?? texto(p.categoria, "a categoria da saída", 120, true)!;
+        const categoria = categoriaRotulo ?? texto(p.categoria, "a categoria da saída", 120, true)!;
         contaBancariaId = texto(p.contaBancariaId, "a conta pagadora", 100);
         pagamentoVia = texto(p.via, "a forma de pagamento", 30, true);
         if (!["PIX", "TRANSFERENCIA", "DINHEIRO", "BOLETO", "CARTAO_CREDITO", "CARTAO_DEBITO"].includes(pagamentoVia!)) throw new ErroDespesa("VIA_INVALIDA", "Escolha a forma de pagamento.");
@@ -272,7 +302,7 @@ export async function salvarDespesa(db: PrismaClient, input: SalvarDespesaEntrad
         lancamentoCaixaId = saida.id;
       }
       const versao = (atual?.versao ?? 0) + 1;
-      const dados = { ...validado.campos, restrita, origemHash: fonte?.snapshotHash ?? null, lancamentoCaixaId, contaBancariaId, pagamentoVia, pagamentoObservacao, atualizadoPorId: ator.id, versao };
+      const dados = { ...validado.campos, fornecedorPessoaId, categoriaRotulo, restrita, origemHash: fonte?.snapshotHash ?? null, lancamentoCaixaId, contaBancariaId, pagamentoVia, pagamentoObservacao, atualizadoPorId: ator.id, versao };
       if (atual) {
         const alterado = await tx.despesaDocumento.updateMany({ where: { id, versao: input.versao }, data: dados });
         if (alterado.count !== 1) throw new ErroDespesa("VERSAO_DESATUALIZADA", "A despesa foi alterada por outra pessoa. Reabra antes de salvar.");

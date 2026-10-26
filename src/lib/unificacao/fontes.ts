@@ -139,7 +139,7 @@ export async function carregarDadosFontesUnificacao(db: BancoUnificacao, dominio
       serie: true, tomadorNome: true, tomadorDocumento: true, competencia: true,
       emissao: true, vencimento: true, total: true, lancamentoCaixaId: true,
       pagamentoVia: true,
-      categoriaCodigo: true, descricao: true, tipoDocumento: true, destinoCusto: true,
+      categoriaCodigo: true, categoriaRotulo: true, descricao: true, tipoDocumento: true, destinoCusto: true,
       lancamentoCaixa: { select: { id: true, tipo: true, valor: true, data: true, descricao: true, cliente: true,
         categoria: true, centroCusto: true, mesReferencia: true, caixaOrigem: true } },
     } }) : [],
@@ -243,11 +243,11 @@ export async function derivarFontesUnificacao(dados: DadosFontesUnificacao): Pro
     // Campos adicionados não mudam os hashes de notas antigas por simples
     // atualização do schema. Só uma classificação explícita altera a projeção.
     const classificada = Boolean(d.categoriaCodigo || d.descricao || d.destinoCusto === "ADMINISTRADORA" || (d.tipoDocumento && d.tipoDocumento !== "NOTA_FISCAL"));
-    const categoria = categoriaDespesa(d.categoriaCodigo);
+    const categoriaRotulo = d.categoriaRotulo ?? categoriaDespesa(d.categoriaCodigo)?.rotulo;
     const documento = referenciaDocumentoDespesa(d);
     fontes.push(fonte("PAGAR", "BRISA", d.id, {
       titulo: d.fornecedorNome, descricao: classificada
-        ? [categoria?.rotulo, d.descricao, d.destinoCusto === "ADMINISTRADORA" ? "Administradora" : "Empreendimentos", d.numero ? documento : null].filter(Boolean).join(" · ")
+        ? [categoriaRotulo, d.descricao, d.destinoCusto === "ADMINISTRADORA" ? "Administradora" : "Empreendimentos", d.numero ? documento : null].filter(Boolean).join(" · ")
         : `NF ${d.numero}${d.serie ? ` · série ${d.serie}` : ""}`, href: null,
       proveniencia: { tipo: "CADASTRO_MANUAL" },
       restrito: d.restrita,
@@ -264,7 +264,7 @@ export async function derivarFontesUnificacao(dados: DadosFontesUnificacao): Pro
         pagamento: campo("Pagamento", pagamentoInconsistente ? "Vínculo de caixa alterado ou excluído: conferir. Não gera nova cobrança." : pagamento ? `Saída única vinculada${d.pagamentoVia ? ` · ${d.pagamentoVia}` : ""}` : "Sem saída vinculada"),
         tratamento: campo("Tratamento", classificada ? "Uma despesa e um pagamento. A divisão do custo não gera novas contas a pagar nem saídas de caixa." : "Uma nota e uma obrigação. O rateio apenas distribui custos; o pagamento permanece uma única saída no caixa."),
         ...(classificada ? {
-          categoria: campo("Categoria da despesa", categoria?.rotulo), descricaoDespesa: campo("Descrição da despesa", d.descricao),
+          categoria: campo("Categoria da despesa", categoriaRotulo), descricaoDespesa: campo("Descrição da despesa", d.descricao),
           tipoDocumento: campo("Tipo de documento", ROTULOS_DOCUMENTO_DESPESA[d.tipoDocumento] ?? "Documento"),
           responsavelCusto: campo("Responsável pelo custo", d.destinoCusto === "ADMINISTRADORA" ? "Administradora" : "Empreendimentos"),
         } : {}),

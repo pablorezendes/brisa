@@ -399,6 +399,7 @@ model Pessoa {
   telefones               PessoaTelefone[]
   locatario               Locatario?
   imoveisComoProprietario ImovelProprietarioLegado[]
+  despesas                DespesaDocumento[]
 
   @@unique([origem, legadoId])
   @@index([nomeNorm])
@@ -1192,7 +1193,9 @@ model DespesaDocumento {
   identidadeNota        String? @unique
   fornecedorNome        String
   fornecedorDocumento   String?
+  fornecedorPessoaId    String?
   categoriaCodigo       String?
+  categoriaRotulo       String? // fotografia da classificação, preservada ao renomear o catálogo
   descricao             String?
   tipoDocumento         String @default("NOTA_FISCAL")
   destinoCusto          String @default("EMPREENDIMENTOS")
@@ -1217,12 +1220,30 @@ model DespesaDocumento {
   atualizadoEm          DateTime @updatedAt
   lancamentoCaixa        LancamentoCaixa? @relation(fields: [lancamentoCaixaId], references: [id], onDelete: Restrict)
   contaBancaria          ContaBancaria? @relation(fields: [contaBancariaId], references: [id], onDelete: Restrict)
+  fornecedorPessoa      Pessoa? @relation(fields: [fornecedorPessoaId], references: [id], onDelete: Restrict)
   rateios               DespesaRateio[]
   eventos               DespesaEvento[]
   anexos                DespesaAnexo[]
 
   @@index([competencia, statusRateio])
   @@index([atualizadoEm])
+  @@index([fornecedorPessoaId])
+  @@index([categoriaCodigo])
+}
+
+// Sobrescritas das categorias padrão e categorias criadas no Brisa. A ausência
+// de uma categoria padrão nesta tabela usa seu catálogo inicial, sem seed.
+model CategoriaDespesa {
+  codigo          String @id
+  rotulo          String
+  rotuloNorm      String @unique
+  ativa           Boolean @default(true)
+  restrita        Boolean @default(false)
+  versao          Int @default(1)
+  criadoPorId     String
+  atualizadoPorId String
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @updatedAt
 }
 
 model DespesaRateio {

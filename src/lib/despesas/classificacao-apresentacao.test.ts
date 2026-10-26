@@ -22,7 +22,7 @@ describe("classificação local apenas na apresentação do Widesys", () => {
     const classificacoes = await carregarClassificacoesApresentacao(db, [fonte, fonte, { ...fonte, origem: "BRISA", chave: "BRISA:PAGAR:manual" }], "FINANCEIRO");
     expect(findMany).toHaveBeenCalledTimes(1);
     expect(findMany).toHaveBeenCalledWith({ where: { origemChave: { in: [fonte.chave] }, categoriaCodigo: { not: null }, restrita: false },
-      select: { origemChave: true, categoriaCodigo: true, destinoCusto: true, restrita: true } });
+      select: { origemChave: true, categoriaCodigo: true, categoriaRotulo: true, destinoCusto: true, restrita: true } });
     expect(classificacoes.get(fonte.chave)).toEqual({ categoria: "Programa Widesys", responsavel: "Administradora" });
   });
 

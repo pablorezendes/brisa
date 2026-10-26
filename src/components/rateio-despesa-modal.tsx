@@ -7,6 +7,8 @@ import { carregarRateioDespesa, procurarPagamentoDespesa, salvarRateioDespesa } 
 import type { DespesaEditor, PagamentoDisponivel, PagamentoDespesaEntrada, SalvarDespesaEntrada } from "@/lib/despesas/tipos";
 import { LIMITE_RATEIOS } from "@/lib/despesas/tipos";
 import { conferirValoresRateio, linhasEditaveis, linhaVazia, modoCustoInicial, rateiosDoFormulario, valorEditavel, type ModoCustoDespesa, type RateioEditavel } from "./rateio-formulario";
+import { EditorCategoriaDespesa } from "./editor-categoria-despesa";
+import { SeletorFornecedorDespesa } from "./seletor-fornecedor-despesa";
 
 type Selecao = { id?: string; origemChave?: string };
 const campo = `${inputBase} mt-1.5 w-full min-w-0`;
@@ -76,6 +78,8 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar, aoFechar
   const [modoCusto, setModoCusto] = useState<ModoCustoDespesa>(() => modoCustoInicial(inicial.documento));
   const [destinoUnico, setDestinoUnico] = useState(() => ({ empreendimentoId: inicial.documento.rateios[0]?.empreendimentoId ?? "", unidadeId: inicial.documento.rateios[0]?.unidadeId ?? "", categoria: inicial.documento.rateios[0]?.categoria ?? null }));
   const [documentoAberto, setDocumentoAberto] = useState(inicial.documento.tipoDocumento !== "SEM_DOCUMENTO");
+  const [novaCategoria, setNovaCategoria] = useState(false);
+  const [catalogoOcupado, setCatalogoOcupado] = useState(false);
   const [modoPagamento, setModoPagamento] = useState<PagamentoDespesaEntrada["modo"]>("MANTER");
   const [busca, setBusca] = useState("");
   const [pagamentos, setPagamentos] = useState<PagamentoDisponivel[]>([]);
@@ -120,7 +124,7 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar, aoFechar
   }
   async function salvar(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (envio.current || salvando || anexando || reabrirNecessario) return;
+    if (envio.current || salvando || anexando || catalogoOcupado || reabrirNecessario) return;
     const statusRateio = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "CONFERIDO" ? "CONFERIDO" : "RASCUNHO";
     setErro(""); setSucesso("");
     if (resumo.total === null || resumo.total <= 0) { setErro("Informe um total válido, maior que zero, com no máximo dois centavos decimais."); return; }
@@ -138,7 +142,7 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar, aoFechar
     }
     const entrada: SalvarDespesaEntrada = {
       requestId, id: documento.id, origemChave: documento.origemChave, origemHash: documento.origemHash, versao: documento.versao,
-      confirmarFonteAlterada: confirmaFonte, fornecedorNome: documento.fornecedorNome, fornecedorDocumento: documento.fornecedorDocumento,
+      confirmarFonteAlterada: confirmaFonte, fornecedorPessoaId: documento.fornecedorPessoaId ?? null, fornecedorNome: documento.fornecedorNome, fornecedorDocumento: documento.fornecedorDocumento,
       numero: documento.tipoDocumento === "SEM_DOCUMENTO" ? "" : documento.numero, serie: documento.tipoDocumento === "SEM_DOCUMENTO" ? null : documento.serie, tomadorNome: documento.tomadorNome, tomadorDocumento: documento.tomadorDocumento,
       emissao: documento.tipoDocumento === "SEM_DOCUMENTO" ? "" : documento.emissao, competencia: documento.competencia, vencimento: documento.vencimento,
       categoriaCodigo: documento.categoriaCodigo || null, descricao: documento.descricao || null, tipoDocumento: documento.tipoDocumento,
@@ -170,13 +174,14 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar, aoFechar
       {erro && <p ref={aviso} tabIndex={-1} role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">{erro}</p>}
       {sucesso && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{sucesso}</p>}
       {editor.documento.fonteAlterada && <label className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm"><input type="checkbox" checked={confirmaFonte} onChange={event => setConfirmaFonte(event.target.checked)} className="mt-1 shrink-0" /><span>A origem foi atualizada depois do último rateio. Conferi novamente os dados e autorizo salvar o rateio sobre os valores atuais.</span></label>}
-      <fieldset disabled={salvando || anexando || reabrirNecessario} className="min-w-0 space-y-5 disabled:opacity-60">
+      <fieldset disabled={salvando || anexando || catalogoOcupado || reabrirNecessario} className="min-w-0 space-y-5 disabled:opacity-60">
         <section className="rounded-xl border border-contorno p-4">
           <h3 className="text-sm font-bold">1. O que será pago?</h3>
           {legado && <p className="mt-1 text-xs leading-relaxed text-tinta-suave">Este título veio do Widesys. Você pode completar os dados locais da despesa. O valor, o pagamento e o registro de origem permanecem preservados.</p>}
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <label className={rotulo}>Categoria<select value={documento.categoriaCodigo ?? ""} onChange={event => alterarDocumento("categoriaCodigo", event.target.value)} required={!permiteClassificacaoAnterior || modoCusto === "ADMINISTRADORA" || documento.tipoDocumento !== "NOTA_FISCAL"} className={campo}><option value="">{permiteClassificacaoAnterior ? "Manter classificação anterior" : "Selecione a categoria…"}</option>{editor.categorias.map(item => <option key={item.codigo} value={item.codigo}>{item.rotulo}{item.restrita ? " · restrita" : ""}</option>)}</select></label>
-            <label className={`${rotulo} lg:col-span-2`}>Fornecedor / favorecido<input value={documento.fornecedorNome} onChange={event => alterarDocumento("fornecedorNome", event.target.value)} required maxLength={200} className={campo} placeholder="Quem receberá o pagamento" /></label>
+            <div className="min-w-0"><label className={rotulo}>Categoria<select value={documento.categoriaCodigo ?? ""} onChange={event => alterarDocumento("categoriaCodigo", event.target.value)} required={!permiteClassificacaoAnterior || modoCusto === "ADMINISTRADORA" || documento.tipoDocumento !== "NOTA_FISCAL"} className={campo}><option value="">{permiteClassificacaoAnterior ? "Manter classificação anterior" : "Selecione a categoria…"}</option>{editor.categorias.filter(item => item.ativa !== false || item.codigo === documento.categoriaCodigo).map(item => <option key={item.codigo} value={item.codigo}>{item.rotulo}{item.restrita ? " · restrita" : ""}{item.ativa === false ? " · inativa (já vinculada)" : ""}</option>)}</select></label>{editor.gerenciaCategorias && <button type="button" className="mt-1 min-h-8 rounded px-1 text-xs font-semibold text-oliva-escura hover:underline" aria-expanded={novaCategoria} onClick={() => setNovaCategoria(!novaCategoria)}>+ Nova categoria</button>}{categoria?.ativa === false && <p className="mt-1 text-[11px] leading-relaxed text-tinta-suave">Esta categoria está inativa. Você pode mantê-la nesta despesa ou escolher uma ativa.</p>}</div>
+            <div className="min-w-0 lg:col-span-2"><SeletorFornecedorDespesa valor={{ id: documento.fornecedorPessoaId ?? null, nome: documento.fornecedorNome, cpfCnpj: documento.fornecedorDocumento }} permiteCadastrar={editor.permiteCadastrarFornecedor} disabled={salvando || anexando || catalogoOcupado || reabrirNecessario} aoOcupar={valor => { setCatalogoOcupado(valor); aoOcupar(valor); }} onChange={fornecedor => { setDocumento(atual => ({ ...atual, fornecedorPessoaId: fornecedor.id, fornecedorNome: fornecedor.nome, fornecedorDocumento: fornecedor.cpfCnpj })); aoAlterar(true); setSucesso(""); }} /></div>
+            {novaCategoria && editor.gerenciaCategorias && <div className="sm:col-span-2 lg:col-span-3"><EditorCategoriaDespesa aoCancelar={() => setNovaCategoria(false)} aoOcupar={valor => { setCatalogoOcupado(valor); aoOcupar(valor); }} aoSalvar={(nova, todas) => { setEditor(atual => ({ ...atual, categorias: todas })); alterarDocumento("categoriaCodigo", nova.codigo); setNovaCategoria(false); setSucesso(`Categoria “${nova.rotulo}” cadastrada e selecionada. Complete a despesa para salvar o lançamento.`); }} /></div>}
             <label className={`${rotulo} sm:col-span-2 lg:col-span-3`}>Descrição da despesa<input value={documento.descricao} onChange={event => alterarDocumento("descricao", event.target.value)} required={Boolean(documento.categoriaCodigo) || modoCusto !== "VARIOS" || !permiteClassificacaoAnterior} maxLength={1000} className={campo} placeholder="Ex.: mensalidade do sistema de outubro" /></label>
             <label className={rotulo}>Valor total (R$)<input type={visiveis ? "text" : "password"} inputMode="decimal" autoComplete="off" required readOnly={!visiveis || legado || temPagamento} value={documento.totalTexto} onChange={event => alterarDocumento("totalTexto", event.target.value)} className={`${campo} font-mono`} aria-describedby={!visiveis ? "rateio-valor-aviso" : undefined} /></label>
             <label className={rotulo}>Competência<input type="month" required value={documento.competencia} onChange={event => alterarDocumento("competencia", event.target.value)} className={campo} /><span className="mt-1 block text-[11px] font-normal text-tinta-suave">Mês a que a despesa pertence.</span></label>
@@ -191,7 +196,6 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar, aoFechar
               {documento.tipoDocumento !== "SEM_DOCUMENTO" && <>
                 <label className={rotulo}>Número do documento{documento.tipoDocumento !== "NOTA_FISCAL" ? " (opcional)" : ""}<input value={documento.numero} onChange={event => alterarDocumento("numero", event.target.value)} required={documento.tipoDocumento === "NOTA_FISCAL"} maxLength={100} className={campo} /></label>
                 <label className={rotulo}>Emissão{documento.tipoDocumento !== "NOTA_FISCAL" ? " (opcional)" : ""}<input type="date" required={documento.tipoDocumento === "NOTA_FISCAL"} value={documento.emissao} onChange={event => alterarDocumento("emissao", event.target.value)} className={campo} /></label>
-                <label className={rotulo}>CPF/CNPJ do fornecedor (opcional)<input value={documento.fornecedorDocumento ?? ""} onChange={event => alterarDocumento("fornecedorDocumento", event.target.value)} maxLength={30} className={campo} /></label>
                 {documento.tipoDocumento === "NOTA_FISCAL" && <>
                   <label className={rotulo}>Série (opcional)<input value={documento.serie ?? ""} onChange={event => alterarDocumento("serie", event.target.value)} maxLength={50} className={campo} /></label>
                   <label className={rotulo}>Tomador na nota (opcional)<input value={documento.tomadorNome ?? ""} onChange={event => alterarDocumento("tomadorNome", event.target.value)} maxLength={200} className={campo} placeholder="Como consta na nota original" /></label>

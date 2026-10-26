@@ -2,6 +2,17 @@ import { describe, expect, it } from "vitest";
 import { carteiraIrrestrita, montarPolitica, navegacaoAcesso, permitidoRecurso, pode, podeAbrirRota, podeNavegar, type DadosPolitica } from "./politica";
 const usuario = (u: Partial<DadosPolitica> = {}): DadosPolitica => ({ id: "u", perfil: "FINANCEIRO", ativo: true, acessoGlobal: false, permissoesExtras: "[]", permissoesNegadas: "[]", regrasAcesso: [], ...u });
 describe("permissões e navegação", () => {
+  it("fornecedores exige acesso sensível e carteira global também na navegação", () => {
+    const rota = "/cadastros/fornecedores";
+    const permitido = montarPolitica(usuario({ acessoGlobal: true, permissoesExtras: '["cadastros.sensiveis"]' }));
+    expect(podeAbrirRota(permitido, rota)).toBe(true);
+    expect(podeNavegar(navegacaoAcesso(permitido), rota)).toBe(true);
+    for (const dados of [{ acessoGlobal: true }, { acessoGlobal: false, permissoesExtras: '["cadastros.sensiveis"]' }]) {
+      const negado = montarPolitica(usuario(dados));
+      expect(podeAbrirRota(negado, rota)).toBe(false);
+      expect(podeNavegar(navegacaoAcesso(negado), rota)).toBe(false);
+    }
+  });
   it("organização global exige permissão de unificação, PII e carteira irrestrita", () => {
     const base = { acessoGlobal: true, permissoesExtras: '["unificacao.ver","cadastros.sensiveis"]' };
     expect(podeAbrirRota(montarPolitica(usuario(base)), "/financeiro/dados")).toBe(true);

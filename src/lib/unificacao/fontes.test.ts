@@ -104,7 +104,7 @@ describe("fotografia compacta das fontes de unificação", () => {
     id: "despesa-teste", origemChave: null, fornecedorNome: "Fornecedor teste", fornecedorDocumento: null,
     numero: "42", serie: null, tomadorNome: null, tomadorDocumento: null, competencia: "2026-10", emissao: "2026-10-07",
     vencimento: "2026-10-30", total: 15000, restrita: false, lancamentoCaixaId: null, lancamentoCaixa: null, pagamentoVia: null,
-    categoriaCodigo: null, descricao: null, tipoDocumento: "NOTA_FISCAL", destinoCusto: "EMPREENDIMENTOS",
+    categoriaCodigo: null, categoriaRotulo: null, descricao: null, tipoDocumento: "NOTA_FISCAL", destinoCusto: "EMPREENDIMENTOS",
   };
 
   it("campos de classificação adicionados pelo schema preservam a projeção de notas antigas", async () => {

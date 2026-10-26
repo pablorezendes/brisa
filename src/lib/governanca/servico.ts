@@ -84,10 +84,11 @@ async function vinculos(tx: Tx, tipo: TipoGovernanca, id: string): Promise<Recor
   if (tipo === "TEMPORADA_UNIDADE") return { recebimentos: await tx.recebimentoTemporada.count({ where: { unidadeTemporadaId: id } }), despesas: await tx.despesaTemporada.count({ where: { unidadeTemporadaId: id } }), limpezas: await tx.limpeza.count({ where: { unidadeTemporadaId: id } }) };
   if (tipo === "PESSOA") {
     const p = await tx.pessoa.findUniqueOrThrow({ where: { id } });
-    const [locatarios, contratos, titulos, imoveis] = await Promise.all([
+    const [locatarios, contratos, titulos, imoveis, despesas] = await Promise.all([
       tx.locatario.count({ where: { pessoaId: id } }), tx.contratoParteLegado.count({ where: { origem: p.origem, pessoaLegadoId: p.legadoId } }),
       tx.tituloFinanceiroLegado.count({ where: { origem: p.origem, pessoaLegadoId: p.legadoId } }), tx.imovelProprietarioLegado.count({ where: { pessoaId: id } }),
-    ]); return { locatarios, contratos, titulos, imoveis };
+      tx.despesaDocumento.count({ where: { fornecedorPessoaId: id } }),
+    ]); return { locatarios, contratos, titulos, imoveis, despesas };
   }
   if (tipo === "LOCATARIO") return { contratos: await tx.contrato.count({ where: { locatarioId: id } }), boletos: await tx.boleto.count({ where: { locatarioId: id } }) };
   if (tipo === "UNIDADE") return { contratos: await tx.contrato.count({ where: { unidadeId: id } }), temporada: await tx.unidadeTemporada.count({ where: { unidadeId: id } }), rateios: await tx.despesaRateio.count({ where: { unidadeId: id } }) };
