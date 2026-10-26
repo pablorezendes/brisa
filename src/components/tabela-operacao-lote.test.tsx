@@ -5,10 +5,11 @@ import type { PreviaExclusaoTitulos } from "@/lib/governanca/exclusao-titulos-lo
 
 const actions = vi.hoisted(() => ({ previa: vi.fn(), excluir: vi.fn() }));
 vi.mock("@/app/(app)/cadastros/governanca/lote-actions", () => ({ prepararExclusaoTitulos: actions.previa, excluirTitulosSelecionados: actions.excluir }));
+vi.mock("@/app/(app)/unificacao/conferencia-lote-actions", () => ({ prepararConferenciaSelecionados: vi.fn(), conferirTitulosSelecionados: vi.fn() }));
 vi.mock("@/components/ui", () => ({
   Dinheiro: ({ centavos }: { centavos: number | null }) => <span>{centavos}</span>,
   Sigilo: ({ children }: { children: ReactNode }) => <span data-sigilo="true">{children}</span>,
-  btnSecundario: "btn", inputBase: "input",
+  btnPrimario: "btn", btnSecundario: "btn", inputBase: "input",
 }));
 vi.mock("@/components/unificacao-visual", () => ({ EstadoUnificado: () => <span>Disponível</span>, OrigensUnificadas: () => <span>Origem</span> }));
 
@@ -74,6 +75,27 @@ describe("exclusão financeira na própria lista", () => {
     const html = renderToStaticMarkup(<TabelaOperacaoUnificada {...props} itens={[{ ...linha, exclusao: null }]} exclusaoLote={{ dominio: "PAGAR", contexto: "/pagar" }} />);
     expect(html).toMatch(/<input[^>]*disabled=""[^>]*aria-label="Selecionar Fornecedor de teste"/);
     expect(html).not.toContain("Conferir e excluir nesta tela");
+  });
+
+  it.each(["PAGAR", "RECEBER"] as const)("permite conferir %s sem conceder exclusão", dominio => {
+    const html = renderToStaticMarkup(<TabelaOperacaoUnificada {...props} itens={[{ ...linha, dominio, chave: `WIDESYS:${dominio}:1`, exclusao: null }]} conferenciaLote={{ dominio, contexto: "/lista" }} />);
+    expect(html).toContain("Marcar selecionados como conferidos");
+    expect(html).toContain("Selecionar todos os registros desta página");
+    expect(html).not.toMatch(/<input[^>]*disabled=""[^>]*aria-label="Selecionar Fornecedor de teste"/);
+    expect(html).not.toContain("Excluir selecionados");
+    expect(html).not.toContain("Excluir da plataforma");
+  });
+
+  it("mantém as duas ações independentes na mesma seleção", () => {
+    const html = renderToStaticMarkup(<TabelaOperacaoUnificada {...props} conferenciaLote={{ dominio: "PAGAR", contexto: "/pagar" }} exclusaoLote={{ dominio: "PAGAR", contexto: "/pagar" }} />);
+    expect(html).toContain("Marcar selecionados como conferidos");
+    expect(html).toContain("Excluir selecionados");
+    expect(html.match(/Selecionar todos os registros desta página/g)).toHaveLength(1);
+  });
+
+  it("filtros também isolam a seleção quando só existe permissão de conferir", () => {
+    const tabela = TabelaOperacaoUnificada({ ...props, conferenciaLote: { dominio: "PAGAR", contexto: "/pagar?pagina=2&estado=PENDENTE" } });
+    expect(isValidElement(tabela) && tabela.key).toBe("/pagar?pagina=2&estado=PENDENTE");
   });
 
   it("inicia modal em conferência, sem botão de confirmar antes da prévia", () => {

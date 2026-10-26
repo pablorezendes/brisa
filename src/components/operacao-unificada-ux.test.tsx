@@ -8,6 +8,7 @@ vi.mock("@/lib/autorizacao", () => ({ perfilAtual: mocks.perfil }));
 vi.mock("@/lib/acesso/servidor", () => ({ acessoAtual: mocks.acesso, exigirPaginaAcesso: mocks.pagina, exigirPermissaoAcesso: mocks.permissao }));
 vi.mock("@/lib/consultas/unificacao", () => ({ listarUnificados: mocks.listar, listarTitulosFinanceiros: mocks.listar, detalheUnificado: mocks.detalhe }));
 vi.mock("@/app/(app)/unificacao/actions", () => ({ sincronizarUnificacao: vi.fn(), sincronizarUnificacaoNaTela: vi.fn(), resolverUnificacao: vi.fn() }));
+vi.mock("@/app/(app)/unificacao/conferencia-lote-actions", () => ({ prepararConferenciaSelecionados: vi.fn(), conferirTitulosSelecionados: vi.fn() }));
 vi.mock("@/components/acao-autorizada", () => ({ AcaoAutorizada: () => null, podeExibirAcao: () => false }));
 vi.mock("@/components/link-governanca", () => ({ LinkGovernanca: () => null }));
 vi.mock("@/components/excluir-registro-link", () => ({ ExcluirRegistroLink: () => null, ExcluirUnificadoLink: ({ registro }: { registro: Pick<LinhaUnificada, "chave"> }) => <span data-revisao-exclusao={registro.chave}>Excluir da plataforma</span> }));
@@ -96,6 +97,22 @@ describe("origem e situação são informações diferentes", () => {
     const html = renderToStaticMarkup(await OperacaoUnificada({ titulo: "A receber", base: "/recebimentos", dominio: "RECEBER" }));
     expect(html).toContain("Revisar e resolver");
     expect(html).not.toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*>Conferir<\/button>/);
+  });
+  it.each(["PAGAR", "RECEBER"] as const)("habilita lote em %s ao financeiro autorizado sem permissão de excluir", async dominio => {
+    const permissoes = ["unificacao.editar", "pagamentos.conciliar", "cadastros.sensiveis", ...(dominio === "PAGAR" ? ["despesas.ver"] : ["financeiro.ver", "unificacao.ver"])];
+    mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "FINANCEIRO", ativo: true, global: true, regras: [], permissoes });
+    const dados = lista(); dados.itens[0] = registro({ dominio, chave: `WIDESYS:${dominio}:1` }); mocks.listar.mockResolvedValue(dados);
+    const base = dominio === "PAGAR" ? "/financeiro/contas-a-pagar" : "/recebimentos";
+    const html = renderToStaticMarkup(await OperacaoUnificada({ titulo: "Financeiro", base, dominio }));
+    expect(html).toContain("Marcar selecionados como conferidos");
+    expect(html).toContain("Selecionar todos os registros desta página");
+    expect(html).not.toContain("Excluir selecionados");
+    mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "FINANCEIRO", ativo: true, global: true, regras: [], permissoes: permissoes.filter(p => p !== "pagamentos.conciliar") });
+    const consulta = renderToStaticMarkup(await OperacaoUnificada({ titulo: "Financeiro", base, dominio }));
+    expect(consulta).not.toContain("Marcar selecionados como conferidos");
+    expect(consulta).not.toContain("Selecionar todos os registros desta página");
+    mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "FINANCEIRO", ativo: true, global: false, regras: [], permissoes });
+    await expect(OperacaoUnificada({ titulo: "Financeiro", base, dominio })).rejects.toThrow("ACESSO_NEGADO");
   });
   it("detalhe mostra evidência da fonte associada sem expor campos de comissão", async () => {
     const principal = registro({ origens: ["BRISA", "PLANILHA"], campos: { pessoa: { rotulo: "Pessoa", valor: "Pessoa permitida" }, taxa: { rotulo: "Taxa reservada", valor: "SEGREDO_TAXA" }, administracao: { rotulo: "Administração", valor: "SEGREDO_ADMINISTRACAO" } } });

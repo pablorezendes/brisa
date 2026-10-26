@@ -1034,6 +1034,34 @@ backup em `/data/backups-unificacao`. Repetir o comando não duplica registros n
 decisões. **Reanalisar correspondências** também usa a nova regra para os próximos
 dados. Não é necessário alterar o schema, executar seed ou reimportar planilhas.
 
+## Conferir contas a pagar e receber em lote (outubro/2026)
+
+1. Abra **Contas a pagar** ou **Contas a receber** e filtre os lançamentos.
+2. Marque as linhas ou use o checkbox do cabeçalho para selecionar a página.
+   É possível exibir e conferir até 100 registros por vez. Trocar os filtros ou
+   a página limpa a seleção.
+3. Clique em **Marcar selecionados como conferidos**. Uma única janela mostra o
+   que será conferido, o que já foi conferido e os registros que precisam de
+   tratamento individual. O impacto mostra somente o acréscimo aos totais.
+4. Confirme que os registros elegíveis são lançamentos separados e conclua.
+   A observação é opcional. Os status, totais e pendências são atualizados na lista.
+
+A conferência em lote mantém cada lançamento elegível como independente. Se uma
+linha for cópia de outra, use a conferência individual para vinculá-la ao principal.
+Registros já vinculados, excluídos ou inconsistentes não são liberados pelo lote.
+As proteções de fechamento, emissão bancária, acesso e comissões são mantidas.
+
+A operação registra somente decisões e auditoria: não cria títulos, pagamentos,
+baixas ou movimentos, nem conclui o rateio de custos. Valores que já estavam nos
+totais não são somados novamente. Repetir uma confirmação concluída não duplica
+decisões. Se os dados mudarem entre a prévia e a confirmação, a seleção deve ser
+conferida novamente antes de gravar.
+
+A permissão de conferência é independente da permissão de excluir. Administradores
+e usuários financeiros com carteira integral e permissões de conferência podem
+usar a ação. Esta versão requer somente atualizar o código e reconstruir o
+container: não há alteração de schema, seed ou reimportação.
+
 ## Cloudflare — a nuvem laranja e o certificado
 
 O registro `brisa.tescod.com` está no Cloudflare **com proxy** (nuvem
