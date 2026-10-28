@@ -32,7 +32,8 @@
     "importar:planilhas-financeiras": "tsx scripts/importar-planilhas-financeiras.ts",
     "test": "vitest run",
     "usuario": "tsx scripts/usuario.ts",
-    "revalidar:pagamento-widesys": "tsx scripts/revalidar-pagamento-widesys.ts"
+    "revalidar:pagamento-widesys": "tsx scripts/revalidar-pagamento-widesys.ts",
+    "unificar:conferir-widesys": "tsx scripts/conferir-origem-widesys.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

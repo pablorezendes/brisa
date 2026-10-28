@@ -35,8 +35,10 @@ export type LinhaUnificada = FonteUnificacao & {
   /** Decisão humana de inclusão/vínculo ainda válida para esta fotografia.
    * Não equivale a pagamento, nem autoriza somar cancelados/informativos. */
   conferidoManualmente?: boolean;
-  /** Conferência persistida pela regra de valores distintos, sem decisão humana individual. */
+  /** Conferência persistida pela regra de valores distintos ou de origem Widesys. */
   conferidoPorRegra?: boolean;
+  /** Origem validada; um cruzamento com planilhas ainda pode ficar fora dos totais. */
+  conferidoNaOrigem?: boolean;
 };
 export type FiltrosUnificacao = {
   dominio?: string; estado?: string; q?: string; pagina?: number; porPagina?: number;

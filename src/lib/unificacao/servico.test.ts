@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { carregarDadosFontesUnificacao, carregarFontesUnificacao, derivarFontesUnificacao, type DadosFontesUnificacao } from "./fontes";
 import { analisarUnificacao, decidirUnificacao, lerOperacaoUnificada } from "./servico";
+import { conferirOrigemWidesys } from "./persistencia-confianca-widesys";
 import type { FonteUnificacao } from "./tipos";
 
 vi.mock("./fontes", () => ({
@@ -81,6 +82,61 @@ async function entrada(acao: "VINCULAR" | "DISTINTO" | "REABRIR", indice = 1) {
 }
 
 describe("serviço transacional de unificação", () => {
+  it("confere IDs Widesys de datas distintas e repetir a migração não escreve novamente", async () => {
+    fontes = ["01", "02"].map((id, i) => ({ ...fonte("WIDESYS", id), dominio: "PAGAR", chave: `WIDESYS:PAGAR:${id}`, vencimento: `2027-0${i + 1}-10` }));
+    const antes = structuredClone(fontes);
+    expect(await conferirOrigemWidesys(prisma)).toMatchObject({ atualizados: 2, conferidos: 2 });
+    expect(await prisma.unificacaoRegistro.count()).toBe(0);
+    await conferirOrigemWidesys(prisma, true);
+    const registros = await prisma.unificacaoRegistro.findMany();
+    const auditorias = await prisma.unificacaoDecisao.count();
+    expect(await conferirOrigemWidesys(prisma, true)).toMatchObject({ atualizados: 0 });
+    expect(await prisma.unificacaoRegistro.findMany()).toEqual(registros);
+    expect(await prisma.unificacaoDecisao.count()).toBe(auditorias);
+    const linhas = (await lerOperacaoUnificada(prisma)).linhas;
+    expect(linhas.every(l => l.conferidoNaOrigem && l.conferidoPorRegra && l.contabiliza)).toBe(true);
+    expect(linhas.every(l => l.candidatos.length === 0)).toBe(true);
+    expect(linhas.reduce((s, l) => s + l.valor!, 0)).toBe(200000);
+    expect(linhas.reduce((s, l) => s + l.pago!, 0)).toBe(60000);
+    expect(fontes).toEqual(antes);
+  });
+
+  it("confirma origem sem duplicar o recebimento da planilha e preserva vínculo manual", async () => {
+    await analisarUnificacao(prisma, "teste");
+    await conferirOrigemWidesys(prisma, true);
+    let linhas = (await lerOperacaoUnificada(prisma)).linhas;
+    expect(linhas[1]).toMatchObject({ conferidoNaOrigem: true, estado: "PENDENTE", contabiliza: false });
+    expect(linhas.filter(l => l.contabiliza).reduce((s, l) => s + l.valor!, 0)).toBe(100000);
+    await decidirUnificacao(prisma, await entrada("VINCULAR"), "teste");
+    const antes = await prisma.unificacaoRegistro.findUniqueOrThrow({ where: { chave: fontes[1].chave } });
+    await conferirOrigemWidesys(prisma, true);
+    expect(await prisma.unificacaoRegistro.findUniqueOrThrow({ where: { chave: fontes[1].chave } })).toEqual(antes);
+    linhas = (await lerOperacaoUnificada(prisma)).linhas;
+    expect(linhas.filter(l => l.contabiliza)).toHaveLength(1);
+    expect(linhas.filter(l => l.contabiliza)[0].pago).toBe(30000);
+  });
+
+  it("não ressuscita excluídos nem inclui dados inválidos, cancelamentos e informativos", async () => {
+    fontes = ["excluido", "invalido", "cancelado", "informativo"].map(id => ({ ...fonte("WIDESYS", id), dominio: "PAGAR", chave: `WIDESYS:PAGAR:${id}` }));
+    await prisma.$executeRaw`INSERT INTO "RecursoGovernado" (id,tipo,origemId,status) VALUES ('exclusao','TITULO','WIDESYS:PAGAR:excluido','EXCLUIDO')`;
+    fontes[1].qualidade = "QUARENTENA";
+    fontes[2].cancelado = true;
+    fontes[3].informativo = true;
+    await conferirOrigemWidesys(prisma, true);
+    expect(await prisma.unificacaoRegistro.findUnique({ where: { chave: "WIDESYS:PAGAR:excluido" } })).toBeNull();
+    expect(await prisma.unificacaoRegistro.findUnique({ where: { chave: "WIDESYS:PAGAR:invalido" } })).toBeNull();
+    expect((await lerOperacaoUnificada(prisma)).linhas.every(l => !l.contabiliza)).toBe(true);
+  });
+
+  it("nova planilha reabre conferência da origem antes de duplicar os totais", async () => {
+    fontes = [fonte("WIDESYS", "origem")];
+    await conferirOrigemWidesys(prisma, true);
+    fontes.push(fonte("BRISA", "planilha"));
+    const linhas = (await lerOperacaoUnificada(prisma)).linhas;
+    expect(linhas[0]).toMatchObject({ estado: "REVISAR", conferidoNaOrigem: true, contabiliza: false });
+    expect(linhas.filter(l => l.contabiliza)).toHaveLength(0);
+  });
+
   it("revalida sigilo mesmo quando o hash financeiro anterior continua compatível", async () => {
     await analisarUnificacao(prisma, "teste");
     const proposta = await entrada("DISTINTO");
@@ -135,15 +191,15 @@ describe("serviço transacional de unificação", () => {
     const nova = { ...alterada, chave: "WIDESYS:PAGAR:01", origemId: "01", hash: "WIDESYS-01-v1" };
     fontes = [nova, alterada];
     const valoresAntes = structuredClone(fontes);
-    await expect(analisarUnificacao(prisma, "teste")).resolves.toMatchObject({ criados: 1, atualizados: 1, estados: { ATIVO: 1, PENDENTE: 1 } });
+    await expect(analisarUnificacao(prisma, "teste")).resolves.toMatchObject({ criados: 1, atualizados: 1, estados: { ATIVO: 2 } });
     const primeira = await prisma.unificacaoRegistro.findMany({ orderBy: { chave: "asc" } });
-    expect(primeira.map(d => d.status)).toEqual(["ATIVO", "PENDENTE"]);
+    expect(primeira.map(d => d.status)).toEqual(["ATIVO", "ATIVO"]);
     await expect(analisarUnificacao(prisma, "teste", true)).resolves.toMatchObject({ criados: 0, atualizados: 0, inalterados: 2, ausentes: 0 });
     expect(await prisma.unificacaoRegistro.findMany({ orderBy: { chave: "asc" } })).toEqual(primeira);
     expect(await prisma.unificacaoDecisao.count()).toBe(1);
     expect(fontes).toEqual(valoresAntes);
     const { linhas } = await lerOperacaoUnificada(prisma);
-    expect(linhas.filter(l => l.contabiliza)).toHaveLength(1);
+    expect(linhas.filter(l => l.contabiliza)).toHaveLength(2);
     expect(linhas.find(l => l.chave === nova.chave)).toMatchObject({ valor: 100000, pago: 40000, aberto: 60000 });
     expect(linhas.every(l => l.fontes.length === 1)).toBe(true);
   });
@@ -205,7 +261,7 @@ describe("serviço transacional de unificação", () => {
     expect(linhas.every(l => !l.contabiliza)).toBe(true);
   });
 
-  it("nova candidata não fica ativa por ordenar antes de uma decisão manual já confirmada", async () => {
+  it("novo ID Widesys é independente e preserva a decisão manual anterior", async () => {
     fontes = [fonte("WIDESYS", "z-confirmada")];
     await analisarUnificacao(prisma, "teste");
     await decidirUnificacao(prisma, await entrada("DISTINTO", 0), "teste");
@@ -213,8 +269,8 @@ describe("serviço transacional de unificação", () => {
     await analisarUnificacao(prisma, "teste");
     const { linhas } = await lerOperacaoUnificada(prisma);
     expect(linhas.find(l => l.origemId === "z-confirmada")?.estado).toBe("ATIVO");
-    expect(linhas.find(l => l.origemId === "a-nova")?.estado).toBe("PENDENTE");
-    expect(linhas.filter(l => l.contabiliza)).toHaveLength(1);
+    expect(linhas.find(l => l.origemId === "a-nova")?.estado).toBe("ATIVO");
+    expect(linhas.filter(l => l.contabiliza)).toHaveLength(2);
   });
 
   it.each([
@@ -293,7 +349,7 @@ describe("serviço transacional de unificação", () => {
     expect(await prisma.unificacaoDecisao.count({ where: { acao: "VINCULAR" } })).toBe(0);
   });
 
-  it("mantém o Widesys principal e o novo nativo pendente em análises repetidas", async () => {
+  it("mantém principal Widesys e novo Brisa pendente sem somar duas vezes", async () => {
     fontes = [fonte("WIDESYS", "primeiro")];
     await analisarUnificacao(prisma, "teste");
     fontes.push(fonte("BRISA", "novo"));

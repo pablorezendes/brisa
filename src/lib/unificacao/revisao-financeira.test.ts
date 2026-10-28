@@ -62,13 +62,17 @@ describe("conferência financeira compartilhada em contas a receber", () => {
     await analisarUnificacao(db, ator.id);
     const chave = `${origem}:RECEBER:${original.id}`;
     const automatico = await ler(chave);
-    expect(automatico).toMatchObject({ dominio: "RECEBER", estado: "ATIVO", podeConcluir: true, conferidoManualmente: false, incluidoNosTotais: true });
-    const resultado = await concluirRevisaoFinanceira(db, entrada(automatico), ator);
-    expect(resultado.revisao).toMatchObject({ estado: "ATIVO", podeConcluir: false, conferidoManualmente: true, incluidoNosTotais: true });
-    expect((await ler(chave)).conferidoManualmente).toBe(true);
+    expect(automatico).toMatchObject({ dominio: "RECEBER", estado: "ATIVO", podeConcluir: origem === "BRISA", conferidoManualmente: false, incluidoNosTotais: true });
+    if (origem === "BRISA") {
+      const resultado = await concluirRevisaoFinanceira(db, entrada(automatico), ator);
+      expect(resultado.revisao).toMatchObject({ estado: "ATIVO", podeConcluir: false, conferidoManualmente: true, incluidoNosTotais: true });
+      await expect(concluirRevisaoFinanceira(db, entrada(resultado.revisao), ator)).rejects.toMatchObject({ codigo: "REVISAO_INDISPONIVEL" });
+    } else {
+      expect(automatico.conferidoPorRegra).toBe(true);
+      await expect(concluirRevisaoFinanceira(db, entrada(automatico), ator)).rejects.toMatchObject({ codigo: "REVISAO_INDISPONIVEL" });
+    }
     const atual = origem === "WIDESYS" ? await db.tituloFinanceiroLegado.findUniqueOrThrow({ where: { id: original.id } }) : await db.recebimento.findUniqueOrThrow({ where: { id: original.id } });
     expect(atual).toEqual(original);
-    await expect(concluirRevisaoFinanceira(db, entrada(resultado.revisao), ator)).rejects.toMatchObject({ codigo: "REVISAO_INDISPONIVEL" });
     expect(await db.pagamentoRecebimento.count()).toBe(0);
     expect(await db.lancamentoCaixa.count()).toBe(0);
   });
@@ -132,6 +136,7 @@ describe("conferência financeira compartilhada em contas a receber", () => {
 
   it("revalida papel, escopo e permissões no servidor", async () => {
     await legado(); await analisarUnificacao(db, ator.id);
+    await db.unificacaoRegistro.update({ where: { chave: "WIDESYS:RECEBER:legado" }, data: { status: "PENDENTE", decisao: "MANUAL" } });
     const r = await ler(undefined, { id: "fin" });
     expect(r.podeConcluir).toBe(true);
     for (const permissao of ["financeiro.ver", "cadastros.sensiveis"]) {
@@ -171,6 +176,7 @@ describe("conferência financeira compartilhada em contas a receber", () => {
     await db.tituloFinanceiroLegado.updateMany({ data: { pessoaLegadoId: "pessoa" } });
     await db.tituloFinanceiroLegado.update({ where: { id: "a" }, data: { planoContaRotulo: "Comissão de administração" } });
     await analisarUnificacao(db, ator.id);
+    await db.unificacaoRegistro.update({ where: { chave: "WIDESYS:RECEBER:b" }, data: { status: "PENDENTE", decisao: "MANUAL" } });
     const admin = await ler("WIDESYS:RECEBER:b");
     expect(admin.candidatos).toHaveLength(1);
     const fin = await ler("WIDESYS:RECEBER:b", { id: "fin" });

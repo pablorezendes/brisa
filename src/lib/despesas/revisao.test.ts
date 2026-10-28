@@ -88,6 +88,7 @@ describe("conferência explícita no editor de despesas", () => {
     await db.pessoa.create({ data: { id: "pessoa", origem: "WIDESYS", legadoId: "pessoa", nome: "Fornecedor sintético", nomeNorm: "FORNECEDOR SINTETICO", tipoPessoa: "JURIDICA", snapshot: "{}", snapshotHash: "pessoa-v1" } });
     await db.tituloFinanceiroLegado.updateMany({ data: { pessoaLegadoId: "pessoa" } });
     await analisarUnificacao(db, ator.id);
+    await db.unificacaoRegistro.update({ where: { chave: "WIDESYS:PAGAR:b" }, data: { status: "PENDENTE", decisao: "MANUAL" } });
     const r = await revisao("b");
     expect(r.estado).toBe("PENDENTE");
     expect(r.candidatos).toHaveLength(1);
@@ -155,6 +156,7 @@ describe("conferência explícita no editor de despesas", () => {
     await legado("b");
     await db.tituloFinanceiroLegado.updateMany({ data: { pessoaLegadoId: "pessoa" } });
     await analisarUnificacao(db, ator.id);
+    await db.unificacaoRegistro.update({ where: { chave: "WIDESYS:PAGAR:b" }, data: { status: "PENDENTE", decisao: "MANUAL" } });
     const admin = await revisao("b");
     expect(admin.candidatos).toHaveLength(1);
     const fin = await revisao("b", { id: "fin" });
@@ -171,6 +173,7 @@ describe("conferência explícita no editor de despesas", () => {
     await db.tituloFinanceiroLegado.updateMany({ data: { pessoaLegadoId: "pessoa" } });
     await analisarUnificacao(db, ator.id);
     await db.unificacaoRegistro.update({ where: { chave: "WIDESYS:PAGAR:a" }, data: { status: "REVISAR" } });
+    await db.unificacaoRegistro.update({ where: { chave: "WIDESYS:PAGAR:b" }, data: { status: "PENDENTE", decisao: "MANUAL" } });
     const r = await revisao("b");
     expect(r.candidatos).toEqual([]);
     expect(r.candidatosIndisponiveis).toBe(1);

@@ -33,6 +33,14 @@ beforeEach(() => {
 });
 
 describe("origem e situação são informações diferentes", () => {
+  it("distingue origem Widesys conferida de conciliação pendente entre fontes", () => {
+    const ativo = registro({ conferidoNaOrigem: true, conferidoPorRegra: true });
+    expect(renderToStaticMarkup(<EstadoUnificado item={ativo} />)).toContain(">Conferido<");
+    expect(explicarConsolidacao(ativo)).toContain("Incluído uma única vez");
+    const cruzamento = registro({ conferidoNaOrigem: true, estado: "PENDENTE", contabiliza: false });
+    expect(renderToStaticMarkup(<EstadoUnificado item={cruzamento} />)).toContain("Conferido no Widesys · conciliar fontes");
+    expect(explicarConsolidacao(cruzamento)).toContain("Ainda fora dos totais");
+  });
   it("não chama um registro Brisa de manual nem de planilha sem evidência", () => {
     const html = renderToStaticMarkup(<OrigensUnificadas origens={["BRISA"]} />);
     expect(html).toContain("Brisa · origem a confirmar");

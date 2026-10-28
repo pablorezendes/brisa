@@ -1168,3 +1168,35 @@ constam em `docker-compose.yml`; apenas defini-las não autoriza disparos.
   e no layout. Guarde o AUTH_SECRET: trocá-lo derruba todas as sessões.
 - O banco (`dados/brisa.db`) guarda também os usuários — o backup diário
   cobre tudo.
+
+
+## Conferir a origem Widesys sem duplicar planilhas (outubro/2026)
+
+O administrador confirmou a validade dos registros Widesys. A atualização reconhece
+IDs externos distintos como registros independentes. Sem cruzamento pendente,
+o status passa a **Conferido**. As planilhas continuam sendo fontes válidas.
+Quando há correspondência com Brisa/planilhas, a origem aparece como **Conferido
+no Widesys · conciliar fontes**; a decisão de vínculo continua necessária antes
+de somar outra vez. O principal já aceito é preservado. Decisões manuais,
+exclusões e inconsistências de importação não são sobrescritas.
+
+A rotina muda apenas metadados de conferência. Não cria títulos, pagamentos ou
+movimentações, nem modifica datas e valores. É idempotente e gera um backup
+SQLite consistente em `/data/backups-unificacao` antes de aplicar.
+
+```bash
+set -e
+cd /srv/stack/acamargo
+git pull --ff-only origin main
+docker compose build brisa
+docker compose stop brisa
+docker compose run --rm --no-deps brisa npm run unificar:conferir-widesys -- --dry-run
+docker compose run --rm --no-deps brisa npm run unificar:conferir-widesys -- --aplicar
+docker compose up -d --no-deps brisa
+docker compose logs --tail 80 brisa
+curl --retry 12 --retry-delay 5 --retry-all-errors -fsSI https://brisa.tescod.com/login
+```
+
+Não execute seed ou reimportação para esta atualização. Se a rotina falhar,
+não continue a carga; consulte o erro e reinicie o serviço com
+`docker compose up -d --no-deps brisa`. O backup fica preservado.

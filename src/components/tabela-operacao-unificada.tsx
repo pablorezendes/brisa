@@ -26,6 +26,7 @@ export type LinhaTabelaOperacao = {
   estado: EstadoUnificacao;
   conferidoManualmente?: boolean;
   conferidoPorRegra?: boolean;
+  conferidoNaOrigem?: boolean;
   cancelado?: boolean;
   informativo?: boolean;
   contabiliza: boolean;

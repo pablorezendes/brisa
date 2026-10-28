@@ -180,7 +180,7 @@ describe("popup financeiro integrado à lista SSR", () => {
     expect(itens[24].titulo).toBe("Título 24");
     expect(itens[0].correspondencias).toBe(1);
     expect(JSON.stringify(itens)).not.toContain("SEGREDO");
-    expect(Object.keys(itens[0]).sort()).toEqual(["chave", "dominio", "titulo", "descricao", "origens", "papeis", "estado", "conferidoManualmente", "conferidoPorRegra", "cancelado", "informativo", "contabiliza", "correspondencias", "aviso", "impacto", "data", "competencia", "valor", "pago", "aberto", "natureza", "hrefDetalhe", "hrefCadastro", "exclusao", "rateio", "revisaoRecebimento"].sort());
+    expect(Object.keys(itens[0]).sort()).toEqual(["chave", "dominio", "titulo", "descricao", "origens", "papeis", "estado", "conferidoManualmente", "conferidoPorRegra", "conferidoNaOrigem", "cancelado", "informativo", "contabiliza", "correspondencias", "aviso", "impacto", "data", "competencia", "valor", "pago", "aberto", "natureza", "hrefDetalhe", "hrefCadastro", "exclusao", "rateio", "revisaoRecebimento"].sort());
     expect(itens[0].rateio).toEqual({ origemChave: "WIDESYS:PAGAR:linha_0" });
     expect(itens[0].revisaoRecebimento).toBe(false);
   });

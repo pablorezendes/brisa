@@ -9,6 +9,7 @@ import { hashFonteCorresponde } from "./hashes";
 import { carteiraIrrestrita, montarPolitica, pode } from "../acesso/politica";
 import { chavesRestritasUnificacao } from "./privacidade";
 import { auditoriaConferenciaPorValores, dadosConferenciaPorValores, planejarConferenciaPorValores } from "./persistencia-valores-diferentes";
+import { planejarConfiancaWidesys } from "./confianca-widesys";
 
 export class ErroUnificacao extends Error {
   constructor(public codigo: string, mensagem: string) { super(mensagem); this.name = "ErroUnificacao"; }
@@ -30,7 +31,7 @@ export async function analisarUnificacao(db: PrismaClient, usuarioId: string, dr
     const auditoriaValores: Prisma.UnificacaoDecisaoCreateManyInput[] = [];
     const novos: Prisma.UnificacaoRegistroCreateManyInput[] = [];
     const estados: Record<string,number> = {};
-    let criados = 0, atualizados = 0, inalterados = 0;
+    let criados = 0, atualizados = 0, inalterados = 0, conferidosPorValores = 0;
     for (const f of fontes) {
       const anterior = anteriores.get(f.chave);
       if (anterior && regraValores.chavesProtegidas.has(f.chave)) {
@@ -43,7 +44,9 @@ export async function analisarUnificacao(db: PrismaClient, usuarioId: string, dr
       const candidatos = candidatosPara(f, indiceCandidatos.para(f), destinos);
       const decisao = avaliarFonte(f,candidatos,porChave,anterior,anteriores,indiceCandidatos.competenciasReceberBrisa);
       const alvo = decisao.destinoChave ? porChave.get(decisao.destinoChave) : null;
-      const conferenciaValor = regraValores.elegiveis.get(f.chave);
+      const conferenciaOrigem = planejarConfiancaWidesys(f, candidatos, anterior, indiceCandidatos.competenciasReceberBrisa.has(f.competencia), anteriores);
+      const conferenciaValor = conferenciaOrigem ? undefined : regraValores.elegiveis.get(f.chave);
+      if (conferenciaValor) conferidosPorValores++;
       const dados = {
         dominio: f.dominio, origem: f.origem, origemId: f.origemId,
         status: decisao.status, destinoChave: decisao.destinoChave,
@@ -51,6 +54,7 @@ export async function analisarUnificacao(db: PrismaClient, usuarioId: string, dr
         candidatos: JSON.stringify(candidatos), motivos: JSON.stringify(decisao.motivos),
         proveniencia: JSON.stringify(f.proveniencia ?? {}),
         ...(conferenciaValor ? dadosConferenciaPorValores(conferenciaValor, decididoEm) : {}),
+        ...(conferenciaOrigem ?? {}),
       };
       estados[dados.status] = (estados[dados.status] ?? 0) + 1;
       if (!anterior) {
@@ -71,7 +75,7 @@ export async function analisarUnificacao(db: PrismaClient, usuarioId: string, dr
       justificativa: JSON.stringify({ criados, atualizados, inalterados, ausentes: ausentes.length, estados }),
     } });
     return { modo: dryRun ? "DRY_RUN" : "APLICADO", total: fontes.length, criados, atualizados, inalterados, ausentes: ausentes.length, estados,
-      conferidosPorValoresDiferentes: regraValores.elegiveis.size, protegidosDaRegra: regraValores.protegidos };
+      conferidosPorValoresDiferentes: conferidosPorValores, protegidosDaRegra: regraValores.protegidos };
   }, { maxWait: 15000, timeout: 120000 });
 }
 

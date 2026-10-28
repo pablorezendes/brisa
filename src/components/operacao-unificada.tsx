@@ -104,6 +104,7 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
       estado: item.estado,
       conferidoManualmente: item.conferidoManualmente,
       conferidoPorRegra: item.conferidoPorRegra,
+      conferidoNaOrigem: item.conferidoNaOrigem,
       cancelado: item.cancelado,
       informativo: item.informativo,
       contabiliza: item.contabiliza,

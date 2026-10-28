@@ -2,6 +2,7 @@ import type { CandidatoUnificacao, DecisaoUnificacao, EstadoUnificacao, FonteUni
 import { criarIndiceCandidatos } from "./candidatos-indice";
 import { hashFonteCorresponde } from "./hashes";
 import { DECISAO_VALOR_DIFERENTE, valoresDevidosDiferentes } from "./valores-diferentes";
+import { DECISAO_WIDESYS, registrosDistintosWidesys } from "./confianca-widesys";
 
 export function listaJson<T>(valor: string): T[] {
   try { const v: unknown = JSON.parse(valor); return Array.isArray(v) ? v as T[] : []; } catch { return []; }
@@ -13,6 +14,7 @@ export function candidatosPara(f: FonteUnificacao, fontes: FonteUnificacao[], de
   const candidatos: CandidatoUnificacao[] = [];
   for (const outro of fontes) {
     if (outro.chave === f.chave || outro.dominio !== f.dominio || outro.qualidade !== "OK") continue;
+    if (registrosDistintosWidesys(f, outro)) continue;
     const razoes: string[] = [];
     const nomeIgual = f.nomeNorm.length >= 4 && f.nomeNorm === outro.nomeNorm;
     const mesmoValor = f.valor != null && outro.valor != null && f.valor === outro.valor;
@@ -135,9 +137,11 @@ export function projetarUnificados(fontes: FonteUnificacao[], decisoes: DecisaoU
     const alvo = d?.destinoChave ? porChave.get(d.destinoChave) : null;
     const alvoDecisao = d?.destinoChave ? decisoesPorChave.get(d.destinoChave) : null;
     const alvoInvalido = d?.destinoChave && (!alvo || alvo.dominio !== f.dominio || !hashFonteCorresponde(alvo, d.hashDestino) || alvo.qualidade !== "OK" || alvoDecisao?.status !== "ATIVO" || !hashFonteCorresponde(alvo, alvoDecisao?.hashFonte));
-    const propostas = d?.decisao === DECISAO_VALOR_DIFERENTE ? candidatosAtuaisDaRegra(f)
+    const propostas = d?.decisao === DECISAO_WIDESYS ? candidatosAtuaisDaRegra(f).filter(c => c.chave.startsWith("BRISA:"))
+      : d?.decisao === DECISAO_VALOR_DIFERENTE ? candidatosAtuaisDaRegra(f)
       : d && !reavaliarNativo ? listaJson<CandidatoUnificacao>(d.candidatos) : candidatosNovos(f);
-    const regraReaberta = d?.decisao === DECISAO_VALOR_DIFERENTE && d.status === "ATIVO" && propostas.length > 0;
+    const regraReaberta = d?.status === "ATIVO" && (d.decisao === DECISAO_VALOR_DIFERENTE ? propostas.length > 0
+      : d.decisao === DECISAO_WIDESYS && propostas.some(c => !listaJson<CandidatoUnificacao>(d.candidatos).some(antes => antes.chave === c.chave)));
     // Cadastros e lançamentos novos do próprio Brisa não exigem uma migração
     // para funcionar. Ainda passam pela mesma checagem de repetição interna.
     const estadoNovo = (!d || reavaliarNativo) && f.origem === "BRISA"
@@ -145,17 +149,19 @@ export function projetarUnificados(fontes: FonteUnificacao[], decisoes: DecisaoU
       : "PENDENTE";
     const estado: EstadoUnificacao = f.qualidade !== "OK" ? (f.qualidade === "AUSENTE" ? "AUSENTE" : "QUARENTENA")
       : !d || reavaliarNativo ? estadoNovo : fonteMudou || alvoInvalido || regraReaberta ? "REVISAR" : d.status as EstadoUnificacao;
-    const candidatos = propostas.flatMap(c => { const o = porChave.get(c.chave); return o && !valoresDevidosDiferentes(f, o) ? [{ ...c, titulo: o.titulo, descricao: o.descricao }] : []; });
+    const candidatos = propostas.flatMap(c => { const o = porChave.get(c.chave); return o && !registrosDistintosWidesys(f, o) && !valoresDevidosDiferentes(f, o) ? [{ ...c, titulo: o.titulo, descricao: o.descricao }] : []; });
     const avisos = listaJson<string>(d?.motivos ?? "[]");
     if (!d) avisos.push("ANALISE_NECESSARIA");
     if (fonteMudou || alvoInvalido) avisos.push("FONTE_ALTERADA_APOS_DECISAO");
-    if (regraReaberta) avisos.push("CORRESPONDENCIA_APOS_REGRA_VALOR_DIFERENTE");
+    if (regraReaberta) avisos.push(d?.decisao === DECISAO_WIDESYS ? "CONCILIAR_COM_BASE_BRISA" : "CORRESPONDENCIA_APOS_REGRA_VALOR_DIFERENTE");
     const origemManual = f.origem === "BRISA" && f.proveniencia?.tipo === "CADASTRO_MANUAL";
     const conferidoManualmente = estado === "ATIVO" && d?.decisao === "MANUAL" && d.status === "ATIVO" && !d.destinoChave && hashFonteCorresponde(f, d.hashFonte);
-    const conferidoPorRegra = (f.dominio === "PAGAR" || f.dominio === "RECEBER") && estado === "ATIVO"
-      && d?.decisao === DECISAO_VALOR_DIFERENTE && d.status === "ATIVO" && !d.destinoChave
+    const conferidoNaOrigem = f.origem === "WIDESYS" && f.qualidade === "OK" && d?.decisao === DECISAO_WIDESYS
+      && hashFonteCorresponde(f, d.hashFonte);
+    const conferidoPorRegra = estado === "ATIVO"
+      && (d?.decisao === DECISAO_WIDESYS || ((f.dominio === "PAGAR" || f.dominio === "RECEBER") && d?.decisao === DECISAO_VALOR_DIFERENTE)) && d.status === "ATIVO" && !d.destinoChave
       && !f.cancelado && !f.informativo && hashFonteCorresponde(f, d.hashFonte);
-    linhas.set(f.chave, { ...f, estado, origens: [origemManual ? "MANUAL" : f.proveniencia ? "PLANILHA" : f.origem], fontes: [f.chave], versao: d?.versao ?? 0, candidatos, avisos, contabiliza: estado === "ATIVO" && !f.cancelado && !f.informativo, conferidoManualmente, conferidoPorRegra, divergencias: [] });
+    linhas.set(f.chave, { ...f, estado, origens: [origemManual ? "MANUAL" : f.proveniencia ? "PLANILHA" : f.origem], fontes: [f.chave], versao: d?.versao ?? 0, candidatos, avisos, contabiliza: estado === "ATIVO" && !f.cancelado && !f.informativo, conferidoManualmente, conferidoPorRegra, ...(conferidoNaOrigem ? { conferidoNaOrigem: true } : {}), divergencias: [] });
   }
   for (const d of decisoes) {
     const f = linhas.get(d.chave); const alvo = d.destinoChave ? linhas.get(d.destinoChave) : null;
@@ -181,6 +187,8 @@ export function projetarUnificados(fontes: FonteUnificacao[], decisoes: DecisaoU
 export const MOTIVOS_UNIFICACAO: Record<string,string> = {
   CORRESPONDENCIA_APOS_REGRA_VALOR_DIFERENTE: "Surgiu outro título com valor igual ou não comprovado. Confira novamente antes de incluir este lançamento nos totais.",
   VALORES_DIFERENTES_CONFIRMADOS: "Conferido pela regra de valores diferentes: os títulos permanecem separados e cada valor entra uma única vez nos totais.",
+  WIDESYS_CONFERIDO_NA_ORIGEM: "Dados conferidos pela origem Widesys, conforme orientação do administrador.",
+  CONCILIAR_COM_BASE_BRISA: "Conferir o cruzamento com Brisa/planilhas antes de somar a mesma operação novamente.",
   PAGAMENTO_DESPESA_CONFERIR: "A saída vinculada à nota foi alterada ou excluída. Confira o vínculo; o sistema não cria outro pagamento nem uma nova cobrança.",
   POSSIVEL_DUPLICIDADE: "Existe um registro semelhante. Compare antes de incorporar.", POSSIVEL_DUPLICIDADE_INTERNA: "O próprio sistema contém uma possível repetição.", POSSIVEIS_CORRESPONDENCIAS: "Há registros que podem complementar esta informação.",
   CONFERIR_IMOVEL_E_INQUILINO: "Confirme o imóvel e o inquilino para identificar o contrato existente.", PERIODO_JA_EXISTE_NA_PLANILHA: "Já existem cobranças neste período nas planilhas. Identifique o contrato antes de somar.",

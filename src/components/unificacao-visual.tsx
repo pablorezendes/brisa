@@ -12,11 +12,12 @@ export function registroConferido(item: Pick<LinhaUnificada, "estado" | "conferi
     || (!!item.conferidoPorRegra && item.estado === "ATIVO");
 }
 
-export function EstadoUnificado({ item }: { item: Pick<LinhaUnificada, "estado"> & Partial<Pick<LinhaUnificada, "contabiliza" | "dominio" | "conferidoManualmente" | "conferidoPorRegra" | "cancelado" | "informativo">> }) {
+export function EstadoUnificado({ item }: { item: Pick<LinhaUnificada, "estado"> & Partial<Pick<LinhaUnificada, "contabiliza" | "dominio" | "conferidoManualmente" | "conferidoPorRegra" | "conferidoNaOrigem" | "cancelado" | "informativo">> }) {
   const conferido = registroConferido(item);
   const rotulo = item.estado === "ATIVO"
     ? item.cancelado ? "Cancelado" : conferido ? item.informativo ? "Conferido · informativo" : "Conferido"
       : item.contabiliza && ["RECEBER", "PAGAR", "MOVIMENTO"].includes(item.dominio ?? "") ? "Incluído automaticamente" : "Disponível"
+    : item.conferidoNaOrigem && ["PENDENTE", "REVISAR"].includes(item.estado) ? "Conferido no Widesys · conciliar fontes"
     : item.estado === "VINCULADO" && conferido ? "Conferido · vinculado" : ESTADOS_UNIFICACAO[item.estado];
   return <Badge nivel={conferido && !item.cancelado ? "otimo" : item.estado === "ATIVO" ? "neutro" : item.estado === "VINCULADO" ? "info" : item.estado === "QUARENTENA" ? "critico" : "atencao"}>{rotulo}</Badge>;
 }

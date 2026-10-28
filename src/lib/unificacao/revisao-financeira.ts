@@ -73,7 +73,9 @@ function montarRevisao(atual: Fotografia, chave: string, dominio: DominioRevisao
   const conferidoManualmente = Boolean(linha.conferidoManualmente);
   const conferidoPorRegra = Boolean(linha.conferidoPorRegra) && linha.estado === "ATIVO";
   const podeConcluir = podeDecidir(politica) && (pendente || (linha.estado === "ATIVO" && !conferidoManualmente && !conferidoPorRegra));
-  const motivo = conferidoPorRegra ? "Conferido pela regra: valores totais diferentes. São lançamentos separados; a regra não cria títulos nem pagamentos."
+  const motivo = linha.conferidoNaOrigem ? (linha.contabiliza ? "Conferido pela origem Widesys e incluído uma única vez nos totais."
+    : "Conferido no Widesys. Concilie com a base Brisa/planilhas para não contar a mesma operação duas vezes.")
+    : conferidoPorRegra ? "Conferido pela regra: valores totais diferentes. São lançamentos separados; a regra não cria títulos nem pagamentos."
     : conferidoManualmente ? "Conferência concluída. Sua decisão está registrada."
     : linha.estado === "ATIVO" ? "Este lançamento já está disponível. Confira os dados e confirme abaixo para marcá-lo como conferido."
     : linha.estado === "VINCULADO" ? "O registro está vinculado ao principal e não soma novamente."
