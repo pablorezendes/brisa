@@ -14,6 +14,9 @@
   overflow: hidden;
 }
 .janela-financeira[open] { display: flex; flex-direction: column; }
+.janela-financeira.editor-empreendimento { width: min(580px, calc(100vw - 24px)); }
+.opcoes-empreendimento summary::-webkit-details-marker { display: none; }
+.opcoes-empreendimento > div > a { margin-left: 0; display: flex; padding: 8px 12px; }
 .janela-financeira::backdrop { background: #10282d85; backdrop-filter: blur(3px); }
 .janela-financeira-cabecalho {
   display: flex;

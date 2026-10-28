@@ -4,18 +4,19 @@ import { filtroGovernanca } from "@/lib/governanca/filtros";
 import Link from "next/link";
 import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 import { LinkGovernanca } from "@/components/link-governanca";
-import { Card, PageHeader, btnPrimario, btnSecundario, inputBase } from "@/components/ui";
+import { Card, PageHeader, btnSecundario, inputBase } from "@/components/ui";
+import { EditorEmpreendimento } from "@/components/editor-empreendimento";
+import { OpcoesEmpreendimento } from "@/components/opcoes-empreendimento";
+import { IconeMenu } from "@/components/icones-menu";
+import styles from "./empreendimentos.module.css";
 import { prisma } from "@/lib/db";
 import { normalizar } from "@/lib/dominio/normalizacao";
 import {
   AvisosCadastro,
   EstadoVazio,
-  NavegacaoCadastros,
   StatusCadastro,
 } from "../_components";
 import {
-  atualizarEmpreendimento,
-  criarEmpreendimento,
   definirStatusEmpreendimento,
 } from "../actions";
 
@@ -40,7 +41,9 @@ function urlLista({ q, status, editar }: { q?: string; status?: string; editar?:
 
 export default async function PaginaEmpreendimentos({ searchParams }: { searchParams: SearchParams }) {
   await exigirPaginaAcesso("/cadastros/empreendimentos");
-  const podeEditar = podeExibirAcao(await acessoAtual(), { permissao: "cadastros.editar" });
+  const acesso = await acessoAtual();
+  const podeEditar = podeExibirAcao(acesso, { permissao: "cadastros.editar" });
+  const podeRevisar = podeExibirAcao(acesso, { permissao: "governanca.editar" });
   const sp = await searchParams;
   const q = (sp.q ?? "").trim();
   const status = sp.status === "inativos" ? "inativos" : sp.status === "ativos" ? "ativos" : "todos";
@@ -76,177 +79,53 @@ export default async function PaginaEmpreendimentos({ searchParams }: { searchPa
       : Promise.resolve(null),
   ]);
 
+  const retorno = urlLista({ q, status });
+  const itens = empreendimentos.map(e => ({
+    id: e.id, nome: e.nome, ativo: e.ativo,
+    imoveis: e.unidades.length, unidadesAtivas: e.unidades.filter(u => u.ativo).length,
+    contratos: e.unidades.reduce((total, u) => total + u.contratos.length, 0),
+  }));
+  const totalImoveis = itens.reduce((s, e) => s + e.imoveis, 0);
+  const totalContratos = itens.reduce((s, e) => s + e.contratos, 0);
   return (
-    <div>
-      <PageHeader
-        titulo="Empreendimentos"
-        descricao="Prédios e grupos patrimoniais que organizam os imóveis, contratos e resultados."
-        acoes={
-          <Link href="/cadastros/unidades" className={btnSecundario}>
-            Ver imóveis
-          </Link>
-        }
-      />
-      <NavegacaoCadastros atual="empreendimentos" />
+    <div className={styles.pagina}>
+      <PageHeader titulo="Empreendimentos" descricao="Organize seus prédios e grupos de imóveis em um só lugar."
+        acoes={<><Link href="/cadastros/unidades" className={btnSecundario}>Ver todos os imóveis</Link>{podeEditar && <EditorEmpreendimento retorno={retorno} />}</>} />
       <AvisosCadastro ok={sp.ok} erro={sp.erro} />
-
-      <div className={`grid grid-cols-1 items-start gap-4 ${podeEditar ? "xl:grid-cols-[minmax(250px,0.34fr)_minmax(0,1fr)]" : ""}`}>
-        {podeEditar && <Card className="p-5 xl:sticky xl:top-20">
-          <div className="mb-4">
-            <h2 className="text-base font-bold tracking-tight text-tinta">
-              {editando ? "Editar empreendimento" : "Novo empreendimento"}
-            </h2>
-            <p className="mt-1 text-[12px] leading-relaxed text-tinta-suave">
-              O nome será padronizado para evitar variações e cadastros duplicados.
-            </p>
-          </div>
-          <form action={editando ? atualizarEmpreendimento : criarEmpreendimento}>
-            {editando ? <input type="hidden" name="id" value={editando.id} /> : null}
-            <label htmlFor="nome-empreendimento" className="block text-[12px] font-semibold text-tinta">
-              Nome do empreendimento
-            </label>
-            <input
-              id="nome-empreendimento"
-              name="nome"
-              required
-              maxLength={120}
-              autoComplete="organization"
-              defaultValue={editando?.nome ?? ""}
-              placeholder="Ex.: Edifício Pio XII"
-              className={`${inputBase} mt-1.5 w-full`}
-            />
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button type="submit" className={btnPrimario}>
-                {editando ? "Salvar alterações" : "Cadastrar"}
-              </button>
-              {editando ? (
-                <Link href={urlLista({ q, status })} className={btnSecundario}>
-                  Cancelar
-                </Link>
-              ) : null}
-            </div>
+      {editando && <EditorEmpreendimento key={editando.id} abrirInicial retorno={retorno} item={itens.find(e => e.id === editando.id) ?? editando} />}
+      <Card className={styles.painel}>
+        <div className={styles.cabecalho}>
+          <div><h2 className="text-base font-bold text-tinta">Seus empreendimentos</h2><p className="mt-1 text-xs text-tinta-suave">Encontre um cadastro, edite o nome ou acesse seus imóveis.</p></div>
+          <form method="get" action="/cadastros/empreendimentos" className={styles.filtros}>
+            <label className={styles.busca}><span className="mb-1.5 block text-xs font-semibold">Buscar empreendimento</span><input type="search" name="q" defaultValue={q} placeholder="Digite o nome para buscar" className={`${inputBase} w-full`} /></label>
+            <label><span className="mb-1.5 block text-xs font-semibold">Situação</span><select name="status" defaultValue={status} className={`${inputBase} w-full`}><option value="todos">Todos</option><option value="ativos">Ativos</option><option value="inativos">Inativos</option></select></label>
+            <button type="submit" className={btnSecundario}>Filtrar</button>
+            {(q || status !== "todos") && <Link href="/cadastros/empreendimentos" className="py-2 text-xs font-semibold text-oliva-escura underline underline-offset-4">Limpar filtros</Link>}
           </form>
-        </Card>}
-
-        <Card>
-          <div className="flex flex-col gap-3 border-b border-contorno px-4 py-4 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h2 className="text-sm font-bold text-tinta">Base de empreendimentos</h2>
-              <p className="mt-0.5 text-[11px] text-tinta-suave">
-                {empreendimentos.length} resultado(s) nos filtros atuais
-              </p>
-            </div>
-            <form method="get" action="/cadastros/empreendimentos" className="flex flex-wrap items-end gap-2">
-              <label className="text-[10px] font-bold uppercase tracking-[0.08em] text-tinta-suave">
-                Buscar
-                <input
-                  type="search"
-                  name="q"
-                  defaultValue={q}
-                  placeholder="Nome do empreendimento"
-                  className={`${inputBase} mt-1 block w-52 py-1.5`}
-                />
-              </label>
-              <label className="text-[10px] font-bold uppercase tracking-[0.08em] text-tinta-suave">
-                Status
-                <select name="status" defaultValue={status} className={`${inputBase} mt-1 block py-1.5`}>
-                  <option value="todos">Todos</option>
-                  <option value="ativos">Ativos</option>
-                  <option value="inativos">Inativos</option>
-                </select>
-              </label>
-              <button type="submit" className={btnSecundario}>Filtrar</button>
-              {q || status !== "todos" ? (
-                <Link href="/cadastros/empreendimentos" className="pb-2 text-[11px] font-bold text-tinta-suave hover:text-tinta">
-                  Limpar
-                </Link>
-              ) : null}
-            </form>
-          </div>
-
-          {empreendimentos.length === 0 ? (
-            <EstadoVazio
-              titulo="Nenhum empreendimento encontrado"
-              texto={podeEditar ? "Revise a busca e os filtros ou cadastre um novo empreendimento ao lado." : "Revise a busca e os filtros."}
-            />
-          ) : (
-            <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
-              <table className="tabela tabela--acoes">
-                <caption className="sr-only">Empreendimentos cadastrados</caption>
-                <thead>
-                  <tr>
-                    <th>Empreendimento</th>
-                    <th>Status</th>
-                    <th className="text-right">Imóveis</th>
-                    <th className="text-right">Contratos abertos</th>
-                    <th className="text-right">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {empreendimentos.map((empreendimento) => {
-                    const unidadesAtivas = empreendimento.unidades.filter((u) => u.ativo).length;
-                    const contratosAbertos = empreendimento.unidades.reduce(
-                      (total, unidade) => total + unidade.contratos.length,
-                      0,
-                    );
-                    return (
-                      <tr key={empreendimento.id}>
-                        <td>
-                          <div className="font-semibold text-tinta">{empreendimento.nome}</div>
-                          <div className="mt-0.5 text-[10px] text-tinta-suave">
-                            {unidadesAtivas} imóvel(is) ativo(s)
-                          </div>
-                        </td>
-                        <td><StatusCadastro ativo={empreendimento.ativo} /></td>
-                        <td className="text-right font-mono tabular-nums">{empreendimento.unidades.length}</td>
-                        <td className="text-right font-mono tabular-nums">{contratosAbertos}</td>
-                        <td>
-                          <div className="flex flex-wrap items-center justify-end gap-1.5">
-                            {podeEditar && <Link
-                              href={urlLista({ q, status, editar: empreendimento.id })}
-                              className={`${btnSecundario} min-h-8 px-2.5 py-1 text-[11px]`}
-                            >
-                              Editar
-                            </Link>}
-                            <LinkGovernanca tipo="EMPREENDIMENTO" id={empreendimento.id} />
-                            <ExcluirRegistroLink tipo="EMPREENDIMENTO" origemId={empreendimento.id} />
-                            {podeEditar && (empreendimento.ativo && unidadesAtivas > 0 ? (
-                              <button
-                                type="button"
-                                disabled
-                                title="Desative primeiro os imóveis sem uso. Empreendimentos com imóveis ativos precisam permanecer ativos."
-                                className={`${btnSecundario} min-h-8 px-2.5 py-1 text-[11px]`}
-                                aria-label={`${empreendimento.nome} não pode ser desativado porque possui imóveis ativos`}
-                              >
-                                Em uso
-                              </button>
-                            ) : (
-                              <form action={definirStatusEmpreendimento}>
-                                <input type="hidden" name="id" value={empreendimento.id} />
-                                <input type="hidden" name="ativo" value={empreendimento.ativo ? "0" : "1"} />
-                                <button
-                                  type="submit"
-                                  className={`${btnSecundario} min-h-8 px-2.5 py-1 text-[11px]`}
-                                  aria-label={`${empreendimento.ativo ? "Desativar" : "Reativar"} ${empreendimento.nome}`}
-                                >
-                                  {empreendimento.ativo ? "Desativar" : "Reativar"}
-                                </button>
-                              </form>
-                            ))}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <div className="border-t border-contorno px-4 py-3 text-[11px] leading-relaxed text-tinta-suave">
-            Somente empreendimentos sem imóveis ativos podem ser desativados. Nenhum contrato ou histórico financeiro é apagado.
-          </div>
-        </Card>
-      </div>
+        </div>
+        <div className={styles.resumo} aria-label="Resumo dos resultados filtrados">
+          <span><strong>{itens.length}</strong> empreendimentos{q || status !== "todos" ? " encontrados" : " cadastrados"}</span><span><strong>{totalImoveis}</strong> imóveis</span><span><strong>{totalContratos}</strong> contratos abertos</span>
+        </div>
+        {itens.length === 0 ? <EstadoVazio titulo="Nenhum empreendimento encontrado" texto={q || status !== "todos" ? "Tente outro nome ou limpe os filtros para ver todos os cadastros." : podeEditar ? "Clique em Novo empreendimento para começar a organizar seus imóveis." : "Nenhum empreendimento disponível para consulta."} /> :
+          <ul className={styles.lista} aria-label="Empreendimentos cadastrados">
+            {itens.map(item => <li key={item.id} className={styles.linha}>
+              <div className={styles.identidade}><span className={styles.icone}><IconeMenu nome="empreendimentos" tamanho={23} /></span><div className="min-w-0"><h3 className="break-words text-sm font-bold leading-snug text-tinta">{item.nome}</h3><p className="mt-1 text-xs text-tinta-suave">{item.unidadesAtivas ? `${item.unidadesAtivas} ${item.unidadesAtivas === 1 ? "imóvel ativo" : "imóveis ativos"}` : "Sem imóveis ativos"}</p></div></div>
+              <div className={styles.situacao}><StatusCadastro ativo={item.ativo} /></div>
+              <dl className={styles.numeros}><div><dt>Imóveis</dt><dd>{item.imoveis}</dd></div><div><dt>Contratos abertos</dt><dd>{item.contratos}</dd></div></dl>
+              <div className={styles.acoes}>
+                <Link href={`/cadastros/unidades?${new URLSearchParams({ empreendimento: item.id })}`} className="rounded-lg px-2 py-2 text-xs font-semibold text-oliva-escura hover:bg-oliva/5" aria-label={`Ver imóveis de ${item.nome}`}>Ver imóveis <span aria-hidden="true">↗</span></Link>
+                {podeEditar && <EditorEmpreendimento item={item} retorno={retorno} />}
+                {(podeEditar || podeRevisar) && <OpcoesEmpreendimento nome={item.nome}>
+                  <LinkGovernanca tipo="EMPREENDIMENTO" id={item.id}>Revisar cadastro</LinkGovernanca>
+                  {podeEditar && (item.ativo && item.unidadesAtivas > 0 ? <p className="px-3 py-2 text-xs leading-relaxed text-tinta-suave">Para desativar, desative primeiro os imóveis deste empreendimento.</p> :
+                    <form action={definirStatusEmpreendimento}><input type="hidden" name="id" value={item.id} /><input type="hidden" name="ativo" value={item.ativo ? "0" : "1"} /><button type="submit" className="w-full rounded-md px-3 py-2 text-left text-xs font-semibold hover:bg-papel">{item.ativo ? "Desativar empreendimento" : "Reativar empreendimento"}</button></form>)}
+                  <div className="mt-1 border-t border-contorno pt-1"><ExcluirRegistroLink tipo="EMPREENDIMENTO" origemId={item.id} /></div>
+                </OpcoesEmpreendimento>}
+              </div>
+            </li>)}
+          </ul>}
+        <p className="border-t border-contorno px-5 py-4 text-xs leading-relaxed text-tinta-suave">{podeEditar ? <>Use <strong>Editar</strong> para ajustar o nome e <strong>Ver imóveis</strong> para gerenciar as unidades. As demais ações ficam em <strong>Mais opções (•••)</strong>.</> : <>Use <strong>Ver imóveis</strong> para consultar as unidades de cada empreendimento.</>}</p>
+      </Card>
     </div>
   );
 }

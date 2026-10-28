@@ -114,65 +114,44 @@ function dadosCobrancaLocatario(formData: FormData): {
 // Empreendimentos
 // ---------------------------------------------------------------------------
 
-export async function criarEmpreendimento(formData: FormData): Promise<void> {
+/** Resultado local: validações permanecem no editor, sem perder o nome digitado. */
+export async function salvarEmpreendimentoNaTela(formData: FormData): Promise<{ ok?: string; erro?: string }> {
   await exigirPermissaoAcesso("cadastros.editar", { global: true });
   await exigirSessao();
+  const id = campo(formData, "id");
   const nomeInformado = nomeValido(campo(formData, "nome"), 120);
-  if (!nomeInformado) {
-    voltar(ROTAS.empreendimentos, {
-      erro: "Informe um nome de empreendimento com até 120 caracteres.",
-    });
+  if (!nomeInformado) return { erro: "Informe um nome de empreendimento com até 120 caracteres." };
+  if (id) {
+    if (!await recursoEstaAtivo(prisma, "EMPREENDIMENTO", id)) return { erro: "Este cadastro foi excluído ou mesclado. Use Revisar e resolver para restaurar." };
+    if (!await prisma.empreendimento.findUnique({ where: { id } })) return { erro: "Empreendimento não encontrado." };
   }
-
-  const nome = normalizar(nomeInformado);
   try {
-    await prisma.empreendimento.create({ data: { nome } });
+    const data = { nome: normalizar(nomeInformado) };
+    if (id) await prisma.empreendimento.update({ where: { id }, data });
+    else await prisma.empreendimento.create({ data });
   } catch (erro) {
-    voltar(ROTAS.empreendimentos, {
-      erro: erroDeUnicidade(erro)
-        ? "Já existe um empreendimento com esse nome."
-        : "Não foi possível cadastrar o empreendimento.",
-    });
+    return { erro: erroDeUnicidade(erro) ? "Já existe um empreendimento com esse nome. Escolha outro nome ou edite o cadastro existente." : "Não foi possível salvar. Tente novamente." };
   }
+  revalidarCadastros("/contratos", "/recebimentos", "/paineis/empreendimentos", "/executivo");
+  return { ok: id ? "Empreendimento atualizado." : "Empreendimento cadastrado." };
+}
 
-  revalidarCadastros("/contratos", "/paineis/empreendimentos", "/executivo");
-  voltar(ROTAS.empreendimentos, { ok: "Empreendimento cadastrado." });
+export async function criarEmpreendimento(formData: FormData): Promise<void> {
+  await exigirPermissaoAcesso("cadastros.editar", { global: true });
+  const dados = new FormData();
+  dados.set("nome", campo(formData, "nome"));
+  voltar(ROTAS.empreendimentos, await salvarEmpreendimentoNaTela(dados));
 }
 
 export async function atualizarEmpreendimento(formData: FormData): Promise<void> {
   await exigirPermissaoAcesso("cadastros.editar", { global: true });
-  await exigirSessao();
   const id = campo(formData, "id");
-  if (!await recursoEstaAtivo(prisma, "EMPREENDIMENTO", id)) voltar(ROTAS.empreendimentos, { erro: "Este cadastro foi excluído ou mesclado. Use Revisar e resolver para restaurar." });
-  const nomeInformado = nomeValido(campo(formData, "nome"), 120);
-  if (!id || !nomeInformado) {
-    voltar(ROTAS.empreendimentos, {
-      erro: "Informe um empreendimento e um nome válido.",
-      editar: id || undefined,
-    });
+  if (!id) {
+    await exigirPermissaoAcesso("cadastros.editar", { global: true });
+    voltar(ROTAS.empreendimentos, { erro: "Informe um empreendimento válido." });
   }
-
-  const existente = await prisma.empreendimento.findUnique({ where: { id } });
-  if (!existente) {
-    voltar(ROTAS.empreendimentos, { erro: "Empreendimento não encontrado." });
-  }
-
-  try {
-    await prisma.empreendimento.update({
-      where: { id },
-      data: { nome: normalizar(nomeInformado) },
-    });
-  } catch (erro) {
-    voltar(ROTAS.empreendimentos, {
-      erro: erroDeUnicidade(erro)
-        ? "Já existe outro empreendimento com esse nome."
-        : "Não foi possível atualizar o empreendimento.",
-      editar: id,
-    });
-  }
-
-  revalidarCadastros("/contratos", "/recebimentos", "/paineis/empreendimentos", "/executivo");
-  voltar(ROTAS.empreendimentos, { ok: "Empreendimento atualizado." });
+  const resultado = await salvarEmpreendimentoNaTela(formData);
+  voltar(ROTAS.empreendimentos, { ...resultado, ...(resultado.erro ? { editar: id } : {}) });
 }
 
 export async function definirStatusEmpreendimento(formData: FormData): Promise<void> {
