@@ -101,6 +101,29 @@ describe("serviço transacional de unificação", () => {
     expect(fontes).toEqual(antes);
   });
 
+  it("libera a pendência antiga baseada apenas no mês e preserva os dois títulos com valores diferentes", async () => {
+    fontes = [fonte("BRISA", "planilha"), { ...fonte("WIDESYS", "externo"), valor: 82000, aberto: 52000 }];
+    const externo = fontes[1];
+    await prisma.unificacaoRegistro.create({ data: { chave: externo.chave, dominio: externo.dominio, origem: externo.origem,
+      origemId: externo.origemId, hashFonte: externo.hash, status: "PENDENTE", decisao: "REGRA_WIDESYS_ORIGEM" } });
+    await expect(conferirOrigemWidesys(prisma, true)).resolves.toMatchObject({ atualizados: 1, conferidos: 1 });
+    const { linhas } = await lerOperacaoUnificada(prisma);
+    expect(linhas.find(l => l.chave === externo.chave)).toMatchObject({ conferidoNaOrigem: true, contabiliza: true });
+    expect(linhas.filter(l => l.contabiliza).reduce((s, l) => s + l.valor!, 0)).toBe(182000);
+    expect((await conferirOrigemWidesys(prisma, true)).atualizados).toBe(0);
+  });
+
+  it("reabre o cruzamento conhecido se as duas fontes passam a ser principais", async () => {
+    fontes = [fonte("WIDESYS", "primeiro")];
+    await analisarUnificacao(prisma, "teste");
+    fontes.push(fonte("BRISA", "novo"));
+    await analisarUnificacao(prisma, "teste");
+    await prisma.unificacaoRegistro.update({ where: { chave: fontes[1].chave }, data: { status: "ATIVO" } });
+    const { linhas } = await lerOperacaoUnificada(prisma);
+    expect(linhas[0]).toMatchObject({ conferidoNaOrigem: true, estado: "REVISAR", contabiliza: false });
+    expect(linhas.filter(l => l.contabiliza).map(l => l.chave)).toEqual([fontes[1].chave]);
+  });
+
   it("confirma origem sem duplicar o recebimento da planilha e preserva vínculo manual", async () => {
     await analisarUnificacao(prisma, "teste");
     await conferirOrigemWidesys(prisma, true);

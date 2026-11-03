@@ -66,7 +66,7 @@ describe("central de conferência financeira", () => {
     expect(html).toContain("sem sincronização em tempo real");
     expect(html).toContain("filtro “De onde veio”");
     expect(html).toContain("“Reanalisar correspondências” revisa o que já está no Brisa");
-    expect(html).toContain("Não some as duas bases");
+    expect(html).toContain("O Executivo usa estes títulos e movimentos para calcular os indicadores financeiros");
     expect(html).toContain("08/10/2026, 12:00");
     expect(html).toContain("07/10/2026, 12:00");
     expect(html).toContain("lote com inconsistências");

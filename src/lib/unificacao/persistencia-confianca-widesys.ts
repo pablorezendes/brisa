@@ -21,8 +21,7 @@ export async function conferirOrigemWidesys(db: PrismaClient, aplicar = false) {
     const resumo = { modo: aplicar ? "APLICADO" : "PREVIA", conferidos: 0, cruzamentos: 0, preservados: 0, atualizados: 0 };
     for (const f of fontes.filter(f => f.origem === "WIDESYS")) {
       const anterior = anteriores.get(f.chave);
-      const dados = planejarConfiancaWidesys(f, candidatosPara(f, indice.para(f), destinos), anterior,
-        indice.competenciasReceberBrisa.has(f.competencia), anteriores);
+      const dados = planejarConfiancaWidesys(f, candidatosPara(f, indice.para(f), destinos), anterior, anteriores);
       if (!dados) { resumo.preservados++; continue; }
       if (dados.status === "PENDENTE") resumo.cruzamentos++; else resumo.conferidos++;
       if (anterior && Object.entries(dados).every(([k, v]) => anterior[k as keyof typeof anterior] === v)) continue;

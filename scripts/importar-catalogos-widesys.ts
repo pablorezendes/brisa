@@ -1,3 +1,4 @@
+import { concluirImportacaoWidesys } from "./concluir-importacao-widesys";
 import { resolve } from "node:path";
 
 import { PrismaClient } from "@prisma/client";
@@ -42,7 +43,8 @@ async function main(): Promise<void> {
 
   const prisma = new PrismaClient();
   try {
-    console.log(JSON.stringify(await importarPlanoCatalogosWidesys(prisma, plano), null, 2));
+    const relatorio = await importarPlanoCatalogosWidesys(prisma, plano);
+    await concluirImportacaoWidesys(prisma, relatorio);
   } finally {
     await prisma.$disconnect();
   }

@@ -44,8 +44,8 @@ export async function analisarUnificacao(db: PrismaClient, usuarioId: string, dr
       const candidatos = candidatosPara(f, indiceCandidatos.para(f), destinos);
       const decisao = avaliarFonte(f,candidatos,porChave,anterior,anteriores,indiceCandidatos.competenciasReceberBrisa);
       const alvo = decisao.destinoChave ? porChave.get(decisao.destinoChave) : null;
-      const conferenciaOrigem = planejarConfiancaWidesys(f, candidatos, anterior, indiceCandidatos.competenciasReceberBrisa.has(f.competencia), anteriores);
-      const conferenciaValor = conferenciaOrigem ? undefined : regraValores.elegiveis.get(f.chave);
+      const conferenciaValor = regraValores.elegiveis.get(f.chave);
+      const conferenciaOrigem = conferenciaValor ? null : planejarConfiancaWidesys(f, candidatos, anterior, anteriores);
       if (conferenciaValor) conferidosPorValores++;
       const dados = {
         dominio: f.dominio, origem: f.origem, origemId: f.origemId,

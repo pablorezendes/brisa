@@ -48,7 +48,6 @@ describe("tabelas sem recorte de ações", () => {
     "src/app/(app)/financeiro/conciliacao/page.tsx",
     "src/app/(app)/financeiro/importacoes/page.tsx",
     "src/app/(app)/financeiro/notas-fiscais/page.tsx",
-    "src/app/(app)/cadastros/empreendimentos/page.tsx",
     "src/app/(app)/cadastros/locatarios/page.tsx",
     "src/app/(app)/cadastros/unidades/page.tsx",
     "src/app/(app)/cadastros/pessoas/page.tsx",
@@ -65,6 +64,15 @@ describe("tabelas sem recorte de ações", () => {
     expect(codigo).toContain("tabela tabela--acoes");
     expect(codigo).toContain('role="region"');
     expect(codigo).toContain("tabIndex={0}");
+  });
+
+  it("a lista de empreendimentos mantém suas ações no cartão em telas estreitas", () => {
+    const pagina = ler("src/app/(app)/cadastros/empreendimentos/page.tsx");
+    const css = ler("src/app/(app)/cadastros/empreendimentos/empreendimentos.module.css");
+    expect(pagina).toContain('aria-label="Empreendimentos cadastrados"');
+    expect(pagina).toContain('<div className={styles.acoes}>');
+    expect(pagina).toContain('<OpcoesEmpreendimento');
+    expect(css).toMatch(/@container \(max-width: 520px\)[\s\S]*?\.acoes\s*\{[^}]*grid-column: 1 \/ -1/);
   });
 
   it("a operação unificada usa a tabela responsiva extraída com DTO explícito", () => {

@@ -90,7 +90,7 @@ export default async function PaginaConferirDados() {
             <p>Registros aceitos participam da visão unificada. Possíveis duplicatas, decisões a revisar e inconsistências ficam separados. Cópias vinculadas mantêm o histórico sem somar novamente. Transferências, cancelamentos e registros informativos podem ficar sem efeito no saldo; exclusões com histórico ficam fora desta projeção.</p>
             <div className="border-t border-contorno pt-4">
               <h3 className="font-semibold text-tinta">Por que outro painel pode mostrar números diferentes?</h3>
-              <p className="mt-2">Estas listas usam a visão unificada. O Executivo, as locações e o livro original preservam a base de gestão e suas regras de apuração. Não some as duas bases nem espere igualdade enquanto houver correspondências pendentes.</p>
+              <p className="mt-2">O Executivo usa estes títulos e movimentos para calcular os indicadores financeiros. Confira a mesma competência e a origem em “Composição por origem”. As telas de locação e do livro original mostram seus lançamentos operacionais.</p>
               <p className="mt-2">Inclusão automática não comprova conciliação bancária nem fechamento contábil. Não alteramos cálculos nem aprovamos correspondências para fazer os números coincidirem.</p>
             </div>
           </div>

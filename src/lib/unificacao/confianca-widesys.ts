@@ -13,13 +13,14 @@ export function registrosDistintosWidesys(a: FonteUnificacao, b: FonteUnificacao
 }
 
 export function planejarConfiancaWidesys(f: FonteUnificacao, candidatos: CandidatoUnificacao[],
-  anterior: DecisaoUnificacao | undefined, periodoReceberBrisa: boolean, decisoes: ReadonlyMap<string, DecisaoUnificacao> = new Map()) {
+  anterior: DecisaoUnificacao | undefined, decisoes: ReadonlyMap<string, DecisaoUnificacao> = new Map()) {
   if (f.origem !== "WIDESYS" || f.qualidade !== "OK" || f.vinculoExplicito || anterior?.destinoChave
     || (anterior && !["AUTOMATICA", DECISAO_WIDESYS].includes(anterior.decisao))) return null;
   const cruzamentos = candidatos.filter(c => c.chave.startsWith("BRISA:"));
   const principalPreservado = anterior?.status === "ATIVO" && hashFonteCorresponde(f, anterior.hashFonte)
     && cruzamentos.every(c => !decisoes.has(c.chave) || decisoes.get(c.chave)?.status === "PENDENTE");
-  const pendente = !principalPreservado && (cruzamentos.length > 0 || (f.dominio === "RECEBER" && periodoReceberBrisa));
+  // Compartilhar apenas a competência com uma planilha não identifica o mesmo título.
+  const pendente = !principalPreservado && cruzamentos.length > 0;
   return { status: pendente ? "PENDENTE" : "ATIVO", decisao: DECISAO_WIDESYS,
     hashFonte: f.hash, candidatos: JSON.stringify(cruzamentos),
     motivos: JSON.stringify(["WIDESYS_CONFERIDO_NA_ORIGEM", ...(pendente ? ["CONCILIAR_COM_BASE_BRISA"] : [])]) };

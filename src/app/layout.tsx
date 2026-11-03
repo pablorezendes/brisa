@@ -5,7 +5,7 @@ import "./globals.css";
 const sourceSerif = Source_Serif_4({
   variable: "--font-source-serif",
   subsets: ["latin"],
-  weight: ["400", "600", "700"],
+  weight: "variable",
 });
 
 const publicSans = Public_Sans({

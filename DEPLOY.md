@@ -415,8 +415,7 @@ de apagar definitivamente. Nenhuma exclusão é executada na atualização do ap
 arquivo) de situação (incluído, pendente, inconsistente ou cópia vinculada).
 Não classifica registros antigos como manuais por suposição. As contagens são
 do banco no qual a aplicação está rodando: não são uma consulta ao legado ao vivo.
-Os indicadores do Executivo/locações/livro original preservam a apuração nativa,
-identificada nas telas, e não devem ser somados à visão unificada.
+No Executivo, os indicadores financeiros usam os títulos e movimentos principais da visão unificada. Locações e livro original mostram a operação dos respectivos módulos.
 
 Importações parciais e análises automáticas não significam conciliação financeira
 concluída. Linhas Excel pendentes não participam do caixa; sua aprovação individual
@@ -1179,6 +1178,8 @@ Quando há correspondência com Brisa/planilhas, a origem aparece como **Conferi
 no Widesys · conciliar fontes**; a decisão de vínculo continua necessária antes
 de somar outra vez. O principal já aceito é preservado. Decisões manuais,
 exclusões e inconsistências de importação não são sobrescritas.
+
+Na atualização de novembro, execute a conferência novamente para liberar recebíveis retidos apenas por haver uma planilha na mesma competência. O Executivo identifica a participação do Widesys nos títulos e no caixa do período. Novas importações aplicadas executam a conferência ao concluir a carga.
 
 A rotina muda apenas metadados de conferência. Não cria títulos, pagamentos ou
 movimentações, nem modifica datas e valores. É idempotente e gera um backup

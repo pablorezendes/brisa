@@ -140,8 +140,9 @@ export function projetarUnificados(fontes: FonteUnificacao[], decisoes: DecisaoU
     const propostas = d?.decisao === DECISAO_WIDESYS ? candidatosAtuaisDaRegra(f).filter(c => c.chave.startsWith("BRISA:"))
       : d?.decisao === DECISAO_VALOR_DIFERENTE ? candidatosAtuaisDaRegra(f)
       : d && !reavaliarNativo ? listaJson<CandidatoUnificacao>(d.candidatos) : candidatosNovos(f);
+    const conhecidas = d?.decisao === DECISAO_WIDESYS ? new Set(listaJson<CandidatoUnificacao>(d.candidatos).map(c => c.chave)) : null;
     const regraReaberta = d?.status === "ATIVO" && (d.decisao === DECISAO_VALOR_DIFERENTE ? propostas.length > 0
-      : d.decisao === DECISAO_WIDESYS && propostas.some(c => !listaJson<CandidatoUnificacao>(d.candidatos).some(antes => antes.chave === c.chave)));
+      : d.decisao === DECISAO_WIDESYS && propostas.some(c => !conhecidas?.has(c.chave) || decisoesPorChave.get(c.chave)?.status === "ATIVO"));
     // Cadastros e lançamentos novos do próprio Brisa não exigem uma migração
     // para funcionar. Ainda passam pela mesma checagem de repetição interna.
     const estadoNovo = (!d || reavaliarNativo) && f.origem === "BRISA"

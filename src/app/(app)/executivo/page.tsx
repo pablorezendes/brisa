@@ -1,5 +1,10 @@
-import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
-import { BaseFinanceira } from "@/components/base-financeira";
+import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
+import { pode, podeAbrirRota } from "@/lib/acesso/politica";
+import { operacaoNaRequisicao } from "@/lib/consultas/operacao-na-requisicao";
+import { chavesRestritasUnificacao } from "@/lib/unificacao/privacidade";
+import { consolidarExecutivo, mesPadraoConsolidado } from "@/lib/unificacao/executivo-consolidado";
+import { calcularApuracao, dadosTemporadaDoPeriodo } from "@/lib/consultas/temporada";
+import { prisma } from "@/lib/db";
 import Link from "next/link";
 import {
   Ajuda,
@@ -20,11 +25,10 @@ import {
 import { formatarBRL } from "@/lib/dominio/dinheiro";
 import {
   formatarCompetencia,
-  NOME_MES_ABREV,
   NOME_MES_COMPLETO,
   parseCompetencia,
 } from "@/lib/dominio/normalizacao";
-import { parsePeriodo, rotulosCompetencias } from "@/lib/dominio/periodo";
+import { hojeISO, mesesEntre, parsePeriodo, rotulosCompetencias } from "@/lib/dominio/periodo";
 import {
   nivelAtraso,
   nivelInadimplencia,
@@ -34,20 +38,7 @@ import {
   nivelVariacao,
   type Nivel,
 } from "@/lib/dominio/semaforo";
-import {
-  caixaDoPeriodoPorMes,
-  dadosExecutivos,
-  empreendimentosDoPeriodo,
-  mesPadrao,
-  type CaixaMensal,
-  type Pendente,
-  type Reajuste,
-} from "@/lib/consultas/executivo";
-import {
-  contratosAReajustarDoPeriodo,
-  kpisDoPeriodo,
-  pendentesDoPeriodo,
-} from "@/lib/consultas/relatorios";
+import { contratosAReajustarDoPeriodo } from "@/lib/consultas/relatorios";
 import {
   BarraComposicao,
   BarrasDuplas,
@@ -67,47 +58,6 @@ function pct(v: number | null): string {
   return `${(v * 100).toFixed(1).replace(".", ",")}%`;
 }
 
-/**
- * View-model único: os dois modos (mês e período) preenchem os mesmos campos.
- * Modo mês = janela de 1 competência + séries do ano (JAN..DEZ, destaque no
- * mês em tela). Modo período = janela de N competências + séries da própria
- * janela, com rótulos vindos de rotulosCompetencias.
- */
-interface VmExecutivo {
-  naJanela: string; // "em junho" | "no período" — embutido nos textos
-  devido: number;
-  recebido: number;
-  taxa: number | null;
-  inadQtde: number;
-  inadValor: number;
-  saldoCaixa: number;
-  temCaixa: boolean;
-  caixaReceita: number;
-  caixaDespesa: number;
-  lucroTemporada: number | null;
-  temporadaDetalhe: string;
-  reajustes: Reajuste[];
-  pendentes: (Pendente & { mes?: string })[];
-  serieDevido: number[];
-  serieRecebido: number[];
-  caixaLinhas: (CaixaMensal & { rotulo: string })[];
-  rotulos?: string[]; // eixo dos gráficos (undefined = JAN..DEZ)
-  destaque?: number; // posição 1-based da coluna destacada (só no modo mês)
-  linhasSerie: {
-    rotulo: string;
-    devido: number;
-    recebido: number;
-    pendentes: number;
-  }[];
-  porEmp: {
-    id: string;
-    nome: string;
-    recebido: number;
-    ticket: number | null;
-  }[];
-  comMesNaTabela: boolean;
-}
-
 export default async function PaginaExecutivo({
   searchParams,
 }: {
@@ -116,138 +66,51 @@ export default async function PaginaExecutivo({
   await exigirPaginaAcesso("/executivo");
   const sp = await searchParams;
   const periodo = parsePeriodo(sp.de, sp.ate);
-  const mes = sp.mes && /^\d{4}-\d{2}$/.test(sp.mes) ? sp.mes : await mesPadrao();
+  const [operacao, acesso] = await Promise.all([operacaoNaRequisicao(), acessoAtual()]);
+  const restritas = pode(acesso, "comissoes.ver") ? new Set<string>() : chavesRestritasUnificacao(operacao.fontes, operacao.decisoes);
+  const linhas = operacao.linhas.filter(l => !restritas.has(l.chave));
+  const hoje = hojeISO();
+  const mes = periodo?.meses[0] ?? (sp.mes && /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.mes) ? sp.mes : mesPadraoConsolidado(linhas, hoje));
   const { ano, mes: mesNum } = parseCompetencia(mes);
   const nomeMes = NOME_MES_COMPLETO[mesNum].toLowerCase();
-
-  // links de aprofundamento carregam a MESMA janela em tela — os destinos
-  // aceitam ?de/?ate e o clique tem de bater com o que o alerta/KPI afirma
+  const meses = periodo?.meses ?? [mes];
+  const mesesSerie = periodo?.meses ?? mesesEntre(`${ano}-01`, `${ano}-12`);
+  const rotulos = rotulosCompetencias(mesesSerie);
+  const consolidado = consolidarExecutivo(linhas, mesesSerie, meses, hoje);
+  const [temporada, reajustes, fechamento] = await Promise.all([
+    dadosTemporadaDoPeriodo(meses),
+    contratosAReajustarDoPeriodo(meses),
+    periodo ? null : prisma.fechamentoMensal.findUnique({ where: { mesLancamento: mes }, select: { id: true } }),
+  ]);
+  const apuracao = calcularApuracao(temporada);
+  const temTemporada = temporada.limpezas.length + temporada.recebimentos.length + temporada.despesas.length > 0;
+  const vm = {
+    ...consolidado,
+    naJanela: periodo ? "no período" : `em ${nomeMes}`,
+    lucroTemporada: temTemporada ? apuracao.lucro : null,
+    temporadaDetalhe: temTemporada ? `entrou ${formatarBRL(apuracao.receita)}, gastou ${formatarBRL(apuracao.despesa)}` : "Sem lançamentos de temporada",
+    reajustes: reajustes.map(r => ({ empreendimento: r.empreendimento, localizacao: r.identificacao, locatario: r.locatario ?? "Desocupado", valorBase: r.valorBase })),
+    rotulos,
+    serieDevido: consolidado.serie.map(m => m.devido),
+    serieRecebido: consolidado.serie.map(m => m.recebido),
+    linhasSerie: consolidado.serie.map((m, i) => ({ ...m, rotulo: rotulos[i] })),
+    caixaLinhas: consolidado.serie.map((m, i) => ({ ...m.caixa, rotulo: rotulos[i] })),
+    comMesNaTabela: meses.length > 1,
+  };
+  const mesAnterior = !periodo && mesNum > 1 ? consolidado.serie[mesNum - 2] : null;
+  const caixaAnterior = mesAnterior?.caixa;
   const qs = periodo ? `de=${periodo.de}&ate=${periodo.ate}` : `mes=${mes}`;
-
-  // Modo mês mantém a consulta completa de sempre; no período ela não roda.
-  const d = periodo ? null : await dadosExecutivos(mes);
-
-  const vm: VmExecutivo = periodo
-    ? await (async () => {
-        const [k, emp, caixaJanela, reajustesP, pendentesP] = await Promise.all([
-          kpisDoPeriodo(periodo.meses),
-          empreendimentosDoPeriodo(periodo.meses),
-          caixaDoPeriodoPorMes(periodo.meses),
-          contratosAReajustarDoPeriodo(periodo.meses),
-          pendentesDoPeriodo(periodo.meses),
-        ]);
-        const rotulos = rotulosCompetencias(periodo.meses);
-        const pendPorMes = new Map<string, number>();
-        for (const p of pendentesP)
-          pendPorMes.set(p.mes, (pendPorMes.get(p.mes) ?? 0) + 1);
-        const caixaReceita = caixaJanela.reduce((a, c) => a + c.receita, 0);
-        const caixaDespesa = caixaJanela.reduce(
-          (a, c) => a + c.despesaAL + c.despesaCH + c.despesaOutros,
-          0
-        );
-        return {
-          naJanela: "no período",
-          devido: k.devidoTotal,
-          recebido: k.recebidoTotal,
-          taxa: k.taxaRecebimento,
-          inadQtde: k.inadimplencia.quantidade,
-          inadValor: k.inadimplencia.valorDevido,
-          saldoCaixa: caixaReceita - caixaDespesa,
-          temCaixa: caixaReceita > 0 || caixaDespesa > 0,
-          caixaReceita,
-          caixaDespesa,
-          lucroTemporada: k.lucroTemporada,
-          temporadaDetalhe: "receitas − despesas − limpezas do período",
-          reajustes: reajustesP.map((r) => ({
-            empreendimento: r.empreendimento,
-            localizacao: r.identificacao,
-            locatario: r.locatario ?? "Desocupado",
-            valorBase: r.valorBase,
-          })),
-          pendentes: pendentesP.map((p) => ({
-            empreendimento: p.empreendimento,
-            locatario: p.locatario ?? "—",
-            localizacao: p.identificacao,
-            totalDevido: p.totalDevido,
-            recebido: p.recebido,
-            saldoAberto: p.saldoAberto,
-            diasAtraso:
-              p.diasDesdeVencimento !== null && p.diasDesdeVencimento > 0
-                ? p.diasDesdeVencimento
-                : null,
-            mes: p.mes,
-          })),
-          serieDevido: k.devidoPorMes,
-          serieRecebido: k.recebidoPorMes,
-          caixaLinhas: caixaJanela.map((c, i) => ({ ...c, rotulo: rotulos[i] })),
-          rotulos,
-          destaque: undefined,
-          linhasSerie: periodo.meses.map((m, i) => ({
-            rotulo: rotulos[i],
-            devido: k.devidoPorMes[i],
-            recebido: k.recebidoPorMes[i],
-            pendentes: pendPorMes.get(m) ?? 0,
-          })),
-          porEmp: emp.map((e) => ({
-            id: e.id,
-            nome: e.nome,
-            recebido: e.recebidoJanela,
-            ticket: e.ticketMedioJanela,
-          })),
-          comMesNaTabela: periodo.meses.length > 1,
-        };
-      })()
-    : (() => {
-        const dm = d!;
-        return {
-          naJanela: `em ${nomeMes}`,
-          devido: dm.devidoMes,
-          recebido: dm.recebidoMes,
-          taxa: dm.taxaRecebimento,
-          inadQtde: dm.inadimplentesQtde,
-          inadValor: dm.inadimplentesValor,
-          saldoCaixa: dm.saldoCaixaMes,
-          temCaixa: !!dm.caixaMes,
-          caixaReceita: dm.caixaMes?.receita ?? 0,
-          caixaDespesa:
-            (dm.caixaMes?.despesaAL ?? 0) + (dm.caixaMes?.despesaCH ?? 0) + (dm.caixaMes?.despesaOutros ?? 0),
-          lucroTemporada: dm.lucroTemporadaMes,
-          temporadaDetalhe:
-            dm.lucroTemporadaMes !== null
-              ? `entrou ${formatarBRL(dm.receitaTemporadaMes)}, gastou ${formatarBRL(dm.despesaTemporadaMes)}`
-              : "Despesas da temporada ainda não informadas",
-          reajustes: dm.reajustesDoMes,
-          pendentes: dm.pendentesDoMes,
-          serieDevido: dm.porMes.map((l) => l.devido),
-          serieRecebido: dm.porMes.map((l) => l.recebido),
-          caixaLinhas: dm.caixaPorMes.map((c) => {
-            const { mes: m } = parseCompetencia(c.mes);
-            return { ...c, rotulo: NOME_MES_ABREV[m] };
-          }),
-          rotulos: undefined,
-          destaque: mesNum,
-          linhasSerie: dm.porMes.slice(0, dm.ultimoMesComDados).map((l, i) => ({
-            rotulo: NOME_MES_ABREV[i + 1],
-            devido: l.devido,
-            recebido: l.recebido,
-            pendentes: l.pendentes,
-          })),
-          porEmp: dm.porEmpreendimento.map((e) => ({
-            id: e.id,
-            nome: e.nome,
-            recebido: e.recebidoMes,
-            ticket: e.ticketMedioMes,
-          })),
-          comMesNaTabela: false,
-        };
-      })();
-
-  // extras exclusivos do modo mês (variação vs mês anterior e fechamento)
-  const mesAnterior = d && mesNum > 1 ? d.porMes[mesNum - 2] : null;
-  const caixaAnterior = d && mesNum > 1 ? d.caixaPorMes[mesNum - 2] : null;
+  // O seletor do Executivo usa meses inteiros. Os links financeiros aplicam
+  // essa mesma janela às listas, que também aceitam filtros de dias exatos.
+  const ultimo = parseCompetencia(meses[meses.length - 1]);
+  const ultimoDia = new Date(Date.UTC(ultimo.ano, ultimo.mes, 0)).getUTCDate();
+  const qsFinanceiro = periodo ? `de=${meses[0]}-01&ate=${meses[meses.length - 1]}-${ultimoDia}` : qs;
+  const perfilFinanceiro = acesso.perfil === "ADMINISTRADOR" || acesso.perfil === "FINANCEIRO";
+  const podeVerTitulos = perfilFinanceiro && podeAbrirRota(acesso, "/financeiro/contas-a-receber");
+  const podeVerMovimentos = perfilFinanceiro && podeAbrirRota(acesso, "/financeiro/movimentacoes");
   // Distribuição dos recebimentos por empreendimento.
   const empOrdenados = vm.porEmp
-    .filter((e) => e.recebido > 0)
+    .filter((e) => e.recebido > 0 && e.nome !== "Sem empreendimento identificado")
     .sort((a, b) => b.recebido - a.recebido);
   const rankingRecebido = empOrdenados.slice(0, 6).map((e) => ({ rotulo: e.nome, valor: e.recebido }));
 
@@ -292,7 +155,7 @@ export default async function PaginaExecutivo({
       nivel: "critico",
       titulo: "Cobranças acima de 30 dias",
       texto: `${gravesQtde} ${gravesQtde === 1 ? "cobrança passou" : "cobranças passaram"} de 30 dias do vencimento ${vm.naJanela}. Essas encabeçam a lista de hoje.`,
-      acao: { rotulo: "Painel de cobrança", href: `/paineis/cobranca?${qs}` },
+      acao: podeVerTitulos ? { rotulo: "Conferir cobranças", href: `/financeiro/contas-a-receber?${qsFinanceiro}&vencidos=1` } : undefined,
     });
   }
   if (nvTaxa !== "otimo" && vm.taxa !== null) {
@@ -300,7 +163,7 @@ export default async function PaginaExecutivo({
       nivel: nvTaxa,
       titulo: "Taxa de recebimento abaixo de 95%",
       texto: `Entrou ${pct(vm.taxa)} do devido — ${formatarBRL(vm.recebido)} de ${formatarBRL(vm.devido)}. A diferença está nos ${vm.inadQtde} pendentes listados abaixo.`,
-      acao: { rotulo: "Registrar", href: `/recebimentos?${qs}` },
+      acao: podeVerTitulos ? { rotulo: "Contas a receber", href: `/financeiro/contas-a-receber?${qsFinanceiro}` } : undefined,
     });
   }
   if (vm.reajustes.length > 0) {
@@ -316,10 +179,10 @@ export default async function PaginaExecutivo({
       nivel: "critico",
       titulo: periodo ? "Caixa negativo no período" : "Caixa negativo no mês",
       texto: `Saíram ${formatarBRL(Math.abs(vm.saldoCaixa))} a mais do que entraram ${vm.naJanela}. Verifique os centros de custo antes de fechar.`,
-      acao: { rotulo: "Abrir caixa", href: `/caixa?${qs}` },
+      acao: podeVerMovimentos ? { rotulo: "Ver movimentos", href: `/financeiro/movimentacoes?${qsFinanceiro}` } : undefined,
     });
   }
-  if (!periodo && d && !d.mesFechado) {
+  if (!periodo && !fechamento) {
     alertas.push({
       nivel: "info",
       titulo: "Mês ainda aberto",
@@ -336,8 +199,8 @@ export default async function PaginaExecutivo({
           <div className="flex flex-wrap items-center gap-2">
             {periodo ? (
               <Selo nivel="info">análise por período</Selo>
-            ) : d?.mesFechado ? (
-              <Selo nivel="otimo">mês fechado</Selo>
+            ) : fechamento ? (
+              <Selo nivel="otimo">locações fechadas</Selo>
             ) : (
               <Selo nivel="info">mês aberto</Selo>
             )}
@@ -347,7 +210,11 @@ export default async function PaginaExecutivo({
         }
       />
 
-      <BaseFinanceira tipo="executivo" />
+      <aside aria-label="Origem dos indicadores" className="mb-4 rounded-xl border border-contorno bg-carta px-5 py-3 text-sm">
+        <strong>Financeiro consolidado · Brisa, planilhas e Widesys.</strong>{" "}
+        O Widesys participa desta janela com {vm.origens.WIDESYS.receber} títulos a receber, {vm.origens.WIDESYS.pagar} a pagar e {vm.origens.WIDESYS.movimentos} movimentos de caixa.{" "}
+        <a href="#composicao-por-origem" className="font-semibold text-oliva-escura underline underline-offset-4">Ver valores por origem</a>
+      </aside>
       {/* ---------- resumo da janela em linguagem natural ---------- */}
       <Card className="mb-4 px-6 py-4" nivel={nvTaxa}>
         <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.1em] text-tinta-suave">
@@ -366,7 +233,7 @@ export default async function PaginaExecutivo({
               Em <strong>{nomeMes}</strong>, entraram{" "}
             </>
           )}
-          <strong>{formatarBRL(vm.recebido)}</strong> dos locatários.{" "}
+          <strong>{formatarBRL(vm.recebido)}</strong> nos títulos a receber.{" "}
           {vm.inadQtde > 0 ? (
             <>
               <strong>{vm.inadQtde} cobrança(s)</strong> somando{" "}
@@ -374,7 +241,7 @@ export default async function PaginaExecutivo({
               pagas
             </>
           ) : (
-            <>Todas as cobranças {periodo ? "do período" : "do mês"} foram pagas</>
+            <>{vm.origens.WIDESYS.receber + vm.origens.BRISA.receber > 0 ? "Os títulos da janela estão quitados" : "Nenhum título a receber contabilizado na janela"}</>
           )}
           {vm.reajustes.length > 0 ? (
             <>
@@ -431,18 +298,18 @@ export default async function PaginaExecutivo({
               />
             ) : undefined
           }
-          detalhe="aluguel + repasses (IPTU/cond.)"
+          detalhe="pagamentos dos títulos da competência"
           nivel={periodo ? "info" : nivelVariacao(vm.recebido, mesAnterior?.recebido ?? null)}
-          href={`/recebimentos?${qs}`}
-          ajuda="Soma dos pagamentos registrados na janela, incluindo IPTU e condomínio quando cobrados junto com o aluguel."
+          href={podeVerTitulos ? `/financeiro/contas-a-receber?${qsFinanceiro}` : undefined}
+          ajuda="Valor pago dos títulos incluídos na janela pela competência. Consulte as entradas de caixa pela data da movimentação."
         />
         <Kpi
           rotulo={periodo ? "Devido no período" : "Devido no mês"}
           valor={<Dinheiro centavos={vm.devido} destaque />}
-          detalhe="aluguéis e repasses cobrados"
+          detalhe="títulos a receber incluídos na soma"
           nivel="info"
-          href={`/recebimentos?${qs}`}
-          ajuda="Soma do aluguel e dos repasses de IPTU e condomínio lançados na janela, antes de descontar pagamentos."
+          href={podeVerTitulos ? `/financeiro/contas-a-receber?${qsFinanceiro}` : undefined}
+          ajuda="Valor devido nos títulos a receber do Brisa, das planilhas e do Widesys na janela selecionada."
         />
         <Kpi
           rotulo="Taxa de recebimento"
@@ -473,7 +340,7 @@ export default async function PaginaExecutivo({
           ajuda={`Total recebido dividido pelo total devido ${periodo ? "do período" : "do mês"}. Acima de 100% é bom sinal: alguém quitou atrasos de meses anteriores. Bem abaixo de 100%, veja a lista de pendentes e cobre.`}
         />
         <Kpi
-          rotulo={periodo ? "Inadimplência no período" : "Inadimplência do mês"}
+          rotulo="Saldo a receber"
           valor={<Dinheiro centavos={vm.inadValor} destaque />}
           variacao={
             !periodo ? (
@@ -491,7 +358,7 @@ export default async function PaginaExecutivo({
               ? `${gravesQtde} ${gravesQtde === 1 ? "cobrança já passou" : "cobranças já passaram"} de 30 dias — comece por elas.`
               : undefined
           }
-          href={`/relatorios/inadimplencia?${qs}`}
+          href={podeVerTitulos ? `/financeiro/contas-a-receber?${qsFinanceiro}` : undefined}
           ajuda={`Saldo das cobranças ${periodo ? "da janela" : "do mês"} após descontar o que já foi recebido. Registre pagamentos parciais com data e via; a pendência só some na quitação.`}
         />
       </div>
@@ -527,8 +394,8 @@ export default async function PaginaExecutivo({
               ? "Saiu mais do que entrou — confira os centros de custo dos lançamentos."
               : undefined
           }
-          href={`/caixa?${qs}`}
-          ajuda="Entradas menos as saídas dos centros Antonio/Laura e Chácara Brisa, do livro-caixa. Recebimentos em dinheiro são registro paralelo de espécie e ficam fora do saldo. Lançado na tela Caixa."
+          href={podeVerMovimentos ? `/financeiro/movimentacoes?${qsFinanceiro}` : undefined}
+          ajuda="Entradas menos saídas dos movimentos incluídos na base unificada. Transferências e registros informativos de espécie ficam fora do saldo."
         />
         <Kpi
           rotulo="Lucro de temporada"
@@ -581,6 +448,34 @@ export default async function PaginaExecutivo({
           }
         />
       </div>
+
+      <Card className="mt-4 p-5">
+        <div id="composicao-por-origem" className="scroll-mt-20" />
+        <TituloCard titulo="Composição por origem" ajuda="Cada lançamento entra pela sua origem principal. As baixas detalhadas já estão no valor pago dos títulos. Entradas e saídas vêm dos movimentos de caixa." />
+        <div className="grid gap-4 lg:grid-cols-2">
+          {(["WIDESYS", "BRISA"] as const).map(origem => {
+            const r = vm.origens[origem];
+            return <section key={origem} className="min-w-0 rounded-lg border border-contorno p-4">
+              <h3 className="mb-3 text-sm font-bold">{origem === "WIDESYS" ? "Widesys" : "Brisa e planilhas"}</h3>
+              <dl className="space-y-3 text-xs">
+                <div><dt className="font-semibold">{r.receber} títulos a receber</dt><dd>Devido <Dinheiro centavos={r.devido} /> · Recebido <Dinheiro centavos={r.recebido} /></dd></div>
+                <div><dt className="font-semibold">{r.pagar} títulos a pagar</dt><dd>Devido <Dinheiro centavos={r.despesa} /> · Pago <Dinheiro centavos={r.pago} /></dd></div>
+                <div><dt className="font-semibold">{r.movimentos} movimentos de caixa</dt><dd>Entradas <Dinheiro centavos={r.entradas} /> · Saídas <Dinheiro centavos={r.saidas} /></dd></div>
+              </dl>
+              {(r.vinculados + r.conciliar + r.inconsistentes > 0) && <p className="mt-3 border-t border-contorno pt-3 text-xs leading-relaxed text-tinta-suave">
+                {r.vinculados > 0 && <>{r.vinculados} já representado(s) pelo principal. </>}
+                {r.conferidosNaOrigemAConciliar > 0 && <>{r.conferidosNaOrigemAConciliar} conferido(s) no Widesys aguardam conciliação com o Brisa ou as planilhas, fora da soma. </>}
+                {r.conciliar > r.conferidosNaOrigemAConciliar && <>{r.conciliar - r.conferidosNaOrigemAConciliar} aguardando conferência, fora da soma. </>}
+                {r.inconsistentes > 0 && <>{r.inconsistentes} com inconsistência de importação.</>}
+              </p>}
+            </section>;
+          })}
+        </div>
+        {podeVerTitulos && <div className="mt-4 flex flex-wrap gap-4 text-xs font-semibold text-oliva-escura">
+          <Link href={`/financeiro/contas-a-receber?${qsFinanceiro}&origem=WIDESYS`}>Ver contas a receber do Widesys →</Link>
+          <Link href={`/financeiro/contas-a-pagar?${qsFinanceiro}&origem=WIDESYS`}>Ver contas a pagar do Widesys →</Link>
+        </div>}
+      </Card>
 
       {/* ---------- cockpit visual: comparação primeiro, detalhe depois ---------- */}
       <section className="mt-6">
@@ -666,7 +561,7 @@ export default async function PaginaExecutivo({
                   nivel: concentracao >= 0.5 ? "atencao" : "info",
                   detalhe: empOrdenados[0]
                     ? `${empOrdenados[0].nome} lidera a composição`
-                    : "Sem pagamentos nesta janela",
+                    : vm.recebido > 0 ? "Empreendimento a identificar" : "Sem pagamentos nesta janela",
                 },
                 {
                   rotulo: periodo ? "Média frente ao melhor mês" : "Do melhor mês da série",
@@ -875,7 +770,7 @@ export default async function PaginaExecutivo({
               </span>
             }
           />
-          {vm.pendentes.length === 0 ? (
+          {!podeVerTitulos ? <p className="text-sm text-tinta-suave">Seu perfil visualiza os totais consolidados.</p> : vm.pendentes.length === 0 ? (
             <div className="flex items-center gap-2 text-sm text-tinta-suave">
               <Selo nivel="otimo">tudo recebido</Selo>
               Todas as cobranças {periodo ? "do período" : "do mês"} foram
@@ -948,11 +843,11 @@ export default async function PaginaExecutivo({
               </table>
             </div>
           )}
-          {vm.pendentes.length > 10 ? (
+          {podeVerTitulos && vm.pendentes.length > 10 ? (
             <p className="mt-2 text-xs text-tinta-suave">
               Mostrando 10 de {vm.pendentes.length} — lista completa em{" "}
-              <Link href={`/relatorios/inadimplencia?${qs}`} className="font-semibold text-oliva-escura hover:underline">
-                Relatórios → Inadimplência
+              <Link href={`/financeiro/contas-a-receber?${qsFinanceiro}`} className="font-semibold text-oliva-escura hover:underline">
+                Contas a receber
               </Link>
               .
             </p>
@@ -961,7 +856,7 @@ export default async function PaginaExecutivo({
       </div>
 
       <p className="mt-6 text-xs text-tinta-suave/60">
-        Fonte: recebimentos e movimentações lançados no sistema.
+        Fonte financeira: lançamentos principais da base unificada. Temporada e reajustes vêm dos respectivos módulos do Brisa.
       </p>
     </div>
   );
