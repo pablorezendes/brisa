@@ -1,23 +1,29 @@
 import type { Metadata } from "next";
-import { JetBrains_Mono, Public_Sans, Source_Serif_4 } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
-const sourceSerif = Source_Serif_4({
+const sourceSerif = localFont({
+  src: "./fonts/source-serif-4-latin.woff2",
   variable: "--font-source-serif",
-  subsets: ["latin"],
-  weight: "variable",
+  weight: "200 900",
+  adjustFontFallback: "Times New Roman",
+  display: "swap",
 });
 
-const publicSans = Public_Sans({
+const publicSans = localFont({
+  src: "./fonts/public-sans-latin.woff2",
   variable: "--font-public-sans",
-  subsets: ["latin"],
-  weight: ["400", "600", "700"],
+  weight: "100 900",
+  display: "swap",
 });
 
-const jetbrains = JetBrains_Mono({
+const jetbrains = localFont({
+  src: "./fonts/jetbrains-mono-latin.woff2",
   variable: "--font-jetbrains",
-  subsets: ["latin"],
-  weight: ["400", "700"],
+  weight: "100 800",
+  fallback: ["monospace"],
+  adjustFontFallback: false,
+  display: "swap",
 });
 
 export const metadata: Metadata = {
