@@ -44,6 +44,7 @@ export type LinhaTabelaOperacao = {
   exclusao: { href: string; rotulo: string } | null;
   rateio?: { id?: string; origemChave?: string };
   revisaoRecebimento?: boolean;
+  baixaRecebimento?: { href: string; tipo: "BRISA" | "WIDESYS" };
 };
 
 type PropriedadesTabela = {
@@ -156,6 +157,10 @@ function conteudoTabela({ itens, financeiro, exibirDominio, exibirValor, context
           {!exibirDominio ? <td className="tabela-valores-agrupados"><dl className="tabela-valores-financeiros">{[{ rotulo: "Devido", valor: item.valor }, { rotulo: item.dominio === "RECEBER" ? "Recebido" : "Pago", valor: item.pago }, { rotulo: "Aberto", valor: item.aberto }].map(({ rotulo, valor }) => <div key={rotulo}><dt>{rotulo}</dt><dd><Sigilo><Dinheiro centavos={valor} /></Sigilo></dd></div>)}</dl></td> : null}
         </> : exibirValor ? <td className="text-right!"><span className="block text-[10px] text-tinta-suave">{item.natureza}</span><Sigilo><Dinheiro centavos={item.valor} /></Sigilo></td> : null}
         <td className="text-right!"><div className="flex flex-col items-end gap-2">
+          {item.baixaRecebimento && <LinkRegistro {...propsLinkRegistro} href={item.baixaRecebimento.href}
+            className={item.baixaRecebimento.tipo === "BRISA" ? btnPrimario : "text-xs font-semibold text-oliva-escura hover:underline"}>
+            {item.baixaRecebimento.tipo === "BRISA" ? "Dar baixa" : "Baixa no Widesys"}
+          </LinkRegistro>}
           {item.rateio && item.dominio === "PAGAR" ? <RateioDespesaBotao {...item.rateio} compacto /> : null}
           {item.revisaoRecebimento && item.dominio === "RECEBER" ? <RevisaoRecebimentoBotao chave={item.chave} conferido={registroConferido(item)} /> : null}
           <LinkRegistro {...propsLinkRegistro} href={item.hrefDetalhe} className="text-xs font-semibold text-oliva-escura hover:underline">{!fonteFinanceiraUnica && !item.revisaoRecebimento && ["PENDENTE", "REVISAR", "QUARENTENA"].includes(item.estado) ? "Revisar e resolver" : "Ver detalhes"}</LinkRegistro>

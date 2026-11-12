@@ -196,14 +196,14 @@ describe("popup financeiro integrado à lista SSR", () => {
     expect(html).not.toContain("Organizar despesa");
   });
 
-  it("mostra conferência na origem sem sugerir comparações antigas", async () => {
+  it("mostra a inclusão nos totais sem sugerir comparações antigas", async () => {
     const dados = lista("RECEBER");
     dados.itens[0] = { ...dados.itens[0], conferidoNaOrigem: true, candidatos: [{ chave: "BRISA:RECEBER:outro", titulo: "Outro registro", descricao: "Comparação anterior", motivos: [] }] };
     mocks.listar.mockResolvedValue(dados);
     const arvore = await OperacaoUnificada({ dominio: "RECEBER", titulo: "Receber", base: "/recebimentos" });
     expect(linhasEnviadasAoCliente(arvore)[0].conferidoPorRegra).toBe(true);
     const html = renderToStaticMarkup(arvore);
-    expect(html).toContain(">Conferido<");
+    expect(html).toContain(">Incluído nos totais<");
     expect(html).toContain("Este registro compõe os totais");
     expect(html).not.toContain("correspondência(s) para comparar");
     expect(html).not.toMatch(/<button[^>]*>Conferir<\/button>/);

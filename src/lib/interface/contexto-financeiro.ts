@@ -54,13 +54,14 @@ function href(base: string, parametros: URLSearchParams): string {
 export function contextoFinanceiro(base: string, parametros: ParametrosContexto): {
   retorno: string;
   hrefDetalhe: (chave: string, extras?: { destino?: string; buscarDestino?: string }) => string;
+  hrefBaixa: (chave: string) => string;
   hrefExcluir: (chave: string) => string;
 } | null {
   if (!basePermitida(base, parametros)) return null;
   const filtros = filtrosDaLista(parametros);
   const retorno = href(base, filtros);
-  const abrir = (chave: string, painel: "detalhe" | "excluir", extras?: { destino?: string; buscarDestino?: string }) => {
-    if (!chaveFinanceira(chave)) return retorno;
+  const abrir = (chave: string, painel: "detalhe" | "excluir" | "baixa", extras?: { destino?: string; buscarDestino?: string }) => {
+    if (!chaveFinanceira(chave) || (painel === "baixa" && (base === "/financeiro/contas-a-pagar" || chave.split(":")[1] !== "RECEBER"))) return retorno;
     const p = new URLSearchParams(filtros);
     p.set("registro", chave);
     p.set("painel", painel);
@@ -74,6 +75,7 @@ export function contextoFinanceiro(base: string, parametros: ParametrosContexto)
   return {
     retorno,
     hrefDetalhe: (chave, extras) => abrir(chave, "detalhe", extras),
+    hrefBaixa: chave => abrir(chave, "baixa"),
     hrefExcluir: chave => abrir(chave, "excluir"),
   };
 }
@@ -103,7 +105,8 @@ export function validarRetornoFinanceiro(valor: unknown): string | null {
   const registro = parametros.registro;
   const painel = parametros.painel;
   if (registro !== undefined || painel !== undefined) {
-    if (!chaveFinanceira(registro) || (painel !== "detalhe" && painel !== "excluir")) return null;
+    if (!chaveFinanceira(registro) || (painel !== "detalhe" && painel !== "excluir" && painel !== "baixa")) return null;
+    if (painel === "baixa" && (base === "/financeiro/contas-a-pagar" || registro.split(":")[1] !== "RECEBER")) return null;
     p.set("registro", registro);
     p.set("painel", painel);
     if (painel === "detalhe") {

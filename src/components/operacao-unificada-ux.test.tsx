@@ -12,7 +12,7 @@ vi.mock("@/app/(app)/unificacao/conferencia-lote-actions", () => ({ prepararConf
 vi.mock("@/components/acao-autorizada", () => ({ AcaoAutorizada: () => null, podeExibirAcao: () => false }));
 vi.mock("@/components/link-governanca", () => ({ LinkGovernanca: () => null }));
 vi.mock("@/components/excluir-registro-link", () => ({ ExcluirRegistroLink: () => null, ExcluirUnificadoLink: ({ registro }: { registro: Pick<LinhaUnificada, "chave"> }) => <span data-revisao-exclusao={registro.chave}>Excluir da plataforma</span> }));
-vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("ACESSO_NEGADO"); } }));
+vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("ACESSO_NEGADO"); }, useRouter: () => ({ replace: vi.fn() }) }));
 
 import { EstadoUnificado, OperacaoUnificada, OrigensUnificadas } from "./operacao-unificada";
 import { explicarConsolidacao } from "./situacao-consolidacao";
@@ -137,5 +137,75 @@ describe("origem e situação são informações diferentes", () => {
     expect(html).toContain("Pessoa permitida");
     expect(html).toContain('data-revisao-exclusao="WIDESYS:RECEBER:1"');
     expect(html).not.toMatch(/fixture\.xlsx|Comparar lado a lado|SEGREDO_TAXA|SEGREDO_ADMINISTRACAO|name="justificativa"/);
+  });
+});
+
+describe("baixa na lista de contas a receber", () => {
+  const permissoesBaixa = ["recebimentos.editar", "caixa.editar", "pagamentos.conciliar"];
+  const manual = registro({ proveniencia: { tipo: "CADASTRO_MANUAL" }, lancamentoManual: true, origens: ["MANUAL"], valor: 10000, pago: 2000, aberto: 8000 });
+  const widesys = registro({ chave: "WIDESYS:RECEBER:w1", origem: "WIDESYS", origemId: "w1", origens: ["WIDESYS"], valor: 8000, pago: 0, aberto: 8000 });
+  const tela = { titulo: "A receber", base: "/recebimentos", dominio: "RECEBER" as const };
+
+  function permitirBaixa(permissoes = permissoesBaixa) {
+    mocks.perfil.mockResolvedValue("FINANCEIRO");
+    mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "FINANCEIRO", ativo: true, global: true, regras: [], permissoes: ["financeiro.ver", "unificacao.ver", "cadastros.sensiveis", ...permissoes] });
+  }
+
+  it("abre o formulário de baixa da conta manual pela própria lista e conserva os filtros", async () => {
+    permitirBaixa();
+    const conta = { ...manual, campos: { pessoa: { rotulo: "Contraparte", valor: "Pessoa da conta manual" } } };
+    mocks.listar.mockResolvedValue({ ...lista(), itens: [conta] });
+    mocks.detalhe.mockResolvedValue({ registro: conta, fontes: [conta], candidatos: [], historico: [], baixas: [] });
+    const filtros = { q: "aluguel", mes: "2026-11", pagina: "2", porPagina: "50" };
+    const html = renderToStaticMarkup(await OperacaoUnificada({ ...tela, parametros: filtros }));
+    const link = html.match(/<a\b[^>]*href="([^"]+)"[^>]*>Dar baixa<\/a>/)?.[1];
+    expect(link).toBeDefined();
+    const destino = new URL(link!.replaceAll("&amp;", "&"), "https://brisa.local");
+    expect(destino.pathname).toBe("/recebimentos");
+    expect(Object.fromEntries(destino.searchParams)).toEqual({ ...filtros, registro: conta.chave, painel: "baixa" });
+
+    const aberto = renderToStaticMarkup(await OperacaoUnificada({ ...tela, parametros: Object.fromEntries(destino.searchParams) }));
+    const dialogo = aberto.match(/<dialog\b[\s\S]*?<\/dialog>/)?.[0];
+    expect(dialogo).toBeDefined();
+    expect(dialogo).toContain('name="valor"');
+    expect(dialogo).toContain('name="dataPagamento"');
+    expect(dialogo).toContain('name="via"');
+    expect(dialogo).toContain(">Confirmar recebimento<");
+    expect(dialogo!.indexOf("Confirmar recebimento")).toBeLessThan(dialogo!.indexOf("Pessoa da conta manual"));
+  });
+
+  it("orienta a baixa do título importado no Widesys sem oferecer formulário local", async () => {
+    permitirBaixa();
+    mocks.listar.mockResolvedValue({ ...lista(), itens: [widesys] });
+    mocks.detalhe.mockResolvedValue({ registro: widesys, fontes: [widesys], candidatos: [], historico: [], baixas: [] });
+    const html = renderToStaticMarkup(await OperacaoUnificada({ ...tela, parametros: { registro: widesys.chave, painel: "baixa" } }));
+    expect(html).toMatch(/<a\b[^>]*href="[^"]*painel=baixa[^>]*>Baixa no Widesys<\/a>/);
+    const dialogo = html.match(/<dialog\b[\s\S]*?<\/dialog>/)?.[0];
+    expect(dialogo).toBeDefined();
+    expect(dialogo).toMatch(/registre .*no Widesys/i);
+    expect(dialogo).toMatch(/atualiz.*captura|captura atualizada/i);
+    expect(dialogo).not.toContain(">Confirmar recebimento<");
+    expect(dialogo).not.toContain('name="dataPagamento"');
+  });
+
+  it.each([
+    { descricao: "quitada", conta: { ...manual, aberto: 0, pago: 10000 }, permissoes: permissoesBaixa },
+    { descricao: "cancelada", conta: { ...manual, cancelado: true, contabiliza: false }, permissoes: permissoesBaixa },
+    ...permissoesBaixa.map(acao => ({ descricao: `sem ${acao}`, conta: manual, permissoes: permissoesBaixa.filter(permissao => permissao !== acao) })),
+  ])("omite a baixa manual da conta $descricao mesmo com a janela solicitada por URL", async ({ conta, permissoes }) => {
+    permitirBaixa(permissoes);
+    mocks.listar.mockResolvedValue({ ...lista(), itens: [conta] });
+    mocks.detalhe.mockResolvedValue({ registro: conta, fontes: [conta], candidatos: [], historico: [], baixas: [] });
+    const html = renderToStaticMarkup(await OperacaoUnificada({ ...tela, parametros: { registro: conta.chave, painel: "baixa" } }));
+    expect(html).not.toMatch(/<a\b[^>]*>Dar baixa<\/a>/);
+    expect(html).not.toContain(">Confirmar recebimento<");
+  });
+
+  it("bloqueia o acesso ao painel de baixa para uma carteira restrita", async () => {
+    permitirBaixa();
+    const acesso = await mocks.acesso();
+    mocks.acesso.mockResolvedValue({ ...acesso, regras: [{ efeito: "BLOQUEAR", tipo: "EMPREENDIMENTO", recursoId: "carteira-restrita" }] });
+    await expect(OperacaoUnificada({ ...tela, parametros: { registro: manual.chave, painel: "baixa" } })).rejects.toThrow("ACESSO_NEGADO");
+    expect(mocks.detalhe).not.toHaveBeenCalled();
   });
 });

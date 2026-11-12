@@ -21,6 +21,7 @@ import { alvoExclusaoUnificado } from "@/lib/governanca/alvos-ui";
 import { ProvedorRateioDespesa } from "@/components/rateio-despesa-botao";
 import { ResumoRateiosDespesas } from "@/components/resumo-rateios-despesas";
 import { CategoriasDespesaBotao } from "@/components/categorias-despesa-botao";
+import { tipoBaixaRecebimento } from "@/lib/unificacao/baixa-recebimento";
 
 export { ESTADOS_UNIFICACAO, primeiroParametro, mensagemUnificacao, hrefUnificacao, motivoUnificacao, dataUnificada, exigirPerfilUnificacao, podeAcessarUnificacao, EstadoUnificado, OrigensUnificadas, type ParametrosUnificacao } from "@/components/unificacao-apresentacao";
 
@@ -77,11 +78,11 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
   // URLs servem apenas para navegação. O componente de detalhe/exclusão autoriza novamente no servidor.
   const selecionadoManual = dados.itens.some(item => item.chave === chaveSelecionada && item.proveniencia?.tipo === "CADASTRO_MANUAL");
   const selecaoValida = contexto && chaveSelecionada && (chaveSelecionada.startsWith("WIDESYS:") || selecionadoManual) && chaveSelecionada.split(":")[1] === dominio
-    && (painel === "detalhe" || painel === "excluir")
+    && (painel === "detalhe" || painel === "excluir" || (painel === "baixa" && dominio === "RECEBER"))
     && validarRetornoFinanceiro(`${contexto.retorno}${contexto.retorno.includes("?") ? "&" : "?"}${new URLSearchParams({ registro: chaveSelecionada, painel })}`);
   const conteudoJanela = selecaoValida ? painel === "excluir"
     ? await TelaExclusao({ tipo: "TITULO", origemId: chaveSelecionada!, contexto: { retorno: contexto!.retorno } })
-    : await ConferenciaRegistro({ chave: chaveSelecionada!, parametros: parametrosContextuais, contexto: { retorno: contexto!.retorno, hrefDetalhe: contexto!.hrefDetalhe(chaveSelecionada!), hrefExcluir: contexto!.hrefExcluir(chaveSelecionada!) } })
+    : await ConferenciaRegistro({ chave: chaveSelecionada!, parametros: parametrosContextuais, contexto: { retorno: contexto!.retorno, hrefDetalhe: contexto!.hrefDetalhe(chaveSelecionada!), hrefExcluir: contexto!.hrefExcluir(chaveSelecionada!), priorizarBaixa: painel === "baixa" } })
     : null;
   const hrefDetalhe = (chave: string) => contexto?.hrefDetalhe(chave) ?? hrefUnificacao(chave);
   const acesso = await acessoAtual();
@@ -101,6 +102,7 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
   // Nunca enviar o objeto do DAL, candidatos, campos fiscais, documentos ou hashes.
   const itensTabela: LinhaTabelaOperacao[] = dados.itens.map(item => {
     const alvo = permiteExcluir ? alvoExclusaoUnificado(item) : null;
+    const tipoBaixa = contexto && tipoBaixaRecebimento(item, acesso);
     return {
       chave: item.chave,
       dominio: item.dominio,
@@ -126,6 +128,7 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
       natureza: movimento || baixa ? item.natureza ?? null : null,
       hrefDetalhe: hrefDetalhe(item.chave),
       hrefCadastro: contexto || (movimento && item.proveniencia?.tipo === "CADASTRO_MANUAL") ? null : item.href,
+      ...(contexto && tipoBaixa ? { baixaRecebimento: { href: contexto.hrefBaixa(item.chave), tipo: tipoBaixa } } : {}),
       exclusao: alvo ? {
         href: contexto?.hrefExcluir(item.chave) ?? `/cadastros/governanca?${new URLSearchParams({ tipo: alvo.tipo, origemId: alvo.origemId, modo: "excluir" })}`,
         rotulo: alvo.rotulo ?? "Excluir da plataforma",
@@ -149,7 +152,7 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
     : [["", "Todos visíveis"], ["ATIVO", "Disponíveis"], ["PENDENTE", "Possíveis duplicatas"], ["REVISAR", "Decisões a revisar"], ["QUARENTENA", "Inconsistências"]];
   return <ProvedorRateioDespesa><div>
     <PageHeader titulo={titulo}
-      descricao={listaFinanceira ? "Lançamentos do Widesys e registros manuais do Brisa." : central ? "Consulte os registros e a situação de cada cadastro." : "Consulte registros e pendências cadastrais."}
+      descricao={dominio === "RECEBER" ? "Para registrar um recebimento, use a ação de baixa na linha do título em aberto." : listaFinanceira ? "Lançamentos do Widesys e registros manuais do Brisa." : central ? "Consulte os registros e a situação de cada cadastro." : "Consulte registros e pendências cadastrais."}
       acoes={<>
         {permiteVerRateio && <>
           <ResumoRateiosDespesas />
@@ -202,6 +205,6 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
       </div>
       {nativo ? <p className="mt-3 text-xs text-tinta-suave">A base original mantém suas próprias regras. Não some seus valores aos desta lista.</p> : null}
     </details> : null}
-    {conteudoJanela && contexto ? <JanelaContextual titulo={painel === "excluir" ? "Excluir ou restaurar registro" : "Detalhes do lançamento"} retorno={contexto.retorno} selecao={`${chaveSelecionada}:${painel}`}>{conteudoJanela}</JanelaContextual> : null}
+    {conteudoJanela && contexto ? <JanelaContextual titulo={painel === "excluir" ? "Excluir ou restaurar registro" : painel === "baixa" ? "Baixa do título" : "Detalhes do lançamento"} retorno={contexto.retorno} selecao={`${chaveSelecionada}:${painel}`}>{conteudoJanela}</JanelaContextual> : null}
   </div></ProvedorRateioDespesa>;
 }
