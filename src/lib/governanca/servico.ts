@@ -146,6 +146,7 @@ export async function excluirAdministrativamente(db: PrismaClient, tipo: string,
     if (!ator.assinaturaPrevia) throw new ErroGovernanca("PREVIA_OBRIGATORIA", "Confira o registro antes de excluir da plataforma.");
     const anterior = await tx.recursoGovernado.findUnique({ where: chave(tipo, id) });
     if (anterior?.status === "EXCLUIDO") return anterior;
+    if (tipo === "CAIXA") await exigirMovimentoSemContaManual(tx, id);
     await conferirPrevia(tx, tipo, id, ator);
     const registro = await entidade(tx, tipo, id);
     // A decisão explícita do administrador pode retirar registros pagos,
@@ -158,6 +159,14 @@ export async function excluirAdministrativamente(db: PrismaClient, tipo: string,
     return registrar(tx, tipo, id, "EXCLUIDO", null, m, ator, estadoAnterior);
   }, { timeout: 30000 });
 }
+async function exigirMovimentoSemContaManual(tx: Tx, id: string) {
+  const vinculado = await tx.lancamentoCaixa.findFirst({
+    where: { id, OR: [{ recebimentoManualId: { not: null } }, { despesaDocumento: { is: { criadoManualBrisa: true } } }] },
+    select: { id: true },
+  });
+  if (vinculado) throw new ErroGovernanca("CONTA_VINCULADA", "Exclua pela conta vinculada para preservar a relação com o caixa.");
+}
+
 export async function excluirRecurso(db: PrismaClient, tipo: string, id: string, motivo: string, ator: AtorGovernanca) {
   validarIdentidade(tipo, id); const m = motivoValido(motivo);
   if (!["PESSOA", "LOCATARIO", "UNIDADE", "EMPREENDIMENTO", "IMOVEL_LEGADO", "CAIXA"].includes(tipo)) throw new ErroGovernanca("ACAO_INVALIDA", "Use a exclusão administrativa da plataforma ou a ação específica deste registro.");
@@ -165,6 +174,7 @@ export async function excluirRecurso(db: PrismaClient, tipo: string, id: string,
     await autorizar(tx, ator);
     const atual = await tx.recursoGovernado.findUnique({ where: chave(tipo, id) });
     if (atual?.status === "EXCLUIDO") return atual;
+    if (tipo === "CAIXA") await exigirMovimentoSemContaManual(tx, id);
     await conferirPrevia(tx, tipo, id, ator);
     if (atual && atual.status !== "ATIVO") throw new ErroGovernanca("REGISTRO_INATIVO", "Restaure o registro antes de realizar outra ação.");
     const registro = await entidade(tx, tipo, id);

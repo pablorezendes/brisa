@@ -31,6 +31,7 @@ const dados: DadosFontesUnificacao = {
     partes: [{ papel: "INQUILINO", pessoaLegadoId: "1", statusImportacao: "STAGING" }] }],
   recebimentos: [{ id: "recebimento", contratoId: "contrato", valor: 100000, iptu: 1000, cond: 2000,
     recebido: 103000, competencia: "2026-06", mesLancamento: "2026-06", dataPagamento: "2026-06-12",
+    criadoManualBrisa: false, vencimentoManual: null,
     taxaComissaoBps: 1000, observacao: "Observação sintética", origemAgregada: false, via: "PIX",
     empreendimento: { nome: "Empreendimento sintético" },
     contrato: { diaVencimento: 15, locatarioId: "loc", unidadeId: "unidade", locatario: { nome: "Inquilino sintético" }, unidade: { identificacao: "101" } } }],
@@ -45,6 +46,7 @@ const dados: DadosFontesUnificacao = {
     forma: "PIX", statusImportacao: "STAGING", quarentenaMotivo: null, valor: 50000, dataPagamento: "2026-06-12",
     estornada: false, contaBancariaRotulo: "Conta sintética", movimentoLegadoId: "6" }],
   caixa: [{ id: "caixa", mesReferencia: "2026-06", centroCusto: "AL", tipo: "SAIDA", categoria: "Manutenção",
+    criadoManualBrisa: false, recebimentoManualId: null,
     data: "2026-06-04", valor: 2000, descricao: "Teste de caixa", cliente: null, local: null, caixaOrigem: null, importacoesPlanilha: [] }],
   movimentos: [{ id: "movimento", legadoId: "6", tituloEscopo: "TITULO_RECEBER", tituloLegadoId: "4",
     descricao: "Entrada sintética", planoContaRotulo: "Locação", contaBancariaRotulo: "Conta sintética",
@@ -125,6 +127,7 @@ describe("fotografia compacta das fontes de unificação", () => {
   });
   const despesaBase: DadosFontesUnificacao["despesas"][number] = {
     id: "despesa-teste", origemChave: null, fornecedorNome: "Fornecedor teste", fornecedorDocumento: null,
+    criadoManualBrisa: false,
     numero: "42", serie: null, tomadorNome: null, tomadorDocumento: null, competencia: "2026-10", emissao: "2026-10-07",
     vencimento: "2026-10-30", total: 15000, restrita: false, lancamentoCaixaId: null, lancamentoCaixa: null, pagamentoVia: null,
     categoriaCodigo: null, categoriaRotulo: null, descricao: null, tipoDocumento: "NOTA_FISCAL", destinoCusto: "EMPREENDIMENTOS",

@@ -523,6 +523,18 @@ operação financeira, mas sem emissão nesse perfil.
 
 #### Autenticação por ambiente
 
+Em produção, o cliente pode cadastrar o certificado A1 em **Integrações →
+Sicoob**. Com o Client ID já configurado, a tela pede o arquivo `.pfx` ou
+`.p12` e a senha. O Brisa valida a conexão com o Sicoob e obtém os tokens
+OAuth no servidor. Uma instalação sem Client ID solicita o identificador
+do aplicativo no primeiro cadastro.
+
+O certificado enviado e a senha ficam cifrados em
+`dados/sicoob/credenciais-v1.enc`. Preserve o arquivo junto com o volume de
+dados e mantenha o `AUTH_SECRET` correspondente na recuperação do ambiente.
+As opções abaixo descrevem instalações que configuram o certificado pelo
+ambiente do servidor.
+
 - **Sandbox com token estático:** informe `SICOOB_CLIENT_ID` e o
   `SICOOB_ACCESS_TOKEN` temporário fornecido pelo portal. Esse modo não exige
   certificado mTLS; deixe `SICOOB_PFX_PATH` vazio.
@@ -1169,13 +1181,15 @@ constam em `docker-compose.yml`; apenas defini-las não autoriza disparos.
   cobre tudo.
 
 
-## Financeiro com fonte única Widesys
+## Financeiro com Widesys e lançamentos no Brisa
 
 O Executivo, as contas a pagar e a receber e as movimentações usam os registros
-da última captura importada do Widesys. Registros válidos aparecem como
-conferidos pela origem. Cancelamentos, exclusões administrativas, quarentenas
-e transferências internas continuam fora dos totais aplicáveis. O histórico
-das cargas de planilhas fica preservado no SQLite.
+da última captura importada do Widesys e os lançamentos criados nos formulários
+do Brisa. Registros válidos do Widesys aparecem como conferidos pela origem.
+Cancelamentos, exclusões administrativas, quarentenas e transferências
+internas ficam fora dos totais aplicáveis. Lance uma operação no Brisa quando
+ela for registrada aqui. As operações registradas no Widesys entram pela
+captura. O histórico das cargas de planilhas fica preservado no SQLite.
 
 O Executivo mostra a data da última captura. O bloco abaixo atualiza a aplicação
 e captura contratos, títulos, baixas e movimentos com a conta Widesys vigente.
@@ -1232,6 +1246,14 @@ pausa o serviço, salva um backup consistente do SQLite e aplica a captura.
 
 Confirme a data no Executivo e consulte **Integrações → Widesys** para acompanhar
 o lote aplicado. A captura é sob demanda.
+
+A conferência abaixo compara o manifesto com o último lote aplicado e conta
+identidades repetidas em contratos, partes, títulos, baixas e movimentos.
+
+```bash
+cd /srv/stack/acamargo
+docker compose exec -T brisa node scripts/verificar-captura-widesys.mjs
+```
 
 Se a aplicação do lote for interrompida, corrija a causa e repita
 `docker compose run --rm --no-deps brisa npm run importar:operacao-widesys`

@@ -28,14 +28,18 @@ export async function consultarResumoRateios(db: PrismaClient, p: PoliticaAcesso
   const operacional = carteiraIrrestrita(p) && !perfilSomenteLeitura(p) && pode(p, "despesas.ver");
   if (!operacional && !(pode(p, "carteira.ver") && pode(p, "financeiro.ver"))) return vazio();
   if ((mes && !/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) || (!operacional && !mes)) throw new Error("Informe uma competência válida.");
-  const despesaWidesys = { origemChave: { startsWith: "WIDESYS:PAGAR:" }, destinoCusto: "EMPREENDIMENTOS", ...(mes ? { competencia: mes } : {}) };
+  const despesasAtivas: Prisma.DespesaDocumentoWhereInput = {
+    OR: [{ origemChave: { startsWith: "WIDESYS:PAGAR:" } }, { origemChave: null, criadoManualBrisa: true }],
+    destinoCusto: "EMPREENDIMENTOS",
+    ...(mes ? { competencia: mes } : {}),
+  };
   const [documentos, parcelas, dadosFontes, decisoes, governados, fontesLegadas] = await db.$transaction(tx => Promise.all([
-    tx.despesaDocumento.findMany({ where: { ...despesaWidesys, ...(operacional ? {} : { rateios: { some: filtroRateiosCarteira(p) } }) }, select: {
+    tx.despesaDocumento.findMany({ where: { ...despesasAtivas, ...(operacional ? {} : { rateios: { some: filtroRateiosCarteira(p) } }) }, select: {
       id: true, origemChave: true, origemHash: true, total: true, statusRateio: true, competencia: true, restrita: true,
       rateios: { select: { valor: true, empreendimentoId: true, unidadeId: true,
         empreendimento: { select: { ativo: true } }, unidade: { select: { ativo: true, empreendimentoId: true } } } },
     } }),
-    tx.despesaRateio.findMany({ where: { AND: [filtroRateiosCarteira(p), { despesa: despesaWidesys }] }, select: {
+    tx.despesaRateio.findMany({ where: { AND: [filtroRateiosCarteira(p), { despesa: despesasAtivas }] }, select: {
       id: true, despesaId: true, empreendimentoId: true, valor: true, categoria: true, descricao: true,
       empreendimento: { select: { nome: true } }, unidadeId: true, unidade: { select: { empreendimentoId: true } },
     } }),
@@ -49,12 +53,15 @@ export async function consultarResumoRateios(db: PrismaClient, p: PoliticaAcesso
   const hashes = new Map(fontesLegadas.map(f => [`WIDESYS:PAGAR:${f.id}`, f.snapshotHash]));
   // O sigilo é persistente: remover a descrição de comissão não torna seus
   // valores históricos compartilháveis nem expõe o restante da nota por soma.
-  const documentosVisiveis = documentos.flatMap(d => d.origemChave && hashes.has(d.origemChave)
-    && (p.perfil === "ADMINISTRADOR" || (!d.restrita && !linhas.get(d.origemChave)?.restrito))
-    ? [{ ...d, origemChave: d.origemChave }] : []);
+  const documentosVisiveis = documentos.flatMap(d => {
+    const chave = d.origemChave ?? `BRISA:PAGAR:${d.id}`;
+    if (d.origemChave && !hashes.has(d.origemChave)) return [];
+    if (p.perfil !== "ADMINISTRADOR" && (d.restrita || linhas.get(chave)?.restrito)) return [];
+    return [{ ...d, chave }];
+  });
   const excluidos = new Set(governados.filter(g => g.status !== "ATIVO").map(g => `${g.tipo}:${g.origemId}`));
   const elegiveis = documentosVisiveis.filter(d => {
-    const linha = linhas.get(d.origemChave);
+    const linha = linhas.get(d.chave);
     // Se um imóvel mudou de empreendimento, a divisão inteira precisa ser
     // reconferida. Publicar só o restante daria aparência de nota conferida
     // enquanto o custo distribuído não fecha com o documento.
@@ -62,7 +69,7 @@ export async function consultarResumoRateios(db: PrismaClient, p: PoliticaAcesso
       && (!r.unidadeId || (r.unidade?.ativo && r.unidade.empreendimentoId === r.empreendimentoId && !excluidos.has(`UNIDADE:${r.unidadeId}`))));
     return d.statusRateio === "CONFERIDO" && destinosValidos && d.rateios.length > 0 && d.rateios.reduce((s, r) => s + r.valor, 0) === d.total
       && !!linha?.contabiliza && !linha.cancelado && linha.valor === d.total
-      && hashes.get(d.origemChave) === d.origemHash;
+      && (!d.origemChave || hashes.get(d.origemChave) === d.origemHash);
   });
   const porDocumento = new Map(elegiveis.map(d => [d.id, d]));
   const grupos = new Map<string, CustoEmpreendimento>();
@@ -80,5 +87,5 @@ export async function consultarResumoRateios(db: PrismaClient, p: PoliticaAcesso
   const custos = [...grupos.values()].sort((a, b) => b.competencia.localeCompare(a.competencia) || a.empreendimento.localeCompare(b.empreendimento, "pt-BR"));
   return { custos, total: custos.reduce((s, c) => s + c.valor, 0), notasConferidas: notasVisiveis.size,
     // Nenhuma contagem de documentos de outras carteiras é compartilhada.
-    notasPendentes: operacional ? documentosVisiveis.filter(d => !porDocumento.has(d.id) && !excluidos.has(`TITULO:${d.origemChave}`)).length : 0 };
+    notasPendentes: operacional ? documentosVisiveis.filter(d => !porDocumento.has(d.id) && !excluidos.has(`TITULO:${d.chave}`)).length : 0 };
 }

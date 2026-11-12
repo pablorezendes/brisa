@@ -4,3 +4,8 @@ export type EstadoTesteSicoob = {
   erro?: string;
   resultado?: DiagnosticoAutenticacaoSicoob;
 };
+
+export type EstadoCertificadoSicoob = {
+  erro?: string;
+  sucesso?: string;
+};

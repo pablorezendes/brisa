@@ -38,7 +38,7 @@ beforeEach(async () => {
     `CREATE TABLE Pessoa (id TEXT PRIMARY KEY, nome TEXT NOT NULL, origem TEXT NOT NULL, legadoId TEXT NOT NULL, cpfCnpj TEXT)`,
     `CREATE TABLE PessoaEmail (id TEXT PRIMARY KEY, pessoaId TEXT NOT NULL, email TEXT NOT NULL)`,
     `CREATE TABLE Contrato (id TEXT PRIMARY KEY, unidadeId TEXT NOT NULL, locatarioId TEXT, status TEXT NOT NULL, inicio TEXT, fim TEXT)`,
-    `CREATE TABLE Recebimento (id TEXT PRIMARY KEY, contratoId TEXT NOT NULL, competencia TEXT NOT NULL, origemAgregada BOOLEAN NOT NULL DEFAULT 0)`,
+    `CREATE TABLE Recebimento (id TEXT PRIMARY KEY, contratoId TEXT NOT NULL, competencia TEXT NOT NULL, origemAgregada BOOLEAN NOT NULL DEFAULT 0, criadoManualBrisa BOOLEAN NOT NULL DEFAULT 0)`,
     `CREATE TABLE ImovelLegado (id TEXT PRIMARY KEY, origem TEXT NOT NULL, legadoId TEXT NOT NULL, nome TEXT, referencia TEXT)`,
     `CREATE TABLE ContratoLegado (id TEXT PRIMARY KEY, origem TEXT NOT NULL, legadoId TEXT NOT NULL, imovelLegadoId TEXT, situacaoOrigem TEXT, inicio TEXT, fim TEXT, statusImportacao TEXT NOT NULL DEFAULT 'STAGING')`,
     `CREATE TABLE ContratoParteLegado (id TEXT PRIMARY KEY, contratoId TEXT, origem TEXT NOT NULL, pessoaLegadoId TEXT, papel TEXT NOT NULL, statusImportacao TEXT NOT NULL DEFAULT 'STAGING')`,
@@ -51,7 +51,7 @@ beforeEach(async () => {
     `INSERT INTO PessoaEmail VALUES ('EM1','P1','privado-p1@example.test')`,
     `INSERT INTO Locatario VALUES ('LA','Cliente A','P1','DOC_LA','privado-la@example.test','TELEFONE_LA'),('LA2','Cliente A2','P2','DOC_LA2',NULL,NULL),('LB','Cliente B','PB','DOC_LB',NULL,NULL)`,
     `INSERT INTO Contrato VALUES ('CA1','UA1','LA','ativo','2026-01-01',NULL),('CA2','UA2','LA2','ativo',NULL,NULL),('CB1','UB1','LB','ativo',NULL,NULL),('CB2','UB2','LA','ativo',NULL,NULL)`,
-    `INSERT INTO Recebimento VALUES ('RA1','CA1','2026-10',0),('RA2','CA2','2026-10',0),('RB1','CB1','2026-10',0),('RB2','CB2','2026-10',0),('AGREGADO','CA1','2026-10',1),('OUTROMES','CA1','2026-09',0)`,
+    `INSERT INTO Recebimento (id,contratoId,competencia,origemAgregada) VALUES ('RA1','CA1','2026-10',0),('RA2','CA2','2026-10',0),('RB1','CB1','2026-10',0),('RB2','CB2','2026-10',0),('AGREGADO','CA1','2026-10',1),('OUTROMES','CA1','2026-09',0)`,
     `INSERT INTO ImovelLegado VALUES ('IL1','WIDESYS','101','Imóvel legado A',NULL),('IL2','WIDESYS','102','Imóvel legado B',NULL),('ILX','OUTRO','101','Imóvel outra origem',NULL)`,
     `INSERT INTO ContratoLegado(id,origem,legadoId,imovelLegadoId,situacaoOrigem) VALUES ('CL1','WIDESYS','201','101','ativo'),('CL2','WIDESYS','202','102','ativo'),('CLX','OUTRO','201','101','ativo')`,
     `INSERT INTO ContratoParteLegado(id,contratoId,origem,pessoaLegadoId,papel) VALUES ('PARTE1','CL1','WIDESYS','11','INQUILINO'),('PARTE2','CL2','WIDESYS','33','INQUILINO'),('PARTEX','CLX','OUTRO','11','INQUILINO')`,
@@ -69,6 +69,11 @@ afterEach(async () => {
 });
 
 describe("carteira: isolamento por vínculos comprovados", () => {
+  it("inclui somente contas manuais dos contratos autorizados", async () => {
+    await db.$executeRaw`UPDATE Recebimento SET criadoManualBrisa = true WHERE id IN ('RA1', 'RB1')`;
+    const dados = await consultarCarteira(db, politica(), "2026-10");
+    expect(dados.titulos.map(t => t.id)).toEqual(["BRISA:RECEBER:RA1"]);
+  });
   it("empreendimento A não revela contratos, títulos ou clientes exclusivos de B", async () => {
     const dados = await consultarCarteira(db, politica(), "2026-10");
     expect(dados.imoveis.map(x => x.id)).toEqual(["BRISA:UA1", "BRISA:UA2"]);

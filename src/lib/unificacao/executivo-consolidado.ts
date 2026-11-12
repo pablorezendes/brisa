@@ -1,6 +1,7 @@
 import type { LinhaUnificada } from "../unificacao/tipos";
 import { mesOperacionalUnificado } from "../unificacao/periodo";
 import type { Pendente } from "../consultas/executivo";
+import { integraFinanceiro } from "./projecao-widesys";
 
 function novoMes(mes: string) {
   const caixa = { mes, receita: 0, saida: 0, saldo: 0 };
@@ -11,7 +12,7 @@ export function mesPadraoConsolidado(linhas: LinhaUnificada[], hoje: string) {
   const atual = hoje.slice(0, 7);
   let ultimo = "";
   for (const linha of linhas) {
-    if (linha.origem !== "WIDESYS" || !linha.contabiliza) continue;
+    if (!integraFinanceiro(linha) || !linha.contabiliza) continue;
     if (!(linha.dominio === "RECEBER" && (linha.pago ?? 0) > 0) && linha.dominio !== "MOVIMENTO") continue;
     const mes = mesOperacionalUnificado(linha);
     if (mes && mes <= atual && mes > ultimo) ultimo = mes;
@@ -37,7 +38,7 @@ export function consolidarExecutivo(linhas: LinhaUnificada[], mesesSerie: string
     if (l.estado === "ATIVO") for (const chave of l.fontes) cadastroImovel.set(chave, l);
   }
   for (const l of linhas) {
-    if (l.origem !== "WIDESYS" || !l.contabiliza) continue;
+    if (!integraFinanceiro(l) || !l.contabiliza) continue;
     if (l.dominio !== "RECEBER" && l.dominio !== "PAGAR" && l.dominio !== "MOVIMENTO") continue;
     const mes = mesOperacionalUnificado(l);
     if (!mes) continue;

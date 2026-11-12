@@ -87,6 +87,9 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar: informar
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
   const [corrigirSigiloHonorarios, setCorrigirSigiloHonorarios] = useState(false);
+  const [dataPagamento, setDataPagamento] = useState("");
+  const [viaPagamento, setViaPagamento] = useState("PIX");
+  const [contaPagamento, setContaPagamento] = useState("");
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
   const envio = useRef(false);
   const aviso = useRef<HTMLParagraphElement>(null);
@@ -118,7 +121,10 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar: informar
       emissao: documento.tipoDocumento === "SEM_DOCUMENTO" ? "" : documento.emissao, competencia: documento.competencia, vencimento: documento.vencimento,
       categoriaCodigo: documento.categoriaCodigo || null, descricao: documento.descricao || null, tipoDocumento: documento.tipoDocumento,
       destinoCusto: modoCusto === "ADMINISTRADORA" ? "ADMINISTRADORA" : "EMPREENDIMENTOS",
-      total: resumo.total, statusRateio, rateios, pagamento: { modo: "MANTER" },
+      total: resumo.total, statusRateio, rateios,
+      pagamento: dataPagamento && documento.criadoManualBrisa
+        ? { modo: "REGISTRAR", data: dataPagamento, centroCusto: "BRISA", categoria: "", via: viaPagamento, contaBancariaId: contaPagamento || null }
+        : { modo: "MANTER" },
       corrigirSigiloHonorarios,
     };
     envio.current = true; setSalvando(true); aoOcupar(true);
@@ -129,6 +135,7 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar: informar
       if (atualizado?.ok) {
         setEditor(atualizado.editor); setDocumento({ ...atualizado.editor.documento, descricao: atualizado.editor.documento.descricao ?? (atualizado.editor.documento.rateios.length === 1 ? atualizado.editor.documento.rateios[0].descricao : ""), totalTexto: valorEditavel(atualizado.editor.documento.total) });
         setLinhas(linhasEditaveis(atualizado.editor));
+        setDataPagamento("");
         setModoCusto(modoCustoInicial(atualizado.editor.documento));
         setDestinoUnico({ empreendimentoId: atualizado.editor.documento.rateios[0]?.empreendimentoId ?? "", unidadeId: atualizado.editor.documento.rateios[0]?.unidadeId ?? "", categoria: atualizado.editor.documento.rateios[0]?.categoria ?? null });
       } else {
@@ -149,7 +156,7 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar: informar
       <fieldset disabled={salvando || anexando || catalogoOcupado || reabrirNecessario} className="min-w-0 space-y-5 disabled:opacity-60">
         <section className="rounded-xl border border-contorno p-4">
           <h3 className="text-sm font-bold">1. O que será pago?</h3>
-          <p className="mt-1 text-xs leading-relaxed text-tinta-suave">Este título veio do Widesys. Você pode completar os dados locais da despesa.</p>
+          <p className="mt-1 text-xs leading-relaxed text-tinta-suave">{documento.criadoManualBrisa ? "Atualize os dados da despesa ou distribua o custo por empreendimento." : "Este título veio do Widesys. Você pode completar os dados locais da despesa."}</p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div className="min-w-0"><label className={rotulo}>Categoria<select value={documento.categoriaCodigo ?? ""} onChange={event => alterarDocumento("categoriaCodigo", event.target.value)} required={!permiteClassificacaoAnterior || modoCusto === "ADMINISTRADORA" || documento.tipoDocumento !== "NOTA_FISCAL"} className={campo}><option value="">{permiteClassificacaoAnterior ? "Manter classificação anterior" : "Selecione a categoria…"}</option>{editor.categorias.filter(item => item.ativa !== false || item.codigo === documento.categoriaCodigo).map(item => <option key={item.codigo} value={item.codigo}>{item.rotulo}{item.restrita ? " · restrita" : ""}{item.ativa === false ? " · inativa (já vinculada)" : ""}</option>)}</select></label>{editor.gerenciaCategorias && <button type="button" className="mt-1 min-h-8 rounded px-1 text-xs font-semibold text-oliva-escura hover:underline" aria-expanded={novaCategoria} onClick={() => setNovaCategoria(!novaCategoria)}>+ Nova categoria</button>}{categoria?.ativa === false && <p className="mt-1 text-[11px] leading-relaxed text-tinta-suave">Esta categoria está inativa. Você pode mantê-la nesta despesa ou escolher uma ativa.</p>}</div>
             <div className="min-w-0 lg:col-span-2"><SeletorFornecedorDespesa valor={{ id: documento.fornecedorPessoaId ?? null, nome: documento.fornecedorNome, cpfCnpj: documento.fornecedorDocumento }} permiteCadastrar={editor.permiteCadastrarFornecedor} disabled={salvando || anexando || catalogoOcupado || reabrirNecessario} aoOcupar={valor => { setCatalogoOcupado(valor); aoOcupar(valor); }} onChange={fornecedor => { setDocumento(atual => ({ ...atual, fornecedorPessoaId: fornecedor.id, fornecedorNome: fornecedor.nome, fornecedorDocumento: fornecedor.cpfCnpj })); aoAlterar(true); setSucesso(""); }} /></div>
@@ -209,13 +216,30 @@ export function FormularioRateioDespesa({ inicial, aoOcupar, aoAlterar: informar
         </section>
         <section className="rounded-xl border border-contorno p-4">
           <h3 className="text-sm font-bold">3. Já foi pago?</h3>
-          <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm"><p className="font-semibold">Situação do pagamento no Widesys</p><p className="mt-2 flex flex-wrap gap-2 text-xs text-tinta-suave"><span>{editor.pagamento.situacao}</span><span>{editor.pagamento.data || "Sem data informada"}</span><Sigilo><Dinheiro centavos={editor.pagamento.valor} /></Sigilo></p></div>
+          <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm"><p className="font-semibold">{documento.criadoManualBrisa ? "Situação do pagamento" : "Situação do pagamento no Widesys"}</p><p className="mt-2 flex flex-wrap gap-2 text-xs text-tinta-suave"><span>{documento.criadoManualBrisa && editor.pagamento.situacao === "EM_ABERTO" ? "Em aberto" : documento.criadoManualBrisa && editor.pagamento.situacao === "PAGO" ? "Pago" : editor.pagamento.situacao}</span><span>{editor.pagamento.data || "Sem data informada"}</span><Sigilo><Dinheiro centavos={editor.pagamento.valor} /></Sigilo></p></div>
+          {documento.criadoManualBrisa && editor.permitePagamento && editor.pagamento.origem === "NENHUM" && (
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              <label className={rotulo}>Data do pagamento<input type="date" value={dataPagamento} onChange={evento => { setDataPagamento(evento.target.value); aoAlterar(true); }} className={campo} /></label>
+              <label className={rotulo}>Forma de pagamento
+                <select value={viaPagamento} onChange={evento => { setViaPagamento(evento.target.value); aoAlterar(true); }} className={campo}>
+                  <option value="PIX">Pix</option><option value="BOLETO">Boleto</option><option value="DINHEIRO">Dinheiro</option>
+                  <option value="TRANSFERENCIA">Transferência</option><option value="CARTAO_CREDITO">Cartão de crédito</option><option value="CARTAO_DEBITO">Cartão de débito</option>
+                </select>
+              </label>
+              <label className={rotulo}>Conta bancária
+                <select value={contaPagamento} onChange={evento => { setContaPagamento(evento.target.value); aoAlterar(true); }} className={campo}>
+                  <option value="">Selecione se aplicável</option>
+                  {editor.contas.map(conta => <option key={conta.id} value={conta.id}>{conta.apelido}</option>)}
+                </select>
+              </label>
+            </div>
+          )}
         </section>
         {modoCusto === "VARIOS" && <p className="text-xs leading-relaxed text-tinta-suave">O rateio separa custos por empreendimento. O documento e o pagamento continuam únicos.</p>}
         <div className="border-t border-contorno pt-4"><p className="mb-3 text-xs leading-relaxed text-tinta-suave">Salve a categoria e a distribuição de custo da despesa.</p><div className="flex flex-wrap items-center gap-3"><button type="submit" value="CONFERIDO" className={btnPrimario} disabled={!visiveis || !conferenciaCompleta || editor.documento.fonteAlterada && !confirmaFonte}>{salvando ? "Salvando…" : "Salvar dados da despesa"}</button><button type="submit" value="RASCUNHO" className={btnSecundario} disabled={!visiveis || editor.documento.fonteAlterada && !confirmaFonte}>Salvar rascunho</button><button type="button" className={btnSecundario} onClick={aoFechar}>Fechar</button></div></div>
       </fieldset>
     </form>
-    <AnexosDespesa despesaId={documento.id} iniciais={editor.anexos} bloqueado={salvando || reabrirNecessario} aoOcupar={valor => { setAnexando(valor); aoOcupar(valor); }} />
+    {!documento.criadoManualBrisa && <AnexosDespesa despesaId={documento.id} iniciais={editor.anexos} bloqueado={salvando || reabrirNecessario} aoOcupar={valor => { setAnexando(valor); aoOcupar(valor); }} />}
   </div>;
 }
 

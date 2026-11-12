@@ -12,7 +12,7 @@ type CamposCaixa = Pick<LancamentoCaixa, "mesReferencia" | "centroCusto" | "tipo
 type Movimento = { chave: string; data: string | null; mes: string | null; valor: number | null; tipo: string; descricao: string | null; caixaOrigem?: string | null };
 export type AnteriorPlanilha = { hashConteudo: string; tipoArquivo: string; caixaOrigem: string; aba: string; linha: number; faixa: string; lancamentoCaixaId: string | null };
 export type ContextoCarga = {
-  caixa: LancamentoCaixa[]; anteriores: AnteriorPlanilha[]; legados: Movimento[];
+  caixa: (CamposCaixa & Pick<LancamentoCaixa, "id">)[]; anteriores: AnteriorPlanilha[]; legados: Movimento[];
   mesesFechados: Set<string>; caixaComProvenienciaInicial: Set<string>; hoje: string;
 };
 export type ItemPlanejado = {

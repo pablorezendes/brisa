@@ -172,7 +172,7 @@ export default async function PaginaExecutivo({
       />
 
       <aside aria-label="Origem dos indicadores" className="mb-4 rounded-xl border border-contorno bg-carta px-5 py-3 text-sm">
-        <strong>Fonte financeira · Widesys</strong>{" · "}
+        <strong>Última captura do Widesys</strong>{" · "}
         {captura ? `Dados capturados em ${new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }).format(captura.capturadoEm)}` : "Aguardando a primeira importação"}
       </aside>
       {/* ---------- resumo da janela em linguagem natural ---------- */}
@@ -253,7 +253,7 @@ export default async function PaginaExecutivo({
           detalhe="títulos a receber incluídos na soma"
           nivel="info"
           href={podeVerTitulos ? `/financeiro/contas-a-receber?${qsFinanceiro}` : undefined}
-          ajuda="Valor devido nos títulos a receber do Widesys na janela selecionada."
+          ajuda="Valor devido nos títulos a receber da janela selecionada."
         />
         <Kpi
           rotulo="Taxa de recebimento"
@@ -339,14 +339,14 @@ export default async function PaginaExecutivo({
               : undefined
           }
           href={podeVerMovimentos ? `/financeiro/movimentacoes?${qsFinanceiro}` : undefined}
-          ajuda="Entradas menos saídas dos movimentos do Widesys. Transferências internas ficam fora do saldo."
+          ajuda="Entradas menos saídas dos movimentos. Transferências internas ficam fora do saldo."
         />
         <Kpi
           rotulo="Despesas da competência"
           valor={<Dinheiro centavos={vm.despesa} destaque />}
           detalhe={`${vm.titulosPagar} título(s) a pagar na janela`}
           href={podeVerDespesas ? `/financeiro/contas-a-pagar?${qsFinanceiro}` : undefined}
-          ajuda="Valor devido nos títulos a pagar do Widesys na competência selecionada."
+          ajuda="Valor devido nos títulos a pagar da competência selecionada."
         />
         <Kpi
           rotulo="Despesas pagas"
@@ -457,7 +457,7 @@ export default async function PaginaExecutivo({
             <TituloCard
               titulo="Entradas, saídas e saldo"
               nivel={nvCaixa}
-              ajuda="Entradas e saídas registradas no Widesys por mês. A linha mostra o saldo de cada mês."
+              ajuda="Entradas e saídas por mês. A linha mostra o saldo de cada mês."
               direita={
                 <span className="font-mono text-[11px] text-tinta-suave">
                   saldo em foco: <strong className="text-tinta">{formatarBRL(vm.saldoCaixa)}</strong>

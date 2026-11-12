@@ -4,7 +4,7 @@ import type { EstadoConfiguracaoSicoob } from "@/lib/integracoes/sicoob";
 
 const mocks = vi.hoisted(() => ({
   pagina: vi.fn(), permissao: vi.fn(), configuracao: vi.fn(), contas: vi.fn(),
-  autenticar: vi.fn(), diagnosticar: vi.fn(), cliente: vi.fn(), fetch: vi.fn(),
+  autenticar: vi.fn(), enviarCertificado: vi.fn(), diagnosticar: vi.fn(), cliente: vi.fn(), fetch: vi.fn(),
   ordem: [] as string[],
 }));
 
@@ -23,7 +23,10 @@ vi.mock("@/lib/integracoes/sicoob", () => ({
 vi.mock("@/components/painel-contas-sicoob", () => ({
   SicoobContas: () => { mocks.contas(); return <div data-testid="contas-ficticias">Contas de teste</div>; },
 }));
-vi.mock("./actions", () => ({ testarAutenticacaoSicoob: mocks.autenticar }));
+vi.mock("./actions", () => ({
+  testarAutenticacaoSicoob: mocks.autenticar,
+  enviarCertificadoSicoob: mocks.enviarCertificado,
+}));
 
 import PaginaIntegracaoSicoob from "./page";
 
@@ -88,18 +91,22 @@ describe("página de integração Sicoob", () => {
       expect(html).toContain(`href="${href}"`);
     }
     expect(html).toContain("Testar autenticação sem emitir boleto");
+    expect(html).toContain('name="certificado"');
+    expect(html).toContain('name="senhaCertificado"');
+    expect(html).toContain('name="clientId"');
     expect(html).toMatch(/<input[^>]*type="checkbox"[^>]*required=""[^>]*name="confirmarTeste"/);
     expect(html).toContain("carteira 1 não comprova modalidade 1");
     expect(html).toContain("LIQUI");
     expect(html).toContain("não uma quitação");
     expect(html).not.toContain("Autenticação confirmada");
     expect(mocks.autenticar).not.toHaveBeenCalled();
+    expect(mocks.enviarCertificado).not.toHaveBeenCalled();
     expect(mocks.diagnosticar).not.toHaveBeenCalled();
     expect(mocks.cliente).not.toHaveBeenCalled();
     expect(mocks.fetch).not.toHaveBeenCalled();
   });
 
-  it("mostra somente presença da chave e exemplos, nunca valores de segredos instalados", async () => {
+  it("oferece apenas arquivo e senha quando o Client ID está configurado", async () => {
     const segredos = {
       SICOOB_SYNC_SECRET: "a".repeat(64),
       SICOOB_WEBHOOK_SECRET: "b".repeat(64),
@@ -110,14 +117,14 @@ describe("página de integração Sicoob", () => {
       SICOOB_PFX_PASSPHRASE: "Senha-Ficticia-Que-Nao-Pode-Aparecer",
     };
     for (const [chave, valor] of Object.entries(segredos)) vi.stubEnv(chave, valor);
-    mocks.configuracao.mockReturnValue(estado({ configurado: true, mtlsConfigurado: true, pendencias: [] }));
+    mocks.configuracao.mockReturnValue(estado({ configurado: true, mtlsConfigurado: true, clientIdConfigurado: true, pendencias: [] }));
     const html = renderToStaticMarkup(await PaginaIntegracaoSicoob({ searchParams: Promise.resolve({}) }));
     expect(html).toContain("Configuração local disponível");
     expect(html).toContain("Chave de retorno instalada");
-    expect(html).toContain("SEU_CLIENT_ID");
-    expect(html).toContain("SENHA_DIGITADA_SOMENTE_NO_SERVIDOR");
     for (const valor of Object.values(segredos)) expect(html).not.toContain(valor);
-    expect(html).not.toContain('type="password"');
+    expect(html).toContain('type="password"');
+    expect(html).not.toContain('name="clientId"');
+    expect(html).not.toContain('name="accessToken"');
     expect(html).not.toContain("Autenticação confirmada");
     expect(html).toContain("não comprova que o agendador está funcionando");
   });
@@ -128,7 +135,6 @@ describe("página de integração Sicoob", () => {
     expect(html).toContain("Ambiente de testes");
     expect(html).toContain("Instalação pendente");
     expect(html).toContain("Chave de retorno pendente");
-    expect(html).toContain("Layout importado não é conexão homologada");
     expect(html).toContain("ambiente sandbox");
   });
 });

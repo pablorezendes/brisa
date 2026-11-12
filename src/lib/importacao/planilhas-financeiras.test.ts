@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
-import { PrismaClient, type LancamentoCaixa } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { carregarPlanilhasFinanceiras, hashConteudoCaixa, planejarLinhaPlanilha, type ContextoCarga } from "./planilhas-financeiras";
 import type { RegistroPlanilhaFinanceira, ResultadoPlanilhaFinanceira } from "./planilhas-financeiras-parser";
@@ -20,7 +20,7 @@ function arquivo(registros = [registro()], hashArquivo = registros[0]?.hashArqui
   return { origemArquivo: "GASTOS BRISA AZUL.xlsx", hashArquivo, tipoArquivo: "GASTOS_BRISA",
     registros: registros.map(r => ({ ...r, hashArquivo })), controles: [], avisos: [] };
 }
-function caixa(r = registro(), id = "caixa-artificial"): LancamentoCaixa {
+function caixa(r = registro(), id = "caixa-artificial"): ContextoCarga["caixa"][number] {
   return { id, mesReferencia: r.mesReferencia!, data: r.data, centroCusto: r.centroCusto, caixaOrigem: r.caixaOrigem,
     tipo: r.tipo, valor: r.valor!, descricao: r.descricao, categoria: r.categoria, cliente: r.cliente, local: r.local };
 }
@@ -116,7 +116,7 @@ describe("carga transacional em SQLite descartável", () => {
     db = cliente;
     // Apenas as tabelas utilizadas neste serviço, sem acesso ao DATABASE_URL real.
     const tabelas = [
-      `CREATE TABLE LancamentoCaixa (id TEXT PRIMARY KEY, mesReferencia TEXT NOT NULL, centroCusto TEXT NOT NULL, tipo TEXT NOT NULL, categoria TEXT, data TEXT, valor INTEGER NOT NULL, descricao TEXT, cliente TEXT, local TEXT, caixaOrigem TEXT)`,
+      `CREATE TABLE LancamentoCaixa (id TEXT PRIMARY KEY, mesReferencia TEXT NOT NULL, centroCusto TEXT NOT NULL, tipo TEXT NOT NULL, categoria TEXT, data TEXT, valor INTEGER NOT NULL, descricao TEXT, cliente TEXT, local TEXT, caixaOrigem TEXT, criadoManualBrisa BOOLEAN NOT NULL DEFAULT false, recebimentoManualId TEXT)`,
       `CREATE TABLE ImportacaoPlanilhaLote (id TEXT PRIMARY KEY, arquivo TEXT NOT NULL, hashArquivo TEXT NOT NULL, tipoArquivo TEXT NOT NULL, versao TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'CONCLUIDO', resumo TEXT NOT NULL DEFAULT '{}', controles TEXT NOT NULL DEFAULT '[]', avisos TEXT NOT NULL DEFAULT '[]', criadoEm DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(hashArquivo,versao))`,
       `CREATE TABLE ImportacaoPlanilhaLinha (id TEXT PRIMARY KEY, loteId TEXT NOT NULL, aba TEXT NOT NULL, linha INTEGER NOT NULL, faixa TEXT NOT NULL, celulas TEXT NOT NULL, hashConteudo TEXT NOT NULL, mesReferencia TEXT, data TEXT, centroCusto TEXT NOT NULL, caixaOrigem TEXT NOT NULL, tipo TEXT NOT NULL, valor INTEGER, descricao TEXT, categoria TEXT, cliente TEXT, local TEXT, status TEXT NOT NULL, reservado BOOLEAN NOT NULL DEFAULT false, motivos TEXT NOT NULL DEFAULT '[]', candidatos TEXT NOT NULL DEFAULT '[]', origemDados TEXT NOT NULL, lancamentoCaixaId TEXT, criadoEm DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(loteId,aba,linha,faixa), FOREIGN KEY(loteId) REFERENCES ImportacaoPlanilhaLote(id) ON DELETE RESTRICT, FOREIGN KEY(lancamentoCaixaId) REFERENCES LancamentoCaixa(id) ON DELETE SET NULL)`,
       `CREATE TABLE MovimentoFinanceiroLegado (id TEXT PRIMARY KEY, origem TEXT, dataMovimento TEXT, competencia TEXT, valor INTEGER, natureza TEXT, descricao TEXT)`,

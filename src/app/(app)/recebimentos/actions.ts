@@ -165,6 +165,7 @@ export async function registrarRecebimento(formData: FormData): Promise<void> {
   const id = campo(formData, "id");
   const lancamento = await prisma.recebimento.findUnique({ where: { id } });
   if (!lancamento) voltar("", { erro: "Lançamento não encontrado." }, retorno);
+  if (lancamento.criadoManualBrisa) voltar(lancamento.mesLancamento, { erro: "Abra os detalhes da conta para registrar o recebimento junto ao caixa." }, retorno);
   const mes = lancamento.mesLancamento;
   await exigirMesAberto(mes, retorno);
 
@@ -225,6 +226,7 @@ export async function limparRecebimento(formData: FormData): Promise<void> {
   const id = campo(formData, "id");
   const lancamento = await prisma.recebimento.findUnique({ where: { id } });
   if (!lancamento) voltar("", { erro: "Lançamento não encontrado." }, retorno);
+  if (lancamento.criadoManualBrisa) voltar(lancamento.mesLancamento, { erro: "Consulte os movimentos vinculados a esta conta antes de corrigir um recebimento." }, retorno);
   await exigirMesAberto(lancamento.mesLancamento, retorno);
 
   const alterado = await prisma.$transaction(async tx => {

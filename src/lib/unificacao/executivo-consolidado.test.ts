@@ -11,7 +11,7 @@ const exemplo: LinhaUnificada = {
 function linha(dados: Partial<LinhaUnificada>) { return { ...exemplo, ...dados }; }
 
 describe("Executivo consolidado", () => {
-  it("soma somente o Widesys e separa obrigação, pagamento e fluxo de caixa", () => {
+  it("separa obrigação, pagamento e fluxo de caixa, incluindo os lançamentos manuais novos", () => {
     const linhas = [
       exemplo, linha({ origem: "BRISA", valor: 5300, pago: 5000, aberto: 300 }),
       linha({ estado: "VINCULADO", contabiliza: false }), linha({ estado: "PENDENTE", contabiliza: false }),
@@ -22,12 +22,14 @@ describe("Executivo consolidado", () => {
       linha({ dominio: "MOVIMENTO", natureza: "SAIDA", data: "2026-06-28", valor: 5600 }),
       linha({ dominio: "MOVIMENTO", natureza: "TRANSFERENCIA", informativo: true, contabiliza: false }),
       linha({ dominio: "MOVIMENTO", natureza: "SAIDA", data: "2026-07-01", valor: 900 }),
+      linha({ origem: "BRISA", lancamentoManual: true, dominio: "PAGAR", valor: 1200, pago: 1200 }),
+      linha({ origem: "BRISA", lancamentoManual: true, dominio: "MOVIMENTO", natureza: "SAIDA", data: "2026-06-29", valor: 1200 }),
       linha({ competencia: "2027-04", valor: 77700, pago: 0, aberto: 77700 }),
     ];
     const r = consolidarExecutivo(linhas, ["2026-06", "2026-07"], ["2026-06"], "2026-06-30");
-    expect(r).toMatchObject({ devido: 8000, recebido: 6500, inadQtde: 1, inadValor: 1500, caixaReceita: 6500, caixaDespesa: 5600, saldoCaixa: 900,
-      titulosReceber: 1, titulosPagar: 1, despesaPaga: 5600 });
-    expect(r.serie.map(m => m.caixa.saldo)).toEqual([900, -900]);
+    expect(r).toMatchObject({ devido: 8000, recebido: 6500, inadQtde: 1, inadValor: 1500, caixaReceita: 6500, caixaDespesa: 6800, saldoCaixa: -300,
+      titulosReceber: 1, titulosPagar: 2, despesaPaga: 6800 });
+    expect(r.serie.map(m => m.caixa.saldo)).toEqual([-300, -900]);
     expect(r.porEmp).toEqual([{ id: "Sem empreendimento identificado", nome: "Sem empreendimento identificado", recebido: 6500, ticket: 6500 }]);
     expect(r.pendentes[0].diasAtraso).toBe(18);
     expect(mesPadraoConsolidado(linhas, "2026-11-03")).toBe("2026-07");

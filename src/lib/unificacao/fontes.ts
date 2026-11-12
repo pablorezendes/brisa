@@ -89,8 +89,8 @@ export async function carregarDadosFontesUnificacao(db: BancoUnificacao, dominio
       partes: { orderBy: { ordem: "asc" }, select: { papel: true, pessoaLegadoId: true, statusImportacao: true } },
     } }),
     completa || dominioFinanceiro === "RECEBER" ? db.recebimento.findMany({ select: {
-      id: true, contratoId: true, valor: true, iptu: true, cond: true,
-      recebido: true, competencia: true, mesLancamento: true, dataPagamento: true,
+      id: true, contratoId: true, valor: true, iptu: true, cond: true, criadoManualBrisa: true,
+      recebido: true, competencia: true, mesLancamento: true, dataPagamento: true, vencimentoManual: true,
       taxaComissaoBps: true, observacao: true, origemAgregada: true, via: true,
       empreendimento: { select: { nome: true } },
       contrato: { select: {
@@ -123,7 +123,7 @@ export async function carregarDadosFontesUnificacao(db: BancoUnificacao, dominio
     } }) : [],
     completa ? db.lancamentoCaixa.findMany({ select: {
       id: true, mesReferencia: true, centroCusto: true, tipo: true, categoria: true,
-      data: true, valor: true, descricao: true, cliente: true, local: true, caixaOrigem: true,
+      data: true, valor: true, descricao: true, cliente: true, local: true, caixaOrigem: true, criadoManualBrisa: true, recebimentoManualId: true,
     } }) : [],
     completa ? db.movimentoFinanceiroLegado.findMany({ where: { origem: "WIDESYS" }, select: {
       id: true, legadoId: true, tituloEscopo: true, tituloLegadoId: true,
@@ -148,7 +148,7 @@ export async function carregarDadosFontesUnificacao(db: BancoUnificacao, dominio
     // custo. Overlays do Widesys nunca viram outro título nesta projeção;
     // somente os restritos são lidos para manter seu sigilo na fonte original.
     completa || dominioFinanceiro === "PAGAR" ? db.despesaDocumento.findMany({ where: { OR: [{ origemChave: null }, { restrita: true }] }, select: {
-      id: true, origemChave: true, fornecedorNome: true, fornecedorDocumento: true, numero: true, restrita: true,
+      id: true, origemChave: true, fornecedorNome: true, fornecedorDocumento: true, numero: true, restrita: true, criadoManualBrisa: true,
       serie: true, tomadorNome: true, tomadorDocumento: true, competencia: true,
       emissao: true, vencimento: true, total: true, lancamentoCaixaId: true,
       pagamentoVia: true,
@@ -236,8 +236,9 @@ export async function derivarFontesUnificacao(dados: DadosFontesUnificacao, incl
   for (const r of recebimentos) {
     const devido = r.valor + r.iptu + r.cond; const pago = r.recebido ?? 0;
     const dia = r.contrato.diaVencimento;
-    const venc = dia ? `${r.competencia}-${String(Math.min(dia, new Date(Number(r.competencia.slice(0, 4)), Number(r.competencia.slice(5, 7)), 0).getDate())).padStart(2, "0")}` : null;
+    const venc = r.vencimentoManual ?? (dia ? `${r.competencia}-${String(Math.min(dia, new Date(Number(r.competencia.slice(0, 4)), Number(r.competencia.slice(5, 7)), 0).getDate())).padStart(2, "0")}` : null);
     fontes.push(fonte("RECEBER", "BRISA", r.id, {
+      ...(r.criadoManualBrisa ? { lancamentoManual: true, proveniencia: { tipo: "CADASTRO_MANUAL" }, restrito: contemComissaoRestrita(r.observacao) } : {}),
       titulo: r.contrato.locatario?.nome ?? r.contrato.unidade.identificacao, descricao: `${r.empreendimento.nome} · ${r.contrato.unidade.identificacao}`, href: `/recebimentos?visao=locacao&mes=${r.mesLancamento}&editar=${r.id}`,
       pessoaChave: r.contrato.locatarioId ? chaveFonte("BRISA", "PESSOA", r.contrato.locatarioId) : null, contratoChave: chaveFonte("BRISA", "CONTRATO", r.contratoId), imovelChave: chaveFonte("BRISA", "IMOVEL", r.contrato.unidadeId),
       competencia: r.competencia, data: r.dataPagamento, vencimento: venc, valor: devido, pago, aberto: Math.max(devido - pago, 0), informativo: devido === 0 && pago === 0,
@@ -259,6 +260,7 @@ export async function derivarFontesUnificacao(dados: DadosFontesUnificacao, incl
     const categoriaRotulo = d.categoriaRotulo ?? categoriaDespesa(d.categoriaCodigo)?.rotulo;
     const documento = referenciaDocumentoDespesa(d);
     fontes.push(fonte("PAGAR", "BRISA", d.id, {
+      ...(d.criadoManualBrisa ? { lancamentoManual: true } : {}),
       titulo: d.fornecedorNome, descricao: classificada
         ? [categoriaRotulo, d.descricao, d.destinoCusto === "ADMINISTRADORA" ? "Administradora" : "Empreendimentos", d.numero ? documento : null].filter(Boolean).join(" · ")
         : `NF ${d.numero}${d.serie ? ` · série ${d.serie}` : ""}`, href: null,
@@ -309,8 +311,18 @@ export async function derivarFontesUnificacao(dados: DadosFontesUnificacao, incl
     }));
   }
   const caixasComNotaRestrita = new Set(despesas.filter(d => d.restrita && d.lancamentoCaixaId).map(d => d.lancamentoCaixaId!));
+  const despesasManuaisPorCaixa = new Map(despesas.filter(d => d.criadoManualBrisa && d.lancamentoCaixaId).map(d => [d.lancamentoCaixaId!, d.id]));
+  const recebimentosManuaisRestritos = new Set(recebimentos.filter(r => r.criadoManualBrisa && contemComissaoRestrita(r.observacao)).map(r => r.id));
   for (const l of caixa) {
     const f = fonteLancamentoCaixa(l);
+    if (l.criadoManualBrisa) {
+      f.lancamentoManual = true;
+      f.proveniencia = { tipo: "CADASTRO_MANUAL" };
+      const despesa = despesasManuaisPorCaixa.get(l.id);
+      if (despesa) f.tituloChave = chaveFonte("BRISA", "PAGAR", despesa);
+      if (l.recebimentoManualId) f.tituloChave = chaveFonte("BRISA", "RECEBER", l.recebimentoManualId);
+      if (contemComissaoRestrita([l.categoria, l.descricao]) || (l.recebimentoManualId && recebimentosManuaisRestritos.has(l.recebimentoManualId))) f.restrito = true;
+    }
     // A classificação de sigilo não muda o fato financeiro/assinatura do PIX,
     // mas impede que a lista global revele o total da nota por outro módulo.
     if (caixasComNotaRestrita.has(l.id)) f.restrito = true;
@@ -340,7 +352,7 @@ export async function derivarFontesUnificacao(dados: DadosFontesUnificacao, incl
       lancamentosCaixa: caixa,
     });
     for (const f of fontes) {
-      if (f.origem !== "BRISA") continue;
+      if (f.origem !== "BRISA" || f.lancamentoManual) continue;
       const p = f.dominio === "RECEBER" ? prova.recebimentos.get(f.origemId) : f.dominio === "MOVIMENTO" ? prova.lancamentosCaixa.get(f.origemId) : null;
       if (p) {
         f.proveniencia = { ...p };

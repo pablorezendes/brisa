@@ -21,7 +21,7 @@ export function ProvedorRateioDespesa({ children }: { children: ReactNode }) {
 export function RateioDespesaBotao({ origemChave, id, compacto = false }: { origemChave?: string; id?: string; compacto?: boolean }) {
   const contexto = useContext(ContextoDespesa);
   const [abertoLocal, setAbertoLocal] = useState(false);
-  if (!origemChave?.startsWith("WIDESYS:PAGAR:")) return null;
+  if (!origemChave?.startsWith("WIDESYS:PAGAR:") && !id) return null;
   const aberto = contexto ? Boolean(contexto.selecao && contexto.selecao.origemChave === origemChave && contexto.selecao.id === id) : abertoLocal;
   return <>
     <button type="button" aria-haspopup="dialog" aria-expanded={aberto} disabled={contexto ? Boolean(contexto.selecao) : abertoLocal} onClick={() => contexto ? contexto.abrir({ origemChave, id }) : setAbertoLocal(true)} className={compacto ? "inline-flex min-h-8 items-center rounded-md px-2 py-1 text-xs font-semibold text-oliva-escura hover:bg-oliva/5 hover:underline" : btnPrimario}>Organizar despesa</button>

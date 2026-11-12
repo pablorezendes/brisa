@@ -5,8 +5,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { createSecureContext, type SecureContextOptions } from "node:tls";
 
 import type { AmbienteSicoob } from "./tipos";
+import { lerCredenciaisPainelSicoob, type CredenciaisPainelSicoob } from "./credenciais-painel";
 import {
   BASES_OFICIAIS_SICOOB,
+  TOKEN_URL_OFICIAL_SICOOB,
   validarBaseOficialSicoob,
   validarTokenUrlOficialSicoob,
 } from "./destinos";
@@ -41,6 +43,8 @@ export type EstadoConfiguracaoSicoob = {
   mtlsConfigurado: boolean;
   escoposWebhookConfigurados: boolean;
   pendencias: string[];
+  certificadoPainel?: boolean;
+  clientIdConfigurado?: boolean;
 };
 
 export class ErroConfiguracaoSicoob extends Error {
@@ -159,18 +163,47 @@ function caminhosMtls(env: NodeJS.ProcessEnv): {
   return { configurado: false, pendencias: [], tls: {} };
 }
 
-function inspecionar(env: NodeJS.ProcessEnv): {
+function inspecionar(env: NodeJS.ProcessEnv, proposta?: CredenciaisPainelSicoob): {
   estado: EstadoConfiguracaoSicoob;
   tls: SecureContextOptions;
+  env: NodeJS.ProcessEnv;
 } {
+  let credenciais = proposta;
+  let erroCredenciais = false;
+  if (!credenciais) {
+    try {
+      credenciais = lerCredenciaisPainelSicoob(env) ?? undefined;
+    } catch {
+      erroCredenciais = true;
+    }
+  }
+  if (credenciais) {
+    const mesmoAmbiente = ambiente(env) === credenciais.ambiente;
+    const mesmaAplicacao = mesmoAmbiente && env.SICOOB_CLIENT_ID?.trim() === credenciais.clientId;
+    env = {
+      ...env,
+      SICOOB_AMBIENTE: credenciais.ambiente,
+      SICOOB_API_BASE_URL: mesmoAmbiente ? env.SICOOB_API_BASE_URL : undefined,
+      SICOOB_CLIENT_ID: credenciais.clientId,
+      SICOOB_CLIENT_SECRET: mesmaAplicacao ? env.SICOOB_CLIENT_SECRET : undefined,
+      SICOOB_ACCESS_TOKEN: undefined,
+      SICOOB_TOKEN_URL: env.SICOOB_TOKEN_URL?.trim() || TOKEN_URL_OFICIAL_SICOOB,
+    };
+  }
   const amb = ambiente(env);
   const baseInformada = env.SICOOB_API_BASE_URL?.trim() || BASES_OFICIAIS_SICOOB[amb];
   let baseUrl = BASES_OFICIAIS_SICOOB[amb];
   const clientId = env.SICOOB_CLIENT_ID?.trim();
   const tokenEstatico = env.SICOOB_ACCESS_TOKEN?.trim();
   const tokenUrl = env.SICOOB_TOKEN_URL?.trim();
-  const mtls = caminhosMtls(env);
+  const tlsPainel = credenciais ? { pfx: credenciais.pfx, passphrase: credenciais.senha } : null;
+  const mtls = tlsPainel
+    ? validarMaterialMtls(tlsPainel)
+      ? { configurado: true, pendencias: [], tls: tlsPainel }
+      : { configurado: false, pendencias: ["Certificado ou senha inválidos"], tls: {} }
+    : caminhosMtls(env);
   const pendencias = [...mtls.pendencias];
+  if (erroCredenciais) pendencias.push("Envie novamente o certificado para recuperar a credencial protegida.");
 
   try {
     baseUrl = validarBaseOficialSicoob(baseInformada, amb);
@@ -205,8 +238,11 @@ function inspecionar(env: NodeJS.ProcessEnv): {
       mtlsConfigurado: mtls.configurado,
       escoposWebhookConfigurados: possuiEscoposWebhookExplicitos(env),
       pendencias: [...new Set(pendencias)],
+      certificadoPainel: Boolean(credenciais),
+      clientIdConfigurado: Boolean(clientId),
     },
     tls: mtls.tls,
+    env,
   };
 }
 
@@ -218,9 +254,10 @@ export function obterEstadoConfiguracaoSicoob(
 }
 
 export function carregarConfiguracaoSicoob(
-  env: NodeJS.ProcessEnv = process.env,
+  ambienteServidor: NodeJS.ProcessEnv = process.env,
+  proposta?: CredenciaisPainelSicoob,
 ): ConfiguracaoSicoob {
-  const { estado, tls } = inspecionar(env);
+  const { estado, tls, env } = inspecionar(ambienteServidor, proposta);
   if (!estado.configurado) throw new ErroConfiguracaoSicoob(estado.pendencias);
 
   const timeoutInformado = Number(env.SICOOB_TIMEOUT_MS ?? 15_000);

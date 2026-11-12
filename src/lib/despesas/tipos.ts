@@ -45,6 +45,7 @@ export type SalvarDespesaEntrada = {
 export type DespesaEditor = {
   documento: {
     id?: string;
+    criadoManualBrisa?: boolean;
     origemChave: string | null;
     origemHash: string | null;
     fonteAlterada: boolean;

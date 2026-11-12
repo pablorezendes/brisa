@@ -9,12 +9,15 @@
  * para o mês do lançamento.
  */
 import { exigirPermissaoAcesso } from "@/lib/acesso/servidor";
+import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { parseBRL } from "@/lib/dominio/dinheiro";
+import { dataLancamentoValida, idLancamentoValido, valorLancamento } from "@/lib/dominio/lancamento-manual";
 import { recursoEstaAtivo } from "@/lib/governanca/filtros";
 import { filtroCaixaDespesasRestritas } from "@/lib/despesas/sigilo-caixa";
+import { contemComissaoRestrita } from "@/lib/despesas/sigilo";
 
 export type EstadoFormLancamento = { erro: string | null };
 
@@ -36,26 +39,43 @@ export async function salvarLancamento(
   formData: FormData,
 ): Promise<EstadoFormLancamento> {
   const acesso = await exigirPermissaoAcesso("caixa.editar", { global: true });
+  return salvarLancamentoInterno(formData, acesso);
+}
+
+export async function salvarLancamentoManual(
+  idRequisicao: string,
+  _prev: EstadoFormLancamento,
+  formData: FormData,
+): Promise<EstadoFormLancamento> {
+  const acesso = await exigirPermissaoAcesso("caixa.editar", { global: true });
+  return salvarLancamentoInterno(formData, acesso, idRequisicao);
+}
+
+async function salvarLancamentoInterno(formData: FormData, acesso: Awaited<ReturnType<typeof exigirPermissaoAcesso>>, idRequisicao?: string): Promise<EstadoFormLancamento> {
+  const manual = idRequisicao !== undefined;
+  if (manual && !idLancamentoValido(idRequisicao)) return { erro: "Abra o formulário novamente para registrar o movimento." };
   const id = texto(formData, "id");
   const sigilo = filtroCaixaDespesasRestritas(acesso.perfil);
 
   const tipo = texto(formData, "tipo") ?? "";
-  if (!TIPOS.has(tipo)) return { erro: "Tipo de lançamento inválido." };
+  if (!TIPOS.has(tipo) || (manual && tipo === "RECEB_DINHEIRO")) return { erro: "Tipo de lançamento inválido." };
 
-  const mesReferencia = texto(formData, "mesReferencia") ?? "";
+  const data = texto(formData, "data");
+  const mesReferencia = (manual ? data?.slice(0, 7) : texto(formData, "mesReferencia")) ?? "";
   if (!RE_MES.test(mesReferencia)) {
     return { erro: "Mês de referência inválido (use o formato AAAA-MM)." };
   }
 
-  const valor = parseBRL(texto(formData, "valor"));
+  const valorTexto = texto(formData, "valor");
+  const valor = manual ? valorLancamento(valorTexto ?? "") : parseBRL(valorTexto);
   if (valor === null || valor <= 0) {
     return { erro: "Valor inválido — informe um valor maior que zero (ex.: 1.234,56)." };
   }
 
-  const data = texto(formData, "data");
   if (data !== null && !RE_DATA.test(data)) {
     return { erro: "Data inválida (use o formato AAAA-MM-DD)." };
   }
+  if (manual && (!data || !dataLancamentoValida(data))) return { erro: "Informe uma data válida para o movimento." };
 
   let centroCusto = "GERAL";
   let categoria: string | null = null;
@@ -68,9 +88,12 @@ export async function salvarLancamento(
     }
     categoria = texto(formData, "categoria");
     if (categoria === null) return { erro: "Saída exige uma categoria." };
+    if (manual && categoria.length > 120) return { erro: "Informe a categoria com até 120 caracteres." };
   }
 
   const descricao = texto(formData, "descricao");
+  if (manual && (!descricao || descricao.length > 500)) return { erro: "Informe a descrição com até 500 caracteres." };
+  if (manual && acesso.perfil !== "ADMINISTRADOR" && contemComissaoRestrita([descricao, categoria])) return { erro: "Este lançamento está restrito ao administrador." };
   const cliente = tipo === "RECEB_DINHEIRO" ? texto(formData, "cliente") : null;
   const local = tipo === "RECEB_DINHEIRO" ? texto(formData, "local") : null;
 
@@ -88,18 +111,33 @@ export async function salvarLancamento(
 
   if (id) {
     if (!await recursoEstaAtivo(prisma, "CAIXA", id)) return { erro: "Este lançamento foi excluído logicamente. Restaure-o na governança antes de editar." };
-    const existente = await prisma.lancamentoCaixa.findFirst({ where: { AND: [{ id }, sigilo] }, select: { id: true } });
+    const identidade = manual ? { id, criadoManualBrisa: true, despesaDocumento: { is: null }, recebimentoManualId: null } : { id };
+    const where = { AND: [identidade, sigilo] };
+    const existente = await prisma.lancamentoCaixa.findFirst({
+      where, select: { id: true, descricao: true, categoria: true, criadoManualBrisa: true, recebimentoManualId: true, despesaDocumento: { select: { criadoManualBrisa: true } } },
+    });
     if (!existente) return { erro: "Lançamento não encontrado — pode ter sido excluído." };
+    if (existente.recebimentoManualId || existente.despesaDocumento?.criadoManualBrisa) return { erro: "Consulte a conta vinculada para tratar este movimento." };
+    if (!manual && existente.criadoManualBrisa) return { erro: "Abra o movimento na lista para fazer a alteração." };
+    if (manual && acesso.perfil !== "ADMINISTRADOR" && contemComissaoRestrita([existente.descricao, existente.categoria])) return { erro: "Este lançamento está restrito ao administrador." };
     // A mesma condição no UPDATE impede corrida com uma nota que acaba de
     // tornar seu pagamento reservado, sem carregar seus dados para o cliente.
-    const resultado = await prisma.lancamentoCaixa.updateMany({ where: { AND: [{ id }, sigilo] }, data: dados });
+    const resultado = await prisma.lancamentoCaixa.updateMany({ where, data: dados });
     if (resultado.count !== 1) return { erro: "Lançamento indisponível para alteração. Reabra a página." };
   } else {
-    await prisma.lancamentoCaixa.create({ data: dados });
+    try {
+      await prisma.lancamentoCaixa.create({
+        data: { ...dados, ...(manual ? { id: idRequisicao, criadoManualBrisa: true } : {}) },
+      });
+    } catch (erro) {
+      if (manual && erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2002") return { erro: "Este lançamento já foi enviado. Consulte a lista antes de tentar novamente." };
+      throw erro;
+    }
   }
 
   revalidatePath("/caixa");
   revalidatePath("/caixa/ano");
+  if (manual) revalidatePath("/", "layout");
   redirect(`/caixa?mes=${mesReferencia}`);
 }
 

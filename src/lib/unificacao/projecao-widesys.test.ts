@@ -41,4 +41,13 @@ describe("Financeiro com origem Widesys", () => {
     expect(linhas.map(l => l.estado)).toEqual(["QUARENTENA", "AUSENTE", "ATIVO", "ATIVO"]);
     expect(linhas.every(l => !l.contabiliza && !l.conferidoPorRegra)).toBe(true);
   });
+
+  it("inclui lançamentos manuais novos sem reativar registros históricos do Brisa", () => {
+    const manual = fonte("BRISA", "novo", { lancamentoManual: true });
+    const antigo = fonte("BRISA", "antigo", { proveniencia: { tipo: "CADASTRO_MANUAL" } });
+    const widesys = fonte("WIDESYS", "externo");
+    const { linhas } = projetarFinanceiroWidesys([manual, antigo, widesys], []);
+    expect(linhas.map(l => l.chave)).toEqual([manual.chave, widesys.chave]);
+    expect(linhas[0]).toMatchObject({ contabiliza: true, estado: "ATIVO", origens: ["MANUAL"], conferidoNaOrigem: false });
+  });
 });

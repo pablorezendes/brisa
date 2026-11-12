@@ -831,11 +831,14 @@ model Recebimento {
   taxaComissaoBps     Int                    @default(1000) // snapshot da taxa do mês
   observacao          String?
   origemAgregada      Boolean                @default(false) // true na linha AIRBNB/TODOS
+  criadoManualBrisa   Boolean                @default(false)
+  vencimentoManual    String? // data civil do título avulso criado no Brisa
   reservaEmissaoToken String? // lease transacional enquanto nasce o primeiro registro de boleto
   contrato            Contrato               @relation(fields: [contratoId], references: [id])
   empreendimento      Empreendimento         @relation(fields: [empreendimentoId], references: [id])
   boletos             Boleto[]
   pagamentos          PagamentoRecebimento[]
+  entradasManuais     LancamentoCaixa[]
 
   @@index([mesLancamento, empreendimentoId])
   @@index([competencia])
@@ -1178,10 +1181,14 @@ model LancamentoCaixa {
   cliente       String? // só RECEB_DINHEIRO
   local         String? // só RECEB_DINHEIRO
   caixaOrigem   String? // identidade do caixa da fonte; não é centro de custo nem conta bancária inferida
+  criadoManualBrisa Boolean @default(false)
+  recebimentoManualId String?
   importacoesPlanilha ImportacaoPlanilhaLinha[]
   despesaDocumento DespesaDocumento?
+  recebimentoManual Recebimento? @relation(fields: [recebimentoManualId], references: [id], onDelete: Restrict)
 
   @@index([mesReferencia, centroCusto])
+  @@index([recebimentoManualId])
 }
 
 // Nota recebida/obrigação única. O rateio é dimensão gerencial, não novos títulos
@@ -1190,6 +1197,7 @@ model DespesaDocumento {
   id                    String @id @default(uuid())
   origemChave           String? @unique
   origemHash            String?
+  criadoManualBrisa     Boolean @default(false)
   identidadeNota        String? @unique
   fornecedorNome        String
   fornecedorDocumento   String?

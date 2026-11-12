@@ -1,4 +1,5 @@
 import { acessoAtual, exigirPaginaAcesso, exigirPermissaoAcesso } from "@/lib/acesso/servidor";
+import { randomUUID } from "node:crypto";
 import { podeExibirAcao } from "@/components/acao-autorizada";
 import Link from "next/link";
 import Form from "next/form";
@@ -15,10 +16,13 @@ import { ImpactoConsolidacao } from "@/components/situacao-consolidacao";
 import { carteiraIrrestrita, pode } from "@/lib/acesso/politica";
 import { FormularioNaTela } from "@/components/formulario-na-tela";
 import { CamposRegistroConferencia, ComparacaoCamposConferencia } from "@/components/campos-conferencia";
+import { FormularioLancamentoManual } from "@/components/formulario-lancamento-manual";
+import { registrarBaixaRecebimentoManual } from "@/app/(app)/recebimentos/novo/actions";
+import { hojeISO } from "@/lib/dominio/periodo";
 
 const CAMPOS_RESERVADOS = new Set(["taxa", "administracao", "composicao"]);
 const campoVisivel = (registro: FonteUnificacao, chave: string) => !CAMPOS_RESERVADOS.has(chave)
-  && (registro.origem === "WIDESYS" || registro.campos[chave]?.tipo !== "dinheiro");
+  && (registro.origem === "WIDESYS" || registro.proveniencia?.tipo === "CADASTRO_MANUAL" || registro.campos[chave]?.tipo !== "dinheiro");
 // Projeção explícita: não enviar objetos do DAL nem campos reservados ao cliente.
 const campoProjetado = (campo: CampoFonte): CampoFonte => ({ rotulo: campo.rotulo, valor: campo.valor, ...(campo.tipo ? { tipo: campo.tipo } : {}) });
 type ContextoConferencia = { retorno: string; hrefDetalhe: string; hrefExcluir?: string };
@@ -30,18 +34,19 @@ const ROTAS_FINANCEIRAS: Record<string, string | undefined> = {
   BAIXA_PAGAR: "/financeiro/contas-a-pagar",
 };
 
-function detalhesFinanceiros({ registro, baixas, rota, contextual, excluir }: { registro: LinhaUnificada; baixas: LinhaUnificada[]; rota: string; contextual: boolean; excluir: React.ReactNode }) {
+function detalhesFinanceiros({ registro, baixas, rota, contextual, excluir, acoesManuais }: { registro: LinhaUnificada; baixas: LinhaUnificada[]; rota: string; contextual: boolean; excluir: React.ReactNode; acoesManuais?: React.ReactNode }) {
   const rotulo = ROTULOS_DOMINIO[registro.dominio];
   return <div className="min-w-0 space-y-4">
     {contextual ? <header className="flex flex-wrap items-start justify-between gap-3 border-b border-contorno pb-4">
       <div className="min-w-0"><h2 className="break-words text-lg font-bold">{registro.titulo}</h2><p className="mt-1 break-words text-xs text-tinta-suave">{registro.descricao}</p></div>{excluir}
     </header> : <PageHeader titulo={registro.titulo} descricao={`${rotulo} · ${registro.descricao}`} acoes={<><Link prefetch={false} href={rota} className={btnSecundario}>Voltar à lista</Link>{excluir}</>} />}
     <Card className="p-5">
-      <div className="flex flex-wrap items-center gap-2"><OrigensUnificadas origens={["WIDESYS"]} /><EstadoUnificado item={registro} /></div>
+      <div className="flex flex-wrap items-center gap-2"><OrigensUnificadas origens={origensDoRegistro(registro)} /><EstadoUnificado item={registro} /></div>
       {registro.estado === "QUARENTENA" ? <p className="mt-3 text-xs text-tinta-suave">Confira este lançamento no Widesys e importe uma captura atualizada após corrigir a origem.</p> : null}
       {registro.avisos.length ? <ul className="mt-3 space-y-1 text-xs text-amber-800">{registro.avisos.map(aviso => <li key={aviso}>{motivoUnificacao(aviso)}</li>)}</ul> : null}
       <CamposRegistroConferencia campos={Object.entries(registro.campos).filter(([chave]) => campoVisivel(registro, chave)).map(([chave, campo]) => ({ chave, campo: campoProjetado(campo) }))} />
     </Card>
+    {acoesManuais}
     {baixas.length ? <Card className="divide-y divide-contorno overflow-hidden">
       <h2 className="p-4 text-sm font-bold">Baixas registradas no Widesys</h2>
       {baixas.map(baixa => <details key={baixa.chave} className="p-4">
@@ -114,8 +119,37 @@ export async function ConferenciaRegistro({ chave, parametros: sp = {}, contexto
     ? contexto.hrefExcluir && podeExcluir ? <Link prefetch={false} href={contexto.hrefExcluir} scroll={false} className={`${btnSecundario} text-erro`}>Excluir da plataforma</Link> : null
     : await ExcluirUnificadoLink({ registro });
   if (rotaFinanceira) {
-    if (registro.origem !== "WIDESYS") notFound();
-    return detalhesFinanceiros({ registro, baixas: baixas.filter(baixa => baixa.origem === "WIDESYS"), rota: rotaFinanceira, contextual: Boolean(contexto), excluir });
+    if (registro.origem !== "WIDESYS" && registro.proveniencia?.tipo !== "CADASTRO_MANUAL") notFound();
+    const manual = registro.proveniencia?.tipo === "CADASTRO_MANUAL";
+    const podeEditarCaixa = manual && carteiraIrrestrita(acesso) && pode(acesso, "caixa.editar");
+    const podeReceber = podeEditarCaixa && registro.dominio === "RECEBER" && registro.estado === "ATIVO" && (registro.aberto ?? 0) > 0
+      && pode(acesso, "recebimentos.editar") && pode(acesso, "pagamentos.conciliar");
+    const acoesManuais = podeReceber
+      ? <Card className="p-5">
+          <h3 className="mb-3 text-sm font-bold">Registrar recebimento</h3>
+          <FormularioLancamentoManual
+            acao={registrarBaixaRecebimentoManual.bind(null, registro.origemId, randomUUID(), contexto?.retorno ?? rotaFinanceira)}
+            cancelar={contexto?.retorno ?? rotaFinanceira}
+            rotuloEnvio="Registrar recebimento"
+          >
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="text-sm">Valor recebido (R$)<input className={`${inputBase} mt-1 w-full`} name="valor" inputMode="decimal" placeholder="0,00" required /></label>
+              <label className="text-sm">Data do recebimento<input className={`${inputBase} mt-1 w-full`} type="date" name="dataPagamento" defaultValue={hojeISO()} required /></label>
+              <label className="text-sm">Forma
+                <select className={`${inputBase} mt-1 w-full`} name="via">
+                  <option value="PIX">Pix</option><option value="BOLETO">Boleto</option>
+                  <option value="DINHEIRO">Dinheiro</option><option value="TRANSFERENCIA">Transferência</option>
+                </select>
+              </label>
+            </div>
+          </FormularioLancamentoManual>
+        </Card>
+      : manual && registro.dominio === "MOVIMENTO" && registro.tituloChave
+        ? <Link href={hrefUnificacao(registro.tituloChave)} className={btnSecundario}>Ver conta vinculada</Link>
+        : podeEditarCaixa && registro.dominio === "MOVIMENTO" && registro.href
+          ? <Link href={registro.href} className={btnSecundario}>Editar movimento</Link>
+          : undefined;
+    return detalhesFinanceiros({ registro, baixas: baixas.filter(baixa => baixa.origem === "WIDESYS"), rota: rotaFinanceira, contextual: Boolean(contexto), excluir, acoesManuais });
   }
   return <div className="min-w-0">
     {contexto ? <header className="mb-5 flex flex-wrap items-start justify-between gap-3 border-b border-contorno pb-4"><div className="min-w-0 flex-1"><p className="text-[10px] font-semibold uppercase tracking-wide text-tinta-suave">{ROTULOS_DOMINIO[registro.dominio]} · Conferência na própria tela</p><h2 className="mt-1 break-words text-lg font-bold">{registro.titulo}</h2><p className="mt-1 break-words text-xs leading-relaxed text-tinta-suave">{registro.descricao}</p></div>{excluir}</header> : <PageHeader titulo={registro.titulo} descricao={`${ROTULOS_DOMINIO[registro.dominio]} · ${registro.descricao}`} acoes={<><Link prefetch={false} href="/unificacao" className={btnSecundario}>Voltar à conferência</Link>{registro.href ? <Link prefetch={false} href={registro.href} className={btnPrimario}>Abrir cadastro / lançamento</Link> : null}{excluir}</>} />}

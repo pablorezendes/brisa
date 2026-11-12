@@ -94,7 +94,7 @@ export default async function PaginaFinanceiro({
     <div>
       <PageHeader
         titulo="Resumo financeiro"
-        descricao="Acompanhe contas, pagamentos e movimentos registrados no Widesys."
+        descricao="Acompanhe contas a pagar, contas a receber e movimentos de caixa."
         acoes={<SeletorMes base="/financeiro" mes={mes} />}
       />
 
@@ -127,21 +127,21 @@ export default async function PaginaFinanceiro({
               valor={<Dinheiro centavos={receber.resumo.aberto} />}
               detalhe={<Sigilo>{receber.resumo.ativos} registros aceitos</Sigilo>}
               href={abrir("/recebimentos") ? `/recebimentos?mes=${mes}` : undefined}
-              ajuda="Saldo em aberto dos títulos válidos a receber da captura do Widesys."
+              ajuda="Saldo em aberto dos títulos válidos a receber."
             />
             <Kpi
               rotulo="A pagar em aberto"
               valor={<Dinheiro centavos={pagar.resumo.aberto} />}
               detalhe={<Sigilo>{pagar.resumo.ativos} registros aceitos</Sigilo>}
               href={abrir("/financeiro/contas-a-pagar") ? `/financeiro/contas-a-pagar?mes=${mes}` : undefined}
-              ajuda="Saldo em aberto dos títulos válidos a pagar da captura do Widesys."
+              ajuda="Saldo em aberto dos títulos válidos a pagar."
             />
             <Kpi
               rotulo="Saldo de entradas e saídas"
               valor={<Dinheiro centavos={movimentos.resumo.entradas - movimentos.resumo.saidas} />}
               detalhe="Entradas menos saídas aceitas"
               href={abrir("/caixa") ? `/caixa?mes=${mes}` : undefined}
-              ajuda="Entradas menos saídas dos movimentos válidos da captura do Widesys."
+              ajuda="Entradas menos saídas dos movimentos válidos."
             />
           </div>
         </section>

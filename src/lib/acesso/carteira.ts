@@ -60,6 +60,7 @@ export async function consultarCarteira(db: PrismaClient, p: PoliticaAcesso, mes
   const porPessoa = new Map(pessoas.map(x => [referencia(x.origem, x.legadoId), x]));
   const porImovel = new Map(imoveisLegados.map(i => [referencia(i.origem, i.legadoId), i]));
   const contratosAutorizados = new Map<string, { contrato: string; imovel: string }>([
+    ...contratos.map(c => [`BRISA:${c.id}`, { contrato: `BRISA:CONTRATO:${c.id}`, imovel: `BRISA:IMOVEL:${c.unidadeId}` }] as const),
     ...contratosLegados.map(c => [`WIDESYS:${c.id}`, { contrato: `WIDESYS:CONTRATO:${c.id}`, imovel: `WIDESYS:IMOVEL:${porImovel.get(referencia(c.origem, c.imovelLegadoId!))!.id}` }] as const),
   ]);
   const nomeCliente = (nome: string | undefined) => pode(p, "cadastros.ver") ? nome ?? "Não informado" : "Cliente restrito";
@@ -71,13 +72,20 @@ export async function consultarCarteira(db: PrismaClient, p: PoliticaAcesso, mes
   }));
   const titulos: TituloCarteira[] = [];
   const contratosWidesys = contratosLegados.filter(c => c.origem === "WIDESYS");
-  if (pode(p, "financeiro.ver") && contratosWidesys.length) {
-    const legados = (await db.tituloFinanceiroLegado.findMany({ where: { origem: "WIDESYS", contratoLegadoId: { in: contratosWidesys.map(c => c.legadoId) }, OR: [{ competencia: { startsWith: mes } }, { competencia: null, vencimento: { startsWith: mes } }] }, select: {
-      id: true, origem: true, contratoLegadoId: true, pessoaLegadoId: true, natureza: true, planoContaRotulo: true, tipoCobrancaRotulo: true,
-    } })).filter(t => !t.pessoaLegadoId || !bloqueioPessoaExterna.has(referencia(t.origem, t.pessoaLegadoId)));
-    const permitidos = new Map<string, string>();
+  if (pode(p, "financeiro.ver") && (contratos.length || contratosWidesys.length)) {
+    const [legados, manuais] = await Promise.all([
+      contratosWidesys.length ? db.tituloFinanceiroLegado.findMany({ where: { origem: "WIDESYS", contratoLegadoId: { in: contratosWidesys.map(c => c.legadoId) }, OR: [{ competencia: { startsWith: mes } }, { competencia: null, vencimento: { startsWith: mes } }] }, select: {
+        id: true, origem: true, contratoLegadoId: true, pessoaLegadoId: true, natureza: true, planoContaRotulo: true, tipoCobrancaRotulo: true,
+      } }) : [],
+      contratos.length ? db.recebimento.findMany({
+        where: { criadoManualBrisa: true, contratoId: { in: contratos.map(c => c.id) }, competencia: mes, origemAgregada: false },
+        select: { id: true, contratoId: true },
+      }) : [],
+    ]);
+    const permitidos = new Map<string, string>(manuais.map(t => [`BRISA:RECEBER:${t.id}`, `BRISA:${t.contratoId}`]));
     const contratoPorIdLegado = new Map(contratosWidesys.map(c => [c.legadoId, c]));
     for (const t of legados) {
+      if (t.pessoaLegadoId && bloqueioPessoaExterna.has(referencia(t.origem, t.pessoaLegadoId))) continue;
       // Não revelar receitas de comissão na carteira compartilhável.
       const classificacao = `${t.planoContaRotulo ?? ""} ${t.tipoCobrancaRotulo ?? ""}`.trim();
       if (!classificacao || contemComissaoRestrita(classificacao) || /administra/i.test(classificacao)) continue;

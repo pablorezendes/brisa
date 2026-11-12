@@ -6,7 +6,7 @@ import { DOMINIOS_UNIFICACAO, type DominioUnificacao } from "@/lib/unificacao/ti
 import { filtroOrigemVisivel, origensDoRegistro } from "@/lib/unificacao/origens";
 import { explicarConsolidacao } from "@/components/situacao-consolidacao";
 import { sincronizarUnificacao } from "@/app/(app)/unificacao/actions";
-import { Card, PageHeader, btnSecundario } from "@/components/ui";
+import { Card, PageHeader, btnPrimario, btnSecundario } from "@/components/ui";
 import { primeiroParametro, mensagemUnificacao, hrefUnificacao, motivoUnificacao, dataUnificada, exigirPerfilUnificacao, type ParametrosUnificacao } from "@/components/unificacao-apresentacao";
 import { contextoFinanceiro, validarRetornoFinanceiro } from "@/lib/interface/contexto-financeiro";
 import { JanelaContextual } from "@/components/janela-contextual";
@@ -75,7 +75,8 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
   const chaveSelecionada = primeiroParametro(parametros.registro);
   const painel = primeiroParametro(parametros.painel);
   // URLs servem apenas para navegação. O componente de detalhe/exclusão autoriza novamente no servidor.
-  const selecaoValida = contexto && chaveSelecionada?.startsWith("WIDESYS:") && chaveSelecionada.split(":")[1] === dominio
+  const selecionadoManual = dados.itens.some(item => item.chave === chaveSelecionada && item.proveniencia?.tipo === "CADASTRO_MANUAL");
+  const selecaoValida = contexto && chaveSelecionada && (chaveSelecionada.startsWith("WIDESYS:") || selecionadoManual) && chaveSelecionada.split(":")[1] === dominio
     && (painel === "detalhe" || painel === "excluir")
     && validarRetornoFinanceiro(`${contexto.retorno}${contexto.retorno.includes("?") ? "&" : "?"}${new URLSearchParams({ registro: chaveSelecionada, painel })}`);
   const conteudoJanela = selecaoValida ? painel === "excluir"
@@ -89,6 +90,13 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
   const permiteExcluir = acesso.perfil === "ADMINISTRADOR" && pode(acesso, "governanca.editar") && carteiraIrrestrita(acesso);
   const permiteVerRateio = dominio === "PAGAR" && carteiraIrrestrita(acesso) && pode(acesso, "despesas.ver");
   const permiteEditarRateio = permiteVerRateio && pode(acesso, "despesas.editar");
+  const novoLancamento = dominio === "PAGAR" && permiteEditarRateio
+    ? { href: "/financeiro/contas-a-pagar/novo", rotulo: "Nova conta a pagar" }
+    : dominio === "RECEBER" && pode(acesso, "recebimentos.editar") && pode(acesso, "pagamentos.conciliar")
+      ? { href: "/recebimentos/novo", rotulo: "Nova conta a receber" }
+      : movimento && pode(acesso, "caixa.editar")
+        ? { href: mes ? `/caixa/novo?${new URLSearchParams({ mes })}` : "/caixa/novo", rotulo: "Novo movimento" }
+        : null;
   // Somente campos já visíveis na lista atravessam a fronteira RSC/cliente.
   // Nunca enviar o objeto do DAL, candidatos, campos fiscais, documentos ou hashes.
   const itensTabela: LinhaTabelaOperacao[] = dados.itens.map(item => {
@@ -117,13 +125,14 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
       aberto: financeiro ? item.aberto ?? null : null,
       natureza: movimento || baixa ? item.natureza ?? null : null,
       hrefDetalhe: hrefDetalhe(item.chave),
-      hrefCadastro: contexto ? null : item.href,
+      hrefCadastro: contexto || (movimento && item.proveniencia?.tipo === "CADASTRO_MANUAL") ? null : item.href,
       exclusao: alvo ? {
         href: contexto?.hrefExcluir(item.chave) ?? `/cadastros/governanca?${new URLSearchParams({ tipo: alvo.tipo, origemId: alvo.origemId, modo: "excluir" })}`,
         rotulo: alvo.rotulo ?? "Excluir da plataforma",
       } : null,
-      rateio: permiteEditarRateio && item.dominio === "PAGAR" && item.origem === "WIDESYS" && ["ATIVO", "QUARENTENA"].includes(item.estado)
-        ? { origemChave: item.chave }
+      rateio: permiteEditarRateio && item.dominio === "PAGAR" && ["ATIVO", "QUARENTENA"].includes(item.estado)
+        ? item.origem === "WIDESYS" ? { origemChave: item.chave }
+          : item.proveniencia?.tipo === "CADASTRO_MANUAL" ? { id: item.origemId } : undefined
         : undefined,
     };
   });
@@ -139,7 +148,17 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
     ? [["", "Todos os registros"], ["ATIVO", "Disponíveis"], ["QUARENTENA", "Inconsistências"], ["AUSENTE", "Ausentes na captura"]]
     : [["", "Todos visíveis"], ["ATIVO", "Disponíveis"], ["PENDENTE", "Possíveis duplicatas"], ["REVISAR", "Decisões a revisar"], ["QUARENTENA", "Inconsistências"]];
   return <ProvedorRateioDespesa><div>
-    <PageHeader titulo={titulo} descricao={listaFinanceira ? "Lançamentos da última captura do Widesys disponível no Brisa." : central ? "Consulte os registros e a situação de cada cadastro." : "Consulte registros e pendências cadastrais."} acoes={permiteVerRateio ? <><ResumoRateiosDespesas />{podeAbrirRota(acesso, "/cadastros/fornecedores") && <Link href="/cadastros/fornecedores" prefetch={false} className={btnSecundario}>Fornecedores</Link>}{acesso.perfil === "ADMINISTRADOR" && <CategoriasDespesaBotao />}</> : undefined} />
+    <PageHeader titulo={titulo}
+      descricao={listaFinanceira ? "Lançamentos do Widesys e registros manuais do Brisa." : central ? "Consulte os registros e a situação de cada cadastro." : "Consulte registros e pendências cadastrais."}
+      acoes={<>
+        {permiteVerRateio && <>
+          <ResumoRateiosDespesas />
+          {podeAbrirRota(acesso, "/cadastros/fornecedores") && <Link href="/cadastros/fornecedores" prefetch={false} className={btnSecundario}>Fornecedores</Link>}
+          {acesso.perfil === "ADMINISTRADOR" && <CategoriasDespesaBotao />}
+        </>}
+        {novoLancamento && <Link href={novoLancamento.href} prefetch={false} className={btnPrimario}>{novoLancamento.rotulo}</Link>}
+      </>}
+    />
     <nav aria-label={listaFinanceira ? "Listas do financeiro" : "Operação unificada"} className="mb-5 flex flex-wrap gap-1.5 rounded-xl border border-contorno bg-carta p-2">{abasVisiveis.map((aba) => <Link prefetch={false} key={aba.dominio} href={aba.href} aria-current={(central ? aba.dominio === "CENTRAL" : aba.dominio === dominio) ? "page" : undefined} className={`rounded-lg px-3 py-2 text-xs font-semibold ${(central ? aba.dominio === "CENTRAL" : aba.dominio === dominio) ? "bg-oliva/10 text-oliva-escura" : "text-tinta-suave hover:bg-slate-50"}`}>{aba.titulo}</Link>)}</nav>
     {primeiroParametro(parametros.erro) ? <Card nivel="critico" className="mb-4 p-4 text-sm">{primeiroParametro(parametros.erro)}</Card> : null}
     {primeiroParametro(parametros.ok) ? <Card nivel="otimo" className="mb-4 p-4 text-sm">{mensagemUnificacao(primeiroParametro(parametros.ok)!)}</Card> : null}
@@ -164,7 +183,7 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
       <nav aria-label="Atalhos por situação" className="flex flex-wrap gap-2 border-b border-contorno p-4">{atalhos.map(([valor, rotulo]) => <Link prefetch={false} key={valor} href={hrefLista({ estado: valor })} aria-current={estado === valor ? "page" : undefined} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${estado === valor ? "border-oliva bg-oliva/10 text-oliva-escura" : "border-contorno text-tinta-suave hover:bg-slate-50"}`}>{rotulo}</Link>)}</nav>
       <FiltrosOperacaoUnificada base={base} dominio={dominio ?? ""} dominioFixo={Boolean(dominioFixo)} dominiosDisponiveis={central && !fonteFinanceiraUnica ? DOMINIOS_CADASTRAIS : undefined} financeiro={financeiro} movimento={movimento} baixa={baixa} fonteFinanceiraUnica={fonteFinanceiraUnica} q={q} origem={origem} estado={estado} mes={mes} de={de} ate={ate} papel={papel} vencidos={vencidos} porPagina={porPagina} />
       {financeiro || movimento || baixa ? <p className="border-b border-contorno px-4 py-2 text-[10px] leading-relaxed text-tinta-suave">{financeiro ? "Mês e intervalo usam a competência do título; no intervalo, ela corresponde ao primeiro dia do mês. Sem competência, usam o vencimento e, na falta dele, a data do registro." : "Mês e intervalo usam a data do movimento ou da baixa. Quando ausente, usam o vencimento e depois a competência, considerada no primeiro dia do mês."}</p> : null}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-contorno bg-slate-50/60 px-4 py-3 text-xs text-tinta-suave"><span>{dados.total} registro(s) · página {dados.pagina} de {dados.paginas || 1}</span><span>{fonteFinanceiraUnica ? "Os totais incluem os lançamentos válidos da captura." : "Possíveis duplicidades e inconsistências ficam fora dos totais."}</span></div>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-contorno bg-slate-50/60 px-4 py-3 text-xs text-tinta-suave"><span>{dados.total} registro(s) · página {dados.pagina} de {dados.paginas || 1}</span><span>{fonteFinanceiraUnica ? "Os totais incluem os lançamentos válidos." : "Possíveis duplicidades e inconsistências ficam fora dos totais."}</span></div>
       <TabelaOperacaoUnificada
         key={contexto?.retorno ?? hrefLista({ pagina: dados.pagina })}
         itens={itensTabela} financeiro={financeiro} exibirDominio={!dominioFixo} fonteFinanceiraUnica={fonteFinanceiraUnica}

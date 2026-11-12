@@ -15,7 +15,7 @@ const comissaoRestrita = contemComissaoRestrita;
 const selectCaixa = { id: true, data: true, descricao: true, cliente: true, valor: true, centroCusto: true, caixaOrigem: true, tipo: true, categoria: true, mesReferencia: true } satisfies Prisma.LancamentoCaixaSelect;
 const caixaAceito = (caixa: Parameters<typeof fonteLancamentoCaixa>[0], decisao?: { status: string; hashFonte: string } | null) => !decisao || (decisao.status === "ATIVO" && decisao.hashFonte === fonteLancamentoCaixa(caixa).hash);
 const selectDocumento = {
-  id: true, origemChave: true, origemHash: true, fornecedorNome: true, fornecedorDocumento: true, fornecedorPessoaId: true,
+  id: true, origemChave: true, origemHash: true, criadoManualBrisa: true, fornecedorNome: true, fornecedorDocumento: true, fornecedorPessoaId: true,
   categoriaCodigo: true, categoriaRotulo: true, descricao: true, tipoDocumento: true, destinoCusto: true,
   numero: true, serie: true, tomadorNome: true, tomadorDocumento: true, emissao: true, competencia: true,
   vencimento: true, total: true, statusRateio: true, restrita: true, versao: true, lancamentoCaixaId: true,
@@ -176,6 +176,7 @@ export async function obterEditorDespesa(db: PrismaClient, selecao: { id?: strin
     return {
       documento: {
         ...(documento ? { id: documento.id } : {}), origemChave: origem, origemHash: fonte?.snapshotHash ?? null,
+        criadoManualBrisa: documento?.criadoManualBrisa ?? false,
         fonteAlterada: !!documento && !!fonte && documento.origemHash !== fonte.snapshotHash,
         versao: documento?.versao ?? 0,
         fornecedorNome: documento?.fornecedorNome ?? fornecedor?.nome ?? "",
@@ -224,9 +225,9 @@ export async function buscarPagamentosDisponiveis(db: PrismaClient, filtro: { te
   }, { maxWait: 5000, timeout: 15000 });
 }
 
-export async function salvarDespesa(db: PrismaClient, input: SalvarDespesaEntrada, ator: Ator): Promise<ResultadoSalvarDespesa> {
+export async function salvarDespesa(db: PrismaClient, input: SalvarDespesaEntrada, ator: Ator, criadoManualBrisa = false): Promise<ResultadoSalvarDespesa> {
   const validado = validarEntrada(input);
-  const requestHash = hash({ input, ator: ator.id });
+  const requestHash = hash({ input, ator: ator.id, ...(criadoManualBrisa ? { criadoManualBrisa } : {}) });
   try {
     return await db.$transaction(async tx => {
       const politica = await autorizar(tx, ator, true);
@@ -328,7 +329,14 @@ export async function salvarDespesa(db: PrismaClient, input: SalvarDespesaEntrad
           await exigirAtivo(tx, "CONTA", contaBancariaId);
         }
         const descricaoSaida = `${validado.campos.descricao ?? `Documento ${validado.campos.numero}`} · ${validado.campos.fornecedorNome}`;
-        const saida = await tx.lancamentoCaixa.create({ data: { tipo: "SAIDA", mesReferencia: data.slice(0, 7), data, centroCusto: p.centroCusto, categoria, valor: validado.campos.total, descricao: descricaoSaida, caixaOrigem: "BRISA:DESPESA" }, select: { id: true } });
+        const saida = await tx.lancamentoCaixa.create({
+          data: {
+            tipo: "SAIDA", mesReferencia: data.slice(0, 7), data, centroCusto: p.centroCusto, categoria,
+            valor: validado.campos.total, descricao: descricaoSaida, caixaOrigem: "BRISA:DESPESA",
+            criadoManualBrisa: atual?.criadoManualBrisa ?? (criadoManualBrisa && !fonte),
+          },
+          select: { id: true },
+        });
         lancamentoCaixaId = saida.id;
       }
       const versao = (atual?.versao ?? 0) + 1;
@@ -338,7 +346,9 @@ export async function salvarDespesa(db: PrismaClient, input: SalvarDespesaEntrad
         if (alterado.count !== 1) throw new ErroDespesa("VERSAO_DESATUALIZADA", "A despesa foi alterada por outra pessoa. Reabra antes de salvar.");
         await tx.despesaRateio.deleteMany({ where: { despesaId: id } });
       } else {
-        await tx.despesaDocumento.create({ data: { id, ...dados, origemChave: validado.origemChave, criadoPorId: ator.id } });
+        await tx.despesaDocumento.create({
+          data: { id, ...dados, origemChave: validado.origemChave, criadoManualBrisa: criadoManualBrisa && !fonte, criadoPorId: ator.id },
+        });
       }
       if (validado.rateios.length) await tx.despesaRateio.createMany({ data: validado.rateios.map(r => ({ ...r, despesaId: id })) });
       await tx.despesaEvento.create({ data: { despesaId: id, requestId: input.requestId, requestHash, autorId: ator.id, versao, antes: atual ? JSON.stringify(atual) : null, depois: JSON.stringify({ ...dados, origemChave: validado.origemChave, rateios: validado.rateios,

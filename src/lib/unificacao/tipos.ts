@@ -17,6 +17,8 @@ export type FonteUnificacao = {
   competencia?: string | null; data?: string | null; vencimento?: string | null;
   valor?: number | null; pago?: number | null; aberto?: number | null; natureza?: string | null;
   cancelado?: boolean; informativo?: boolean; papeis?: string[];
+  /** Lançamento financeiro criado pelo formulário atual do Brisa. */
+  lancamentoManual?: boolean;
   restrito?: boolean;
   /** Assinaturas legadas que diferem somente pela classificação de sigilo. */
   hashesCompativeis?: string[];

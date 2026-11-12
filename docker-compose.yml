@@ -16,9 +16,8 @@ services:
       - SICOOB_ACCESS_TOKEN=${SICOOB_ACCESS_TOKEN:-}
       - SICOOB_SCOPES=${SICOOB_SCOPES:-boletos_inclusao boletos_consulta boletos_alteracao}
       - SICOOB_TIMEOUT_MS=${SICOOB_TIMEOUT_MS:-15000}
-      # Deixe vazio no sandbox quando usar o token estático do portal.
-      # Em produção, use /run/secrets/sicoob/client.pfx e preencha a senha
-      # exclusivamente no .env privado do servidor.
+      - SICOOB_CREDENCIAIS_DIR=/data/sicoob
+      # Compatibilidade com instalações anteriores. O painel usa /data/sicoob.
       - SICOOB_PFX_PATH=${SICOOB_PFX_PATH:-}
       - SICOOB_PFX_PASSPHRASE=${SICOOB_PFX_PASSPHRASE:-}
       # Alternativa PEM ao PFX; mantenha vazia quando usar client.pfx.

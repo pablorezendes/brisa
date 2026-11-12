@@ -11,7 +11,7 @@
  * opções do centro escolhido.
  */
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useId, useState } from "react";
 import { btnPrimario, btnSecundario, inputBase } from "@/components/ui";
 import type { EstadoFormLancamento } from "./actions";
 import { rotuloCaixaOrigem } from "@/lib/dominio/caixa-origem";
@@ -62,6 +62,8 @@ export function FormLancamento({
   categoriasBRISA = [],
   mes,
   inicial,
+  dataPadrao,
+  manual = false,
 }: {
   acao: (prev: EstadoFormLancamento, fd: FormData) => Promise<EstadoFormLancamento>;
   categoriasAL: string[];
@@ -70,10 +72,13 @@ export function FormLancamento({
   /** Mês em foco (volta do "Cancelar" e default do mês de referência). */
   mes: string;
   inicial?: LancamentoInicial;
+  dataPadrao?: string;
+  manual?: boolean;
 }) {
   const [estado, dispatch, pendente] = useActionState(acao, { erro: null });
   const [tipo, setTipo] = useState(inicial?.tipo ?? "SAIDA");
-  const [centro, setCentro] = useState(inicial?.tipo === "SAIDA" ? inicial.centroCusto : "AL");
+  const [centro, setCentro] = useState(inicial?.tipo === "SAIDA" ? inicial.centroCusto : manual ? "BRISA" : "AL");
+  const listaCategorias = useId();
 
   const categorias = centro === "CH" ? categoriasCH : centro === "BRISA" ? categoriasBRISA : centro === "AL" ? categoriasAL : [];
   const opcoesCategoria =
@@ -82,7 +87,12 @@ export function FormLancamento({
       : categorias;
 
   return (
-    <form action={dispatch} className="flex flex-col gap-4">
+    <form action={dispatch} className="flex flex-col gap-4" onSubmit={manual ? evento => {
+      evento.preventDefault();
+      if (pendente) return;
+      const form = new FormData(evento.currentTarget);
+      startTransition(() => dispatch(form));
+    } : undefined}>
       {inicial ? <input type="hidden" name="id" value={inicial.id} /> : null}
       {inicial?.caixaOrigem ? <p className="rounded-lg border border-contorno bg-papel px-3 py-2 text-sm">
         Caixa de origem: <strong>{rotuloCaixaOrigem(inicial.caixaOrigem)}</strong>
@@ -97,7 +107,7 @@ export function FormLancamento({
             onChange={(e) => setTipo(e.target.value)}
             className={inputBase}
           >
-            {Object.entries(ROTULO_TIPO).map(([v, r]) => (
+            {Object.entries(ROTULO_TIPO).filter(([v]) => !manual || v !== "RECEB_DINHEIRO").map(([v, r]) => (
               <option key={v} value={v}>
                 {r}
               </option>
@@ -105,7 +115,7 @@ export function FormLancamento({
           </select>
         </Campo>
 
-        <Campo rotulo="Mês de referência">
+        {!manual ? <Campo rotulo="Mês de referência">
           <input
             type="month"
             name="mesReferencia"
@@ -113,7 +123,7 @@ export function FormLancamento({
             required
             className={inputBase}
           />
-        </Campo>
+        </Campo> : null}
 
         {tipo === "SAIDA" ? (
           <>
@@ -133,7 +143,12 @@ export function FormLancamento({
             </Campo>
 
             <Campo rotulo="Categoria">
-              <select
+              {manual ? <>
+                <input key={centro} name="categoria" list={listaCategorias} maxLength={120} required className={inputBase}
+                  defaultValue={inicial?.centroCusto === centro ? (inicial.categoria ?? "") : ""}
+                  placeholder="Digite ou selecione a categoria" />
+                <datalist id={listaCategorias}>{opcoesCategoria.map(categoria => <option key={categoria} value={categoria} />)}</datalist>
+              </> : <select
                 key={centro}
                 name="categoria"
                 defaultValue={
@@ -148,7 +163,7 @@ export function FormLancamento({
                     {c}
                   </option>
                 ))}
-              </select>
+              </select>}
             </Campo>
           </>
         ) : null}
@@ -157,7 +172,8 @@ export function FormLancamento({
           <input
             type="date"
             name="data"
-            defaultValue={inicial?.data ?? ""}
+            defaultValue={inicial?.data ?? dataPadrao ?? ""}
+            required={manual}
             className={inputBase}
           />
         </Campo>
@@ -201,6 +217,8 @@ export function FormLancamento({
               type="text"
               name="descricao"
               defaultValue={inicial?.descricao ?? ""}
+            required={manual}
+            maxLength={manual ? 500 : undefined}
               className={inputBase}
             />
           </Campo>

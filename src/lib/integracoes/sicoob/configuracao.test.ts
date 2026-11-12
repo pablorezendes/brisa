@@ -5,10 +5,12 @@ const fsMock = vi.hoisted(() => ({
   readFileSync: vi.fn(),
 }));
 const createSecureContext = vi.hoisted(() => vi.fn());
+const lerCredenciaisPainelSicoob = vi.hoisted(() => vi.fn());
 
 vi.mock("server-only", () => ({}));
 vi.mock("node:fs", () => fsMock);
 vi.mock("node:tls", () => ({ createSecureContext }));
+vi.mock("./credenciais-painel", () => ({ lerCredenciaisPainelSicoob }));
 
 import {
   carregarConfiguracaoSicoob,
@@ -41,6 +43,29 @@ describe("configuração segura do Sicoob", () => {
     fsMock.existsSync.mockReset().mockReturnValue(true);
     fsMock.readFileSync.mockReset().mockReturnValue(Buffer.from("pfx-de-teste"));
     createSecureContext.mockReset().mockReturnValue({});
+    lerCredenciaisPainelSicoob.mockReset().mockReturnValue(null);
+  });
+
+  it("prioriza o certificado salvo e troca o token de teste por OAuth", () => {
+    const pfx = Buffer.from("certificado cifrado no painel");
+    lerCredenciaisPainelSicoob.mockReturnValue({
+      pfx, senha: "senha do painel", clientId: "client-id-painel", ambiente: "producao",
+    });
+    const env = envProducao({
+      SICOOB_AMBIENTE: "sandbox",
+      SICOOB_ACCESS_TOKEN: "token-estatico-sandbox",
+      SICOOB_CLIENT_SECRET: "segredo-app-anterior",
+      SICOOB_TOKEN_URL: undefined,
+    });
+    expect(obterEstadoConfiguracaoSicoob(env)).toMatchObject({
+      configurado: true, ambiente: "producao", certificadoPainel: true,
+      clientIdConfigurado: true, autenticacao: "oauth_client_credentials",
+    });
+    expect(carregarConfiguracaoSicoob(env)).toMatchObject({
+      clientId: "client-id-painel", tls: { pfx, passphrase: "senha do painel" },
+      accessTokenEstatico: null, clientSecret: null,
+    });
+    expect(fsMock.readFileSync).not.toHaveBeenCalled();
   });
 
   it("carrega produção com PFX usando somente os três escopos legados por padrão", () => {

@@ -32,6 +32,7 @@ const PAGINAS = [
   "financeiro/boletos/page.tsx",
   "financeiro/comissoes/page.tsx",
   "financeiro/conciliacao/page.tsx",
+  "financeiro/contas-a-pagar/novo/page.tsx",
   "financeiro/contas-a-pagar/page.tsx",
   "financeiro/contas-a-receber/page.tsx",
   "financeiro/contas-bancarias/page.tsx",
@@ -51,6 +52,7 @@ const PAGINAS = [
   "paineis/empreendimentos/page.tsx",
   "paineis/empreendimentos/[id]/page.tsx",
   "paineis/temporada/page.tsx",
+  "recebimentos/novo/page.tsx",
   "recebimentos/page.tsx",
   "relatorios/comissao/page.tsx",
   "relatorios/inadimplencia/page.tsx",
@@ -72,9 +74,11 @@ const ACTIONS = [
   "financeiro/conciliacao/actions.ts",
   "financeiro/contas-bancarias/actions.ts",
   "financeiro/contas-a-pagar/rateio-actions.ts",
+  "financeiro/contas-a-pagar/novo/actions.ts",
   "financeiro/contas-a-pagar/rateios-consulta.ts",
   "financeiro/notas-fiscais/actions.ts",
   "recebimentos/actions.ts",
+  "recebimentos/novo/actions.ts",
   "recebimentos/revisao-actions.ts",
   "temporada/actions.ts",
   "unificacao/actions.ts"
@@ -103,6 +107,7 @@ function validarImportacao(ast: ts.SourceFile, guarda: string) {
     && n.importClause.namedBindings.elements.some(e => e.name.text === guarda));
 }
 function permissaoEsperada(arquivo: string, nome: string): string {
+  if (arquivo === "financeiro/contas-a-pagar/novo/actions.ts") return "despesas.editar";
   if (arquivo === "recebimentos/revisao-actions.ts") return nome === "carregarRevisaoRecebimento" ? "financeiro.ver" : "unificacao.editar";
   if (arquivo === "financeiro/contas-a-pagar/rateios-consulta.ts") return "despesas.ver";
   if (arquivo === "financeiro/contas-a-pagar/rateio-actions.ts") {
