@@ -4,7 +4,7 @@ import { basename, join, resolve, sep } from "node:path";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { excluirTitulosLote, previaExclusaoTitulosLote } from "./exclusao-titulos-lote";
-import { previaGovernanca, restaurarRecurso } from "./servico";
+import { descartarTitulo, excluirAdministrativamente, excluirRecurso, previaGovernanca, restaurarRecurso } from "./servico";
 
 let diretorio: string;
 let contador = 0;
@@ -274,5 +274,35 @@ describe("exclusão administrativa agrupada de títulos", () => {
     expect(resultado.excluidos).toHaveLength(100);
     expect(consultas.length).toBeLessThanOrEqual(22);
     expect(consultas.join(" ")).not.toContain("UnificacaoRegistro");
+  });
+
+  it("protege título com recebimento local e sua entrada, inclusive após uma prévia de lote", async () => {
+    const titulo = await criarTituloComReferencias();
+    const chaveTitulo = `WIDESYS:RECEBER:${titulo.id}`;
+    const chaves = [chaveTitulo, chave("r2")];
+    const antes = await previaExclusaoTitulosLote(db, "RECEBER", chaves, ator);
+
+    await db.lancamentoCaixa.create({ data: {
+      id: "entrada-baixa", mesReferencia: "2026-10", centroCusto: "GERAL", tipo: "ENTRADA", data: "2026-10-24", valor: 1000, criadoManualBrisa: true,
+    } });
+    await db.recebimentoWidesysLocal.create({ data: {
+      id: "baixa-local", tituloId: titulo.id, lancamentoCaixaId: "entrada-baixa", valor: 1000, dataPagamento: "2026-10-24", via: "PIX",
+      valorPagoOrigemNaBaixa: 0, valorAbertoOrigemNaBaixa: 99999, valorDevidoOrigemNaBaixa: 99999, usuarioId: ator.id,
+    } });
+
+    await expect(previaExclusaoTitulosLote(db, "RECEBER", chaves, ator)).rejects.toMatchObject({ codigo: "TITULO_COM_BAIXA" });
+    await expect(excluirTitulosLote(db, "RECEBER", antes.itens, "Duplicata conferida", ator)).rejects.toMatchObject({ codigo: "TITULO_COM_BAIXA" });
+    const previaTitulo = await previaGovernanca(db, "TITULO", chaveTitulo);
+    expect(previaTitulo).toMatchObject({ bloqueioExclusao: expect.any(String), vinculos: { baixasLocais: 1 } });
+    await expect(excluirAdministrativamente(db, "TITULO", chaveTitulo, "Duplicata conferida", { ...ator, administrador: true, assinaturaPrevia: previaTitulo.assinatura })).rejects.toMatchObject({ codigo: "TITULO_COM_BAIXA" });
+    await expect(descartarTitulo(db, chaveTitulo, chave("r2"), "Duplicata conferida", { ...ator, administrador: true })).rejects.toMatchObject({ codigo: "TITULO_COM_BAIXA" });
+
+    const previaCaixa = await previaGovernanca(db, "CAIXA", "entrada-baixa");
+    expect(previaCaixa).toMatchObject({ bloqueioExclusao: expect.any(String), podeExcluir: false, vinculos: { baixasLocais: 1 } });
+    await expect(excluirAdministrativamente(db, "CAIXA", "entrada-baixa", "Movimento conferido", { ...ator, administrador: true, assinaturaPrevia: previaCaixa.assinatura })).rejects.toMatchObject({ codigo: "CONTA_VINCULADA" });
+    await expect(excluirRecurso(db, "CAIXA", "entrada-baixa", "Movimento conferido", { ...ator, administrador: true })).rejects.toMatchObject({ codigo: "CONTA_VINCULADA" });
+    expect(await db.recursoGovernado.count()).toBe(0);
+    expect(await db.recebimentoWidesysLocal.count()).toBe(1);
+    expect(await db.lancamentoCaixa.count()).toBe(1);
   });
 });

@@ -1,15 +1,16 @@
-import { Children, isValidElement, type ReactNode } from "react";
+import { Children, isValidElement, type ComponentProps, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PoliticaAcesso } from "@/lib/acesso/politica";
 import type { LinhaUnificada } from "@/lib/unificacao/tipos";
 
-const mocks = vi.hoisted(() => ({ perfil: vi.fn(), acesso: vi.fn(), pagina: vi.fn(), permissao: vi.fn(), detalhe: vi.fn(), resolver: vi.fn(), resolverNaTela: vi.fn() }));
+const mocks = vi.hoisted(() => ({ perfil: vi.fn(), acesso: vi.fn(), pagina: vi.fn(), permissao: vi.fn(), detalhe: vi.fn(), resolver: vi.fn(), resolverNaTela: vi.fn(), baixaManual: vi.fn(), baixaWidesys: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/autorizacao", () => ({ perfilAtual: mocks.perfil }));
 vi.mock("@/lib/acesso/servidor", () => ({ acessoAtual: mocks.acesso, exigirPaginaAcesso: mocks.pagina, exigirPermissaoAcesso: mocks.permissao }));
 vi.mock("@/lib/consultas/unificacao", () => ({ detalheUnificado: mocks.detalhe }));
 vi.mock("@/app/(app)/unificacao/actions", () => ({ resolverUnificacao: mocks.resolver, resolverUnificacaoNaTela: mocks.resolverNaTela }));
+vi.mock("@/app/(app)/recebimentos/novo/actions", () => ({ registrarBaixaRecebimentoManual: mocks.baixaManual, registrarBaixaRecebimentoWidesys: mocks.baixaWidesys }));
 vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("NOT_FOUND"); } }));
 vi.mock("next/form", () => ({ default: ({ children, action, scroll }: { children: ReactNode; action: string; scroll?: boolean }) => <form action={action} data-scroll={String(scroll)}>{children}</form> }));
 vi.mock("@/components/formulario-na-tela", () => ({ FormularioNaTela: ({ children, action, className }: { children: ReactNode; action: unknown; className?: string }) => <form className={className} data-inline-action={action === mocks.resolverNaTela ? "resolver" : "outra"}>{children}</form> }));
@@ -17,6 +18,7 @@ vi.mock("@/components/excluir-registro-link", () => ({ ExcluirUnificadoLink: () 
 
 import { ConferenciaRegistro } from "./conferencia-registro";
 import { CamposRegistroConferencia } from "./campos-conferencia";
+import { FormularioLancamentoManual } from "./formulario-lancamento-manual";
 
 function camposEnviados(no: ReactNode): unknown {
   if (!isValidElement<{ children?: ReactNode; campos?: unknown }>(no)) return undefined;
@@ -24,6 +26,15 @@ function camposEnviados(no: ReactNode): unknown {
   for (const filho of Children.toArray(no.props.children)) {
     const campos = camposEnviados(filho);
     if (campos) return campos;
+  }
+}
+
+function acaoDoFormulario(no: ReactNode): ComponentProps<typeof FormularioLancamentoManual>["acao"] | undefined {
+  if (!isValidElement<{ children?: ReactNode; acao?: ComponentProps<typeof FormularioLancamentoManual>["acao"] }>(no)) return;
+  if (no.type === FormularioLancamentoManual) return no.props.acao;
+  for (const filho of Children.toArray(no.props.children)) {
+    const acao = acaoDoFormulario(filho);
+    if (acao) return acao;
   }
 }
 
@@ -47,6 +58,19 @@ beforeEach(() => {
 });
 
 describe("conferência dentro da lista financeira", () => {
+  it("envia a baixa importada para a ação Widesys com o ID e a lista de origem", async () => {
+    mocks.acesso.mockResolvedValue({ ...politica(), permissoes: [...politica().permissoes, "recebimentos.editar", "caixa.editar"] });
+    const titulo = registro({ chave: "WIDESYS:RECEBER:r1", dominio: "RECEBER", origemId: "r1", estado: "ATIVO", contabiliza: true, aberto: 3000 });
+    mocks.detalhe.mockResolvedValue({ registro: titulo, candidatos: [], fontes: [titulo], historico: [], baixas: [] });
+    const retorno = "/recebimentos?mes=2026-11&pagina=2";
+    const acao = acaoDoFormulario(await ConferenciaRegistro({ chave: titulo.chave, contexto: { retorno, hrefDetalhe: retorno, priorizarBaixa: true } }));
+    const dados = new FormData();
+    dados.set("valor", "15,00");
+    await acao!({}, dados);
+    expect(mocks.baixaWidesys).toHaveBeenCalledWith(titulo.origemId, expect.any(String), retorno, {}, dados);
+    expect(mocks.baixaManual).not.toHaveBeenCalled();
+  });
+
   it("projeta somente campos visíveis para a apresentação cliente", async () => {
     const pessoa = { rotulo: "Pessoa", valor: "Pessoa permitida", interno: "SEGREDO_INTERNO" };
     const principal = registro({ campos: { pessoa, taxa: { rotulo: "Taxa", valor: "SEGREDO_TAXA" } } });

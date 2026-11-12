@@ -692,6 +692,7 @@ model TituloFinanceiroLegado {
   importadoEm            DateTime             @default(now())
   atualizadoEm           DateTime             @updatedAt
   ultimoItem             ImportacaoLegadoItem @relation("TituloLegadoUltimoItem", fields: [ultimoItemId], references: [id], onDelete: Restrict)
+  recebimentosLocais     RecebimentoWidesysLocal[]
 
   @@unique([origem, escopo, legadoId])
   @@index([natureza, situacaoNormalizada, vencimento])
@@ -699,6 +700,25 @@ model TituloFinanceiroLegado {
   @@index([pessoaLegadoId])
   @@index([inadimplente, vencimento])
   @@index([statusImportacao])
+}
+
+model RecebimentoWidesysLocal {
+  id                        String                  @id
+  tituloId                  String
+  lancamentoCaixaId         String                  @unique
+  valor                     Int
+  dataPagamento             String
+  via                       String
+  usuarioId                 String
+  restrito                  Boolean                 @default(false)
+  valorDevidoOrigemNaBaixa   Int
+  valorPagoOrigemNaBaixa     Int
+  valorAbertoOrigemNaBaixa   Int
+  criadoEm                  DateTime                @default(now())
+  titulo                    TituloFinanceiroLegado  @relation(fields: [tituloId], references: [id], onDelete: Restrict)
+  lancamentoCaixa           LancamentoCaixa         @relation(fields: [lancamentoCaixaId], references: [id], onDelete: Restrict)
+
+  @@index([tituloId, criadoEm])
 }
 
 model MovimentoFinanceiroLegado {
@@ -1186,6 +1206,7 @@ model LancamentoCaixa {
   importacoesPlanilha ImportacaoPlanilhaLinha[]
   despesaDocumento DespesaDocumento?
   recebimentoManual Recebimento? @relation(fields: [recebimentoManualId], references: [id], onDelete: Restrict)
+  recebimentoWidesysLocal RecebimentoWidesysLocal?
 
   @@index([mesReferencia, centroCusto])
   @@index([recebimentoManualId])

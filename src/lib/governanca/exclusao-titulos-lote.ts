@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { referenciaDocumentoDespesa } from "../despesas/apresentacao";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { carteiraIrrestrita, montarPolitica, pode } from "../acesso/politica";
-import { ErroGovernanca } from "./tipos";
+import { ErroGovernanca, TITULO_COM_BAIXA_LOCAL } from "./tipos";
 import {
   LIMITE_EXCLUSAO_TITULOS,
   type DominioExclusaoTitulos,
@@ -68,6 +68,7 @@ async function carregarPrevia(tx: Tx, selecao: Identidade[]) {
       contaBancariaRotulo: true, tipoCobrancaRotulo: true, planoContaRotulo: true, numeroDocumento: true, competencia: true,
       vencimento: true, valorDevido: true, valorPago: true, valorAberto: true,
       situacaoNormalizada: true, statusImportacao: true, snapshotHash: true, atualizadoEm: true,
+      _count: { select: { recebimentosLocais: true } },
     } }) : [],
     brisaIds.length ? tx.pagamentoRecebimento.findMany({ where: { recebimentoId: { in: brisaIds } },
       select: { id: true, recebimentoId: true, valor: true, status: true, atualizadoEm: true }, orderBy: { id: "asc" } }) : [],
@@ -132,6 +133,7 @@ async function carregarPrevia(tx: Tx, selecao: Identidade[]) {
       // A lista conserva naturezas inconsistentes em RECEBER para conferência.
       const mesmoDominio = t && (item.dominio === "PAGAR" ? t.natureza === "PAGAR" : t.natureza !== "PAGAR");
       if (!t || !mesmoDominio || t.origem !== "WIDESYS") throw new ErroGovernanca("NAO_ENCONTRADO", "Um dos registros selecionados não corresponde à lista. Atualize a seleção.");
+      if (estado?.status !== "EXCLUIDO" && t._count.recebimentosLocais > 0) throw new ErroGovernanca("TITULO_COM_BAIXA", TITULO_COM_BAIXA_LOCAL);
       const pessoa = pessoasPorId.get(JSON.stringify([t.origem, pessoaDoTitulo(t)]));
       const contrato = contratosPorId.get(JSON.stringify([t.origem, t.contratoLegadoId]));
       const imovel = contrato?.imovelLegadoId ? imoveisPorId.get(JSON.stringify([t.origem, contrato.imovelLegadoId])) : null;

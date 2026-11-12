@@ -114,15 +114,15 @@ async function salvarLancamentoInterno(formData: FormData, acesso: Awaited<Retur
     const identidade = manual ? { id, criadoManualBrisa: true, despesaDocumento: { is: null }, recebimentoManualId: null } : { id };
     const where = { AND: [identidade, sigilo] };
     const existente = await prisma.lancamentoCaixa.findFirst({
-      where, select: { id: true, descricao: true, categoria: true, criadoManualBrisa: true, recebimentoManualId: true, despesaDocumento: { select: { criadoManualBrisa: true } } },
+      where, select: { id: true, descricao: true, categoria: true, criadoManualBrisa: true, recebimentoManualId: true, despesaDocumento: { select: { criadoManualBrisa: true } }, recebimentoWidesysLocal: { select: { id: true } } },
     });
     if (!existente) return { erro: "Lançamento não encontrado — pode ter sido excluído." };
-    if (existente.recebimentoManualId || existente.despesaDocumento?.criadoManualBrisa) return { erro: "Consulte a conta vinculada para tratar este movimento." };
+    if (existente.recebimentoManualId || existente.despesaDocumento?.criadoManualBrisa || existente.recebimentoWidesysLocal) return { erro: "Consulte a conta vinculada para tratar este movimento." };
     if (!manual && existente.criadoManualBrisa) return { erro: "Abra o movimento na lista para fazer a alteração." };
     if (manual && acesso.perfil !== "ADMINISTRADOR" && contemComissaoRestrita([existente.descricao, existente.categoria])) return { erro: "Este lançamento está restrito ao administrador." };
     // A mesma condição no UPDATE impede corrida com uma nota que acaba de
     // tornar seu pagamento reservado, sem carregar seus dados para o cliente.
-    const resultado = await prisma.lancamentoCaixa.updateMany({ where, data: dados });
+    const resultado = await prisma.lancamentoCaixa.updateMany({ where: { ...where, recebimentoWidesysLocal: { is: null } }, data: dados });
     if (resultado.count !== 1) return { erro: "Lançamento indisponível para alteração. Reabra a página." };
   } else {
     try {
@@ -146,6 +146,6 @@ export async function excluirLancamento(formData: FormData): Promise<void> {
   const acesso = await exigirPermissaoAcesso("governanca.editar", { global: true });
   const id = texto(formData, "id");
   if (!id) return;
-  if (!await prisma.lancamentoCaixa.findFirst({ where: { AND: [{ id }, filtroCaixaDespesasRestritas(acesso.perfil)] }, select: { id: true } })) return;
+  if (!await prisma.lancamentoCaixa.findFirst({ where: { AND: [{ id }, filtroCaixaDespesasRestritas(acesso.perfil)], recebimentoWidesysLocal: { is: null } }, select: { id: true } })) return;
   redirect(`/cadastros/governanca?${new URLSearchParams({ tipo: "CAIXA", origemId: id })}`);
 }

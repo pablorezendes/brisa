@@ -2,8 +2,9 @@ import type { FonteUnificacao } from "@/lib/unificacao/tipos";
 import type { TipoGovernanca } from "./tipos";
 
 /** A identidade é da fonte, não de um candidato de duplicidade ou do destino vinculado. */
-export function alvoExclusaoUnificado(registro: Pick<FonteUnificacao, "dominio" | "origem" | "origemId" | "chave" | "tituloChave">): { tipo: TipoGovernanca; origemId: string; rotulo?: string } | null {
+export function alvoExclusaoUnificado(registro: Pick<FonteUnificacao, "dominio" | "origem" | "origemId" | "chave" | "tituloChave" | "baixaLocalWidesys">): { tipo: TipoGovernanca; origemId: string; rotulo?: string } | null {
   const { dominio, origem, origemId, chave } = registro;
+  if (registro.baixaLocalWidesys) return null;
   if (dominio === "RECEBER" || dominio === "PAGAR") return { tipo: "TITULO", origemId: chave };
   if (dominio === "PESSOA") return { tipo: origem === "BRISA" ? "LOCATARIO" : "PESSOA", origemId };
   if (dominio === "IMOVEL") return { tipo: origem === "BRISA" ? "UNIDADE" : "IMOVEL_LEGADO", origemId };

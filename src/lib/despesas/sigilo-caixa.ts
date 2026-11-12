@@ -6,5 +6,8 @@ import type { Prisma } from "@prisma/client";
  */
 export function filtroCaixaDespesasRestritas(perfil: string): Prisma.LancamentoCaixaWhereInput {
   if (perfil === "ADMINISTRADOR") return {};
-  return { OR: [{ despesaDocumento: { is: null } }, { despesaDocumento: { is: { restrita: false } } }] };
+  return {
+    OR: [{ despesaDocumento: { is: null } }, { despesaDocumento: { is: { restrita: false } } }],
+    NOT: { recebimentoWidesysLocal: { is: { restrito: true } } },
+  };
 }

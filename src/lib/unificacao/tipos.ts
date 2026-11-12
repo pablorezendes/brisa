@@ -19,6 +19,8 @@ export type FonteUnificacao = {
   cancelado?: boolean; informativo?: boolean; papeis?: string[];
   /** Lançamento financeiro criado pelo formulário atual do Brisa. */
   lancamentoManual?: boolean;
+  /** Título importado assumido pelo Brisa ou lançamento local ligado a ele. */
+  baixaLocalWidesys?: boolean;
   restrito?: boolean;
   /** Assinaturas legadas que diferem somente pela classificação de sigilo. */
   hashesCompativeis?: string[];

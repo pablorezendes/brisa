@@ -17,6 +17,10 @@ describe("destino da revisão de exclusão", () => {
     expect(alvoExclusaoUnificado({ dominio, origem: "WIDESYS", origemId: "123", chave: `WIDESYS:${dominio}:123` })).toEqual({ tipo: "TITULO", origemId: `WIDESYS:${dominio}:123` });
   });
 
+  it("oculta exclusão do título com baixa local", () => {
+    expect(alvoExclusaoUnificado({ dominio: "RECEBER", origem: "WIDESYS", origemId: "123", chave: "WIDESYS:RECEBER:123", baixaLocalWidesys: true })).toBeNull();
+  });
+
   it.each(["BAIXA_RECEBER", "BAIXA_PAGAR"] as const)("não transforma exclusão de %s em estorno", dominio => {
     const registro = { dominio, origem: "WIDESYS", origemId: "b1", chave: `WIDESYS:${dominio}:b1` } as const satisfies Partial<FonteUnificacao>;
     expect(alvoExclusaoUnificado(registro)).toBeNull();

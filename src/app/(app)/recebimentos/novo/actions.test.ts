@@ -10,11 +10,11 @@ const runtime = vi.hoisted(() => ({ banco: null as PrismaClient | null }));
 vi.mock("@/lib/db", () => ({ get prisma() { return runtime.banco; } }));
 vi.mock("@/lib/acesso/servidor", () => ({ exigirPermissaoAcesso: async () => ({ perfil: "ADMINISTRADOR", usuarioId: "teste" }) }));
 vi.mock("@/lib/autorizacao", () => ({ exigirPermissaoFinanceira: async () => undefined }));
-vi.mock("@/lib/consultas/locacao", () => ({ taxaComissaoParaMes: async () => 1000 }));
+vi.mock("@/lib/consultas/locacao", () => ({ RE_MES: /^\d{4}-(0[1-9]|1[0-2])$/, taxaComissaoParaMes: async () => 1000 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: () => { throw new Error("REDIRECT"); } }));
 
-import { registrarBaixaRecebimentoManual, salvarRecebimentoManual } from "./actions";
+import { registrarBaixaRecebimentoManual, registrarBaixaRecebimentoWidesys, salvarRecebimentoManual } from "./actions";
 
 let banco: PrismaClient;
 let pasta: string;
@@ -67,5 +67,62 @@ describe("lançamentos manuais de recebimento", () => {
     const titulo = await banco.recebimento.findUniqueOrThrow({ where: { id }, include: { entradasManuais: true } });
     expect(titulo.recebido).toBe(3000);
     expect(titulo.entradasManuais).toMatchObject([{ data: "2026-11-11", valor: 3000 }]);
+  });
+});
+
+async function tituloWidesys() {
+  const legadoId = randomUUID();
+  const capturadoEm = new Date("2026-11-10T12:00:00Z");
+  const lote = await banco.importacaoLegadoLote.create({ data: {
+    origem: "WIDESYS", capturaId: legadoId, manifestoHash: legadoId, capturadoEm, status: "CONCLUIDO",
+  } });
+  const item = await banco.importacaoLegadoItem.create({ data: {
+    loteId: lote.id, origem: "WIDESYS", escopo: "TITULO_RECEBER", legadoId, snapshotHash: legadoId, acao: "CRIAR",
+  } });
+  return banco.tituloFinanceiroLegado.create({ data: {
+    escopo: "TITULO_RECEBER", natureza: "RECEBER", legadoId, ultimoItemId: item.id, capturadoEm,
+    competencia: "2026-11", vencimento: "2026-11-10", valorDevido: 15000, valorPago: 2000, valorAberto: 13000,
+    situacaoNormalizada: "PARCIAL", snapshot: "{}", snapshotHash: legadoId,
+  } });
+}
+
+describe("baixa no Brisa de título do Widesys", () => {
+  const baixa = (valor: string) => formulario({ valor, dataPagamento: "2026-11-11", via: "PIX" });
+
+  it("aceita parcial e quitação, preservando a base original e um movimento por recebimento", async () => {
+    const titulo = await tituloWidesys();
+    const id = randomUUID();
+    const registrar = (valor: string, requisicao = randomUUID()) => registrarBaixaRecebimentoWidesys(titulo.id, requisicao, "/recebimentos", {}, baixa(valor));
+    await expect(registrar("30,00", id)).rejects.toThrow("REDIRECT");
+    await expect(registrar("30,00", id)).rejects.toThrow("REDIRECT");
+    await expect(registrar("40,00", id)).resolves.toHaveProperty("erro");
+
+    // A mesma baixa chegou posteriormente na fotografia do Widesys.
+    await banco.tituloFinanceiroLegado.update({ where: { id: titulo.id }, data: { valorPago: 5000, valorAberto: 10000 } });
+    await expect(registrar("100,01")).resolves.toHaveProperty("erro", "O valor informado ultrapassa o saldo em aberto.");
+    await expect(registrar("100,00")).rejects.toThrow("REDIRECT");
+    await expect(registrar("0,01")).resolves.toHaveProperty("erro");
+
+    const pagamentos = await banco.recebimentoWidesysLocal.findMany({ where: { tituloId: titulo.id }, orderBy: { valor: "asc" }, include: { lancamentoCaixa: true } });
+    expect(pagamentos.map(pagamento => pagamento.valor)).toEqual([3000, 10000]);
+    for (const pagamento of pagamentos) {
+      expect(pagamento).toMatchObject({ valorDevidoOrigemNaBaixa: 15000, valorPagoOrigemNaBaixa: 2000, valorAbertoOrigemNaBaixa: 13000, usuarioId: "teste" });
+      expect(pagamento.lancamentoCaixa).toMatchObject({ id: pagamento.id, valor: pagamento.valor, data: "2026-11-11", tipo: "ENTRADA" });
+    }
+    expect(await banco.tituloFinanceiroLegado.findUnique({ where: { id: titulo.id } })).toMatchObject({ valorPago: 5000, valorAberto: 10000 });
+  });
+
+  it("não inicia o controle do título enquanto uma importação estiver processando", async () => {
+    const titulo = await tituloWidesys();
+    const lote = await banco.importacaoLegadoLote.create({ data: {
+      origem: "WIDESYS", capturaId: randomUUID(), manifestoHash: "teste", capturadoEm: new Date(),
+    } });
+    const id = randomUUID();
+    try {
+      await expect(registrarBaixaRecebimentoWidesys(titulo.id, id, "/recebimentos", {}, baixa("30,00"))).resolves.toHaveProperty("erro");
+      expect(await banco.lancamentoCaixa.findUnique({ where: { id } })).toBeNull();
+    } finally {
+      await banco.importacaoLegadoLote.delete({ where: { id: lote.id } });
+    }
   });
 });

@@ -128,7 +128,7 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
       natureza: movimento || baixa ? item.natureza ?? null : null,
       hrefDetalhe: hrefDetalhe(item.chave),
       hrefCadastro: contexto || (movimento && item.proveniencia?.tipo === "CADASTRO_MANUAL") ? null : item.href,
-      ...(contexto && tipoBaixa ? { baixaRecebimento: { href: contexto.hrefBaixa(item.chave), tipo: tipoBaixa } } : {}),
+      ...(contexto && tipoBaixa ? { hrefBaixaRecebimento: contexto.hrefBaixa(item.chave) } : {}),
       exclusao: alvo ? {
         href: contexto?.hrefExcluir(item.chave) ?? `/cadastros/governanca?${new URLSearchParams({ tipo: alvo.tipo, origemId: alvo.origemId, modo: "excluir" })}`,
         rotulo: alvo.rotulo ?? "Excluir da plataforma",

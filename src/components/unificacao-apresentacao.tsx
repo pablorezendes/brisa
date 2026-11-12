@@ -16,6 +16,8 @@ export function motivoUnificacao(motivo: string) {
     PESSOA_E_IMOVEL: "Mesma pessoa e imóvel", MESMA_PESSOA: "Mesma pessoa", MESMO_IMOVEL: "Mesmo imóvel", ALUGUEL_IGUAL_CONFERIR_IMOVEL: "Mesmo aluguel; conferir imóvel",
     MES_E_VINCULO: "Mesma competência e vínculo cadastral", MES_E_VALOR: "Mesma competência e valor", CONTEUDO_REPETIDO: "Conteúdo repetido", DATA_VALOR_NATUREZA: "Mesma data, valor e natureza", TITULO_DATA_VALOR: "Mesmo título, data e valor", PARAMETRO_IGUAL: "Mesmo parâmetro",
     UNIAO_CONFIRMADA: "Vínculo confirmado na revisão", REGISTRO_DISTINTO_CONFIRMADO: "Registro confirmado como distinto", REVISAO_REABERTA: "Decisão reaberta para revisão",
+    BAIXA_ORIGEM_APOS_BRISA: "Confira o recebimento informado pelo Widesys após a primeira baixa no Brisa.",
+    MOVIMENTO_WIDESYS_BAIXA_BRISA: "O valor da baixa registrada no Brisa já está no caixa.",
   };
   return MOTIVOS_UNIFICACAO[motivo] ?? correspondencias[motivo] ?? motivo.replaceAll("_", " ").toLocaleLowerCase("pt-BR");
 }

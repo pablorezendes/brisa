@@ -174,24 +174,38 @@ describe("baixa na lista de contas a receber", () => {
     expect(dialogo!.indexOf("Confirmar recebimento")).toBeLessThan(dialogo!.indexOf("Pessoa da conta manual"));
   });
 
-  it("orienta a baixa do título importado no Widesys sem oferecer formulário local", async () => {
+  it("abre a baixa no Brisa para o título Widesys e mostra o histórico das duas origens", async () => {
     permitirBaixa();
+    const baixas = [
+      registro({ chave: "WIDESYS:BAIXA_RECEBER:antiga", dominio: "BAIXA_RECEBER", origem: "WIDESYS", data: "2026-11-01", descricao: "Recebimento de outubro", valor: 6000 }),
+      registro({ chave: "BRISA:BAIXA_RECEBER:local", dominio: "BAIXA_RECEBER", lancamentoManual: true, data: "2026-11-07", descricao: "Recebimento por Pix", valor: 2000 }),
+    ];
     mocks.listar.mockResolvedValue({ ...lista(), itens: [widesys] });
-    mocks.detalhe.mockResolvedValue({ registro: widesys, fontes: [widesys], candidatos: [], historico: [], baixas: [] });
+    mocks.detalhe.mockResolvedValue({ registro: { ...widesys, avisos: ["BAIXA_ORIGEM_APOS_BRISA"] }, fontes: [widesys], candidatos: [], historico: [], baixas });
     const html = renderToStaticMarkup(await OperacaoUnificada({ ...tela, parametros: { registro: widesys.chave, painel: "baixa" } }));
-    expect(html).toMatch(/<a\b[^>]*href="[^"]*painel=baixa[^>]*>Baixa no Widesys<\/a>/);
+    expect(html).toMatch(/<a\b[^>]*href="[^"]*registro=WIDESYS%3ARECEBER%3Aw1[^>]*painel=baixa[^>]*>Dar baixa<\/a>/);
     const dialogo = html.match(/<dialog\b[\s\S]*?<\/dialog>/)?.[0];
     expect(dialogo).toBeDefined();
-    expect(dialogo).toMatch(/registre .*no Widesys/i);
-    expect(dialogo).toMatch(/atualiz.*captura|captura atualizada/i);
-    expect(dialogo).not.toContain(">Confirmar recebimento<");
-    expect(dialogo).not.toContain('name="dataPagamento"');
+    expect(dialogo).toContain(">Confirmar recebimento<");
+    expect(dialogo).toContain('name="valor"');
+    expect(dialogo).toContain('name="dataPagamento"');
+    expect(dialogo).toContain('name="via"');
+    expect(dialogo).toContain("A partir da primeira baixa no Brisa");
+    expect(dialogo!.indexOf("Confira o recebimento informado pelo Widesys")).toBeGreaterThanOrEqual(0);
+    expect(dialogo!.indexOf("Confira o recebimento informado pelo Widesys")).toBeLessThan(dialogo!.indexOf("Confirmar recebimento"));
+    expect(dialogo).toContain("Recebimentos registrados");
+    expect(dialogo).toContain("Recebimento de outubro · Widesys");
+    expect(dialogo).toContain("Recebimento por Pix · Brisa");
   });
 
   it.each([
     { descricao: "quitada", conta: { ...manual, aberto: 0, pago: 10000 }, permissoes: permissoesBaixa },
     { descricao: "cancelada", conta: { ...manual, cancelado: true, contabiliza: false }, permissoes: permissoesBaixa },
+    { descricao: "Widesys quitada", conta: { ...widesys, aberto: 0, pago: 8000 }, permissoes: permissoesBaixa },
+    { descricao: "Widesys cancelada", conta: { ...widesys, cancelado: true, contabiliza: false }, permissoes: permissoesBaixa },
+    { descricao: "Widesys inconsistente", conta: { ...widesys, estado: "QUARENTENA" as const, contabiliza: false }, permissoes: permissoesBaixa },
     ...permissoesBaixa.map(acao => ({ descricao: `sem ${acao}`, conta: manual, permissoes: permissoesBaixa.filter(permissao => permissao !== acao) })),
+    ...permissoesBaixa.map(acao => ({ descricao: `Widesys sem ${acao}`, conta: widesys, permissoes: permissoesBaixa.filter(permissao => permissao !== acao) })),
   ])("omite a baixa manual da conta $descricao mesmo com a janela solicitada por URL", async ({ conta, permissoes }) => {
     permitirBaixa(permissoes);
     mocks.listar.mockResolvedValue({ ...lista(), itens: [conta] });

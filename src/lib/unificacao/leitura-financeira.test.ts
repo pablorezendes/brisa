@@ -99,6 +99,43 @@ async function despesaSintetica(paga = false) {
 }
 
 describe("leitura financeira restrita ao domínio — paridade real com SQLite", () => {
+  it("mantém a baixa local em uma única entrada após atualizar a captura ou retirar seu detalhe", async () => {
+    const dataPagamento = "2026-10-23";
+    await db.lancamentoCaixa.create({ data: { id: "entrada-local", tipo: "ENTRADA", valor: 4500, data: dataPagamento,
+      mesReferencia: "2026-10", centroCusto: "GERAL", criadoManualBrisa: true } });
+    await db.recebimentoWidesysLocal.create({ data: { id: "local", tituloId: "w1", lancamentoCaixaId: "entrada-local",
+      valor: 4500, dataPagamento, via: "PIX", usuarioId: "teste", criadoEm: new Date("2026-10-23T12:00:00Z"),
+      valorDevidoOrigemNaBaixa: 10000, valorPagoOrigemNaBaixa: 0, valorAbertoOrigemNaBaixa: 10000 } });
+    const titulo = "WIDESYS:RECEBER:w1";
+    const financeiro = { somenteWidesysFinanceiro: true };
+    const projecaoCompleta = () => lerOperacaoUnificada(db, financeiro);
+    const projecaoLista = () => lerListaFinanceira(db, "RECEBER", financeiro);
+    const verificarParcial = async (avisos: string[]) => {
+      const lista = await projecaoLista();
+      const completa = await projecaoCompleta();
+      expect(lista.linhas.find(linha => linha.chave === titulo)).toMatchObject({ pago: 4500, aberto: 5500, contabiliza: true, avisos });
+      expect(lista.linhas.find(linha => linha.chave === titulo)).toEqual(completa.linhas.find(linha => linha.chave === titulo));
+      expect(completa.linhas.filter(linha => linha.dominio === "MOVIMENTO" && linha.contabiliza).map(linha => linha.chave)).toEqual(["BRISA:MOVIMENTO:entrada-local"]);
+    };
+    await verificarParcial([]);
+
+    // Mesmas escritas canônicas que uma nova captura financeira produz.
+    const importadoEm = new Date("2026-10-24T12:00:00Z");
+    await db.tituloFinanceiroLegado.update({ where: { id: "w1" }, data: { valorPago: 4500, valorAberto: 5500, situacaoNormalizada: "PARCIAL" } });
+    await db.baixaFinanceiraLegado.create({ data: { ...captura, id: "captura-baixa", legadoId: "baixa-local-espelhada", ultimoItemId: "item-captura-baixa",
+      escopo: "BAIXA_RECEBER", natureza: "RECEBIMENTO", tituloEscopo: "TITULO_RECEBER", tituloLegadoId: "w1-externo", movimentoLegadoId: "entrada-externa",
+      valor: 4500, forma: "Pix", dataPagamento, importadoEm } });
+    await db.movimentoFinanceiroLegado.create({ data: { ...captura, id: "captura-movimento", legadoId: "entrada-externa", ultimoItemId: "item-captura-movimento",
+      natureza: "ENTRADA", valor: 4500, dataMovimento: dataPagamento, importadoEm } });
+    await verificarParcial([]);
+
+    for (const alteracao of [{ estornada: true }, { estornada: false, statusImportacao: "AUSENTE_NA_FONTE" }]) {
+      await db.baixaFinanceiraLegado.update({ where: { id: "captura-baixa" }, data: alteracao });
+      await verificarParcial(["BAIXA_ORIGEM_APOS_BRISA"]);
+    }
+    expect(await db.lancamentoCaixa.count({ where: { criadoManualBrisa: true } })).toBe(1);
+  });
+
   it("nota com várias parcelas aparece uma única vez em pagar e conserva uma única saída", async () => {
     await despesaSintetica(true);
     const dados = await paridade("PAGAR");

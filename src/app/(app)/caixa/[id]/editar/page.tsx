@@ -4,6 +4,7 @@ import { exigirPaginaAcesso, exigirPermissaoAcesso } from "@/lib/acesso/servidor
 import { Card, PageHeader } from "@/components/ui";
 import { buscarLancamento, categoriasPorCentro } from "@/lib/consultas/caixa";
 import { contemComissaoRestrita } from "@/lib/despesas/sigilo";
+import { prisma } from "@/lib/db";
 import { salvarLancamentoManual } from "../../actions";
 import { FormLancamento } from "../../FormLancamento";
 
@@ -14,6 +15,7 @@ export default async function PaginaEditarLancamento({ params }: { params: Promi
   const lancamento = await buscarLancamento(id);
   if (!lancamento?.criadoManualBrisa || lancamento.recebimentoManualId || lancamento.caixaOrigem === "BRISA:DESPESA") notFound();
   if (acesso.perfil !== "ADMINISTRADOR" && contemComissaoRestrita([lancamento.descricao, lancamento.categoria])) notFound();
+  if (await prisma.recebimentoWidesysLocal.findUnique({ where: { lancamentoCaixaId: id }, select: { id: true } })) notFound();
   const categorias = await categoriasPorCentro();
   const permitida = (categoria: string) => acesso.perfil === "ADMINISTRADOR" || !contemComissaoRestrita(categoria);
   return (

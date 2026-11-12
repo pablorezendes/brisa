@@ -7,6 +7,7 @@ import { categoriaDespesa } from "../despesas/categorias";
 import { contemComissaoRestrita } from "../despesas/sigilo";
 import { referenciaDocumentoDespesa, ROTULOS_DOCUMENTO_DESPESA } from "../despesas/apresentacao";
 import type { CampoFonte, DominioUnificacao, FonteUnificacao } from "./tipos";
+import { apurarRecebimentosWidesysLocais, BAIXA_ORIGEM_APOS_BRISA, MOVIMENTO_WIDESYS_BAIXA_BRISA } from "./recebimentos-widesys-locais";
 
 export type BancoUnificacao = PrismaClient | Prisma.TransactionClient;
 export const chaveFonte = (origem: string, dominio: string, id: string) => `${origem}:${dominio}:${id}`;
@@ -54,7 +55,13 @@ export function fonteLancamentoCaixa(l: Pick<LancamentoCaixa, "id" | "descricao"
  */
 export async function carregarDadosFontesUnificacao(db: BancoUnificacao, dominioFinanceiro?: "RECEBER" | "PAGAR", incluirProvenienciaPlanilha = true) {
   const completa = !dominioFinanceiro;
-  const [locatarios, pessoas, unidades, imoveis, contratos, contratosLegados, recebimentos, titulos, pagamentos, baixas, caixa, movimentos, parametros, importacoesPlanilha, despesas] = await Promise.all([
+  const selecaoBaixaLegada = {
+    id: true, legadoId: true, tituloEscopo: true, tituloLegadoId: true,
+    escopo: true, forma: true, statusImportacao: true, quarentenaMotivo: true,
+    valor: true, dataPagamento: true, estornada: true, contaBancariaRotulo: true,
+    movimentoLegadoId: true, importadoEm: true,
+  } as const;
+  const [locatarios, pessoas, unidades, imoveis, contratos, contratosLegados, recebimentos, titulos, pagamentos, todasBaixas, caixa, movimentos, parametros, importacoesPlanilha, despesas, recebimentosWidesysLocais] = await Promise.all([
     completa ? db.locatario.findMany({ select: {
       id: true, nome: true, cpfCnpj: true, pessoaId: true, email: true,
       telefone: true, contato: true, endereco: true, numeroEndereco: true,
@@ -115,12 +122,7 @@ export async function carregarDadosFontesUnificacao(db: BancoUnificacao, dominio
       id: true, forma: true, status: true, recebimentoId: true,
       dataPagamento: true, valor: true, identificadorBanco: true,
     } }) : [],
-    completa ? db.baixaFinanceiraLegado.findMany({ where: { origem: "WIDESYS" }, select: {
-      id: true, legadoId: true, tituloEscopo: true, tituloLegadoId: true,
-      escopo: true, forma: true, statusImportacao: true, quarentenaMotivo: true,
-      valor: true, dataPagamento: true, estornada: true, contaBancariaRotulo: true,
-      movimentoLegadoId: true,
-    } }) : [],
+    completa ? db.baixaFinanceiraLegado.findMany({ where: { origem: "WIDESYS" }, select: selecaoBaixaLegada }) : [],
     completa ? db.lancamentoCaixa.findMany({ select: {
       id: true, mesReferencia: true, centroCusto: true, tipo: true, categoria: true,
       data: true, valor: true, descricao: true, cliente: true, local: true, caixaOrigem: true, criadoManualBrisa: true, recebimentoManualId: true,
@@ -129,7 +131,7 @@ export async function carregarDadosFontesUnificacao(db: BancoUnificacao, dominio
       id: true, legadoId: true, tituloEscopo: true, tituloLegadoId: true,
       descricao: true, planoContaRotulo: true, contaBancariaRotulo: true,
       statusImportacao: true, quarentenaMotivo: true, dataMovimento: true,
-      competencia: true, natureza: true, valor: true, documento: true,
+      competencia: true, natureza: true, valor: true, documento: true, importadoEm: true,
     } }) : [],
     completa ? db.catalogoLegadoRegistro.findMany({ where: { origem: "WIDESYS" }, select: {
       id: true, modulo: true, legadoId: true, titulo: true, label: true,
@@ -156,7 +158,18 @@ export async function carregarDadosFontesUnificacao(db: BancoUnificacao, dominio
       lancamentoCaixa: { select: { id: true, tipo: true, valor: true, data: true, descricao: true, cliente: true,
         categoria: true, centroCusto: true, mesReferencia: true, caixaOrigem: true } },
     } }) : [],
+    completa || dominioFinanceiro === "RECEBER" ? db.recebimentoWidesysLocal.findMany({ select: {
+      id: true, tituloId: true, lancamentoCaixaId: true, valor: true, dataPagamento: true, via: true,
+      criadoEm: true, valorDevidoOrigemNaBaixa: true, valorPagoOrigemNaBaixa: true, valorAbertoOrigemNaBaixa: true, restrito: true,
+    } }) : [],
   ]);
+  const idsLocais = new Set(recebimentosWidesysLocais.map(baixa => baixa.tituloId));
+  const idsLegadoLocais = dominioFinanceiro === "RECEBER" && idsLocais.size
+    ? titulos.filter(titulo => idsLocais.has(titulo.id)).map(titulo => titulo.legadoId)
+    : [];
+  const baixas = idsLegadoLocais.length ? await db.baixaFinanceiraLegado.findMany({ where: {
+    origem: "WIDESYS", escopo: "BAIXA_RECEBER", tituloEscopo: "TITULO_RECEBER", tituloLegadoId: { in: idsLegadoLocais },
+  }, select: selecaoBaixaLegada }) : todasBaixas;
   const caixasDespesaIds = despesas.flatMap(d => d.lancamentoCaixaId ? [d.lancamentoCaixaId] : []);
   const caixasDespesasGovernados = caixasDespesaIds.length ? await db.recursoGovernado.findMany({
     where: { tipo: "CAIXA", origemId: { in: caixasDespesaIds }, status: { not: "ATIVO" } },
@@ -174,21 +187,23 @@ export async function carregarDadosFontesUnificacao(db: BancoUnificacao, dominio
     const item = primeiraProveniencia.get(lancamento.id);
     return { ...lancamento, importacoesPlanilha: item ? [item] : [] };
   });
-  return { locatarios, pessoas, unidades, imoveis, contratos, contratosLegados, recebimentos, titulos, pagamentos, baixas, caixa: caixaComProveniencia, movimentos, parametros, despesas, caixasDespesasGovernados, caixasDespesasDecisoes };
+  return { locatarios, pessoas, unidades, imoveis, contratos, contratosLegados, recebimentos, titulos, pagamentos, baixas, caixa: caixaComProveniencia, movimentos, parametros, despesas, caixasDespesasGovernados, caixasDespesasDecisoes, recebimentosWidesysLocais };
 }
 
 export type DadosFontesUnificacao = Awaited<ReturnType<typeof carregarDadosFontesUnificacao>>;
 
 /** Deriva hashes e proveniência da fotografia, sem novas consultas ao banco. */
 export async function derivarFontesUnificacao(dados: DadosFontesUnificacao, incluirProvenienciaPlanilha = true): Promise<FonteUnificacao[]> {
-  const { locatarios, pessoas, unidades, imoveis, contratos, contratosLegados, recebimentos, titulos, pagamentos, baixas, caixa, movimentos, parametros, despesas, caixasDespesasGovernados, caixasDespesasDecisoes } = dados;
+  const { locatarios, pessoas, unidades, imoveis, contratos, contratosLegados, recebimentos, titulos, pagamentos, baixas, caixa, movimentos, parametros, despesas, caixasDespesasGovernados, caixasDespesasDecisoes, recebimentosWidesysLocais } = dados;
   const pLegado = new Map(pessoas.map(p => [p.legadoId, p]));
   const iLegado = new Map(imoveis.map(i => [i.legadoId, i]));
   const cLegado = new Map(contratosLegados.map(c => [c.legadoId, c]));
   const tLegado = new Map(titulos.map(t => [`${t.escopo}:${t.legadoId}`, t]));
+  const { porTitulo, baixasOrigemRepetidas, baixasOrigemPosteriores, valorRetidoPorMovimento } = apurarRecebimentosWidesysLocais(titulos, recebimentosWidesysLocais, baixas, movimentos);
   const overlaysRestritos = new Set(despesas.filter(d => d.restrita && d.origemChave).map(d => d.origemChave!));
   const titulosRestritos = new Set(titulos.filter(t => (t.natureza === "PAGAR" && overlaysRestritos.has(chaveFonte("WIDESYS", "PAGAR", t.id)))
     || contemComissaoRestrita([t.planoContaRotulo, t.tipoCobrancaRotulo])).map(t => t.id));
+  for (const baixa of recebimentosWidesysLocais) if (baixa.restrito) titulosRestritos.add(baixa.tituloId);
   const locPorPessoa = new Map(locatarios.filter(l => l.pessoaId).map(l => [l.pessoaId!, l]));
   const pessoaContrato = (id?: string | null) => {
     const c = id ? cLegado.get(id) : null;
@@ -288,12 +303,17 @@ export async function derivarFontesUnificacao(dados: DadosFontesUnificacao, incl
   }
   for (const t of titulos) {
     const p = pessoaTitulo(t); const c = cLegado.get(t.contratoLegadoId ?? ""); const i = c?.imovelLegadoId ? iLegado.get(c.imovelLegadoId) : null;
+    const local = porTitulo.get(t.id);
+    const devido = local?.devido ?? t.valorDevido;
+    const pago = local?.pago ?? t.valorPago;
+    const aberto = local?.aberto ?? t.valorAberto;
     fontes.push(fonte(t.natureza === "PAGAR" ? "PAGAR" : "RECEBER", "WIDESYS", t.id, {
       ...(titulosRestritos.has(t.id) ? { restrito: true } : {}),
+      ...(local ? { baixaLocalWidesys: true } : {}),
       titulo: p?.nome ?? `${t.natureza === "PAGAR" ? "Pagamento" : "Cobrança"} ${t.legadoId}`, descricao: [i?.nome ?? i?.referencia, t.tipoCobrancaRotulo, t.planoContaRotulo].filter(Boolean).join(" · "), href: null,
-      qualidade: qualidade(t.statusImportacao), motivos: motivos(t.quarentenaMotivo), pessoaChave: p ? chaveFonte("WIDESYS", "PESSOA", p.id) : null, contratoChave: c ? chaveFonte("WIDESYS", "CONTRATO", c.id) : null, imovelChave: i ? chaveFonte("WIDESYS", "IMOVEL", i.id) : null,
-      competencia: mes(t.competencia) ?? mes(t.vencimento), data: t.pagamento, vencimento: t.vencimento, valor: t.valorDevido, pago: t.valorPago, aberto: t.valorAberto, cancelado: t.situacaoNormalizada === "CANCELADO",
-      campos: { pessoa: campo("Contraparte", p?.nome), imovel: campo("Imóvel", i?.nome ?? i?.referencia), competencia: campo("Competência", t.competencia), vencimento: campo("Vencimento", t.vencimento), valor: dinheiro("Devido", t.valorDevido), pago: dinheiro("Pago", t.valorPago), aberto: dinheiro("Saldo", t.valorAberto), documento: campo("Documento", t.numeroDocumento), parcela: campo("Parcela", t.parcela), conta: campo("Conta bancária", t.contaBancariaRotulo), plano: campo("Plano de contas", t.planoContaRotulo), situacao: campo("Situação na captura", t.situacaoNormalizada), composicao: campo("Composição para comissão", "Pendente de discriminar aluguel, IPTU, condomínio e taxa") },
+      qualidade: local ? "OK" : qualidade(t.statusImportacao), motivos: local ? local.revisarOrigem ? [BAIXA_ORIGEM_APOS_BRISA] : [] : motivos(t.quarentenaMotivo), pessoaChave: p ? chaveFonte("WIDESYS", "PESSOA", p.id) : null, contratoChave: c ? chaveFonte("WIDESYS", "CONTRATO", c.id) : null, imovelChave: i ? chaveFonte("WIDESYS", "IMOVEL", i.id) : null,
+      competencia: mes(t.competencia) ?? mes(t.vencimento), data: local?.data ?? t.pagamento, vencimento: t.vencimento, valor: devido, pago, aberto, cancelado: !local && t.situacaoNormalizada === "CANCELADO",
+      campos: { pessoa: campo("Contraparte", p?.nome), imovel: campo("Imóvel", i?.nome ?? i?.referencia), competencia: campo("Competência", t.competencia), vencimento: campo("Vencimento", t.vencimento), valor: dinheiro("Devido", devido), pago: dinheiro("Pago", pago), aberto: dinheiro("Saldo", aberto), documento: campo("Documento", t.numeroDocumento), parcela: campo("Parcela", t.parcela), conta: campo("Conta bancária", t.contaBancariaRotulo), plano: campo("Plano de contas", t.planoContaRotulo), situacao: local ? campo("Situação no Brisa", local.aberto > 0 ? "Parcialmente recebido" : "Quitado") : campo("Situação na captura", t.situacaoNormalizada), composicao: campo("Composição para comissão", "Pendente de discriminar aluguel, IPTU, condomínio e taxa") },
     }));
   }
   for (const b of pagamentos) fontes.push(fonte("BAIXA_RECEBER", "BRISA", b.id, {
@@ -301,18 +321,30 @@ export async function derivarFontesUnificacao(dados: DadosFontesUnificacao, incl
     campos: { data: campo("Data", b.dataPagamento), valor: dinheiro("Valor", b.valor), forma: campo("Forma", b.forma), situacao: campo("Situação", b.status), identificador: campo("Identificador bancário", b.identificadorBanco) },
   }));
   for (const b of baixas) {
+    if (baixasOrigemRepetidas.has(b.id)) continue;
     const t = tLegado.get(`${b.tituloEscopo}:${b.tituloLegadoId}`); const p = t ? pessoaTitulo(t) : null;
     const dominio = b.escopo === "BAIXA_PAGAR" ? "BAIXA_PAGAR" : "BAIXA_RECEBER";
     fontes.push(fonte(dominio, "WIDESYS", b.id, {
       ...(t && titulosRestritos.has(t.id) ? { restrito: true } : {}),
-      titulo: p?.nome ?? `${dominio === "BAIXA_PAGAR" ? "Pagamento" : "Recebimento"} ${b.legadoId}`, descricao: b.forma ?? "Forma não informada", href: null, qualidade: qualidade(b.statusImportacao), motivos: motivos(b.quarentenaMotivo),
+      titulo: p?.nome ?? `${dominio === "BAIXA_PAGAR" ? "Pagamento" : "Recebimento"} ${b.legadoId}`, descricao: b.forma ?? "Forma não informada", href: null, qualidade: qualidade(b.statusImportacao), motivos: baixasOrigemPosteriores.has(b.id) ? [BAIXA_ORIGEM_APOS_BRISA] : motivos(b.quarentenaMotivo),
       tituloChave: t ? chaveFonte("WIDESYS", t.natureza === "PAGAR" ? "PAGAR" : "RECEBER", t.id) : null, valor: b.valor, data: b.dataPagamento, cancelado: b.estornada, informativo: true,
-      campos: { data: campo("Data", b.dataPagamento), valor: dinheiro("Valor", b.valor), forma: campo("Forma", b.forma), conta: campo("Conta", b.contaBancariaRotulo), movimento: campo("Movimento na origem", b.movimentoLegadoId), situacao: campo("Situação", b.estornada ? "Estornado" : "Confirmado"), tratamento: campo("Tratamento", "Detalhe de liquidação já considerado no valor pago do título; não soma uma segunda vez") },
+      campos: { data: campo("Data", b.dataPagamento), valor: dinheiro("Valor", b.valor), forma: campo("Forma", b.forma), conta: campo("Conta", b.contaBancariaRotulo), movimento: campo("Movimento na origem", b.movimentoLegadoId), situacao: campo("Situação", b.estornada ? "Estornado" : "Confirmado"), tratamento: campo("Tratamento", baixasOrigemPosteriores.has(b.id) ? "Confira o recebimento informado no Widesys após o primeiro lançamento no Brisa." : "Detalhe de liquidação já considerado no valor pago do título; não soma uma segunda vez") },
+    }));
+  }
+  for (const baixa of recebimentosWidesysLocais) {
+    if (!porTitulo.has(baixa.tituloId)) continue;
+    fontes.push(fonte("BAIXA_RECEBER", "BRISA", baixa.id, {
+      titulo: "Recebimento registrado no Brisa", descricao: baixa.via, href: null,
+      tituloChave: chaveFonte("WIDESYS", "RECEBER", baixa.tituloId),
+      valor: baixa.valor, data: baixa.dataPagamento, informativo: true,
+      lancamentoManual: true, baixaLocalWidesys: true, restrito: titulosRestritos.has(baixa.tituloId),
+      campos: { data: campo("Data", baixa.dataPagamento), valor: dinheiro("Valor", baixa.valor), forma: campo("Forma", baixa.via) },
     }));
   }
   const caixasComNotaRestrita = new Set(despesas.filter(d => d.restrita && d.lancamentoCaixaId).map(d => d.lancamentoCaixaId!));
   const despesasManuaisPorCaixa = new Map(despesas.filter(d => d.criadoManualBrisa && d.lancamentoCaixaId).map(d => [d.lancamentoCaixaId!, d.id]));
   const recebimentosManuaisRestritos = new Set(recebimentos.filter(r => r.criadoManualBrisa && contemComissaoRestrita(r.observacao)).map(r => r.id));
+  const baixaWidesysLocalPorCaixa = new Map(recebimentosWidesysLocais.map(baixa => [baixa.lancamentoCaixaId, baixa]));
   for (const l of caixa) {
     const f = fonteLancamentoCaixa(l);
     if (l.criadoManualBrisa) {
@@ -321,6 +353,12 @@ export async function derivarFontesUnificacao(dados: DadosFontesUnificacao, incl
       const despesa = despesasManuaisPorCaixa.get(l.id);
       if (despesa) f.tituloChave = chaveFonte("BRISA", "PAGAR", despesa);
       if (l.recebimentoManualId) f.tituloChave = chaveFonte("BRISA", "RECEBER", l.recebimentoManualId);
+      const baixaWidesys = baixaWidesysLocalPorCaixa.get(l.id);
+      if (baixaWidesys) {
+        f.tituloChave = chaveFonte("WIDESYS", "RECEBER", baixaWidesys.tituloId);
+        f.baixaLocalWidesys = true;
+        if (titulosRestritos.has(baixaWidesys.tituloId)) f.restrito = true;
+      }
       if (contemComissaoRestrita([l.categoria, l.descricao]) || (l.recebimentoManualId && recebimentosManuaisRestritos.has(l.recebimentoManualId))) f.restrito = true;
     }
     // A classificação de sigilo não muda o fato financeiro/assinatura do PIX,
@@ -330,12 +368,15 @@ export async function derivarFontesUnificacao(dados: DadosFontesUnificacao, incl
   }
   for (const m of movimentos) {
     const t = m.tituloEscopo && m.tituloLegadoId ? tLegado.get(`${m.tituloEscopo}:${m.tituloLegadoId}`) : null;
+    const valorOrigem = m.valor === null ? null : Math.abs(m.valor);
+    const retido = m.natureza === "ENTRADA" && qualidade(m.statusImportacao) === "OK" ? valorRetidoPorMovimento.get(m.legadoId) ?? 0 : 0;
+    const valor = valorOrigem === null || !retido ? valorOrigem : Math.max(0, valorOrigem - retido);
     fontes.push(fonte("MOVIMENTO", "WIDESYS", m.id, {
       ...(t && titulosRestritos.has(t.id) ? { restrito: true } : {}),
-      titulo: m.descricao ?? m.planoContaRotulo ?? `Movimento ${m.legadoId}`, descricao: m.contaBancariaRotulo ?? "Conta não informada", href: null, qualidade: qualidade(m.statusImportacao), motivos: motivos(m.quarentenaMotivo),
-      data: m.dataMovimento, competencia: mes(m.competencia) ?? mes(m.dataMovimento), natureza: m.natureza, valor: m.valor === null ? null : Math.abs(m.valor), informativo: m.natureza === "TRANSFERENCIA",
+      titulo: m.descricao ?? m.planoContaRotulo ?? `Movimento ${m.legadoId}`, descricao: m.contaBancariaRotulo ?? "Conta não informada", href: null, qualidade: qualidade(m.statusImportacao), motivos: retido ? [MOVIMENTO_WIDESYS_BAIXA_BRISA] : motivos(m.quarentenaMotivo),
+      data: m.dataMovimento, competencia: mes(m.competencia) ?? mes(m.dataMovimento), natureza: m.natureza, valor, informativo: m.natureza === "TRANSFERENCIA" || (retido > 0 && valor === 0),
       tituloChave: t ? chaveFonte("WIDESYS", t.natureza === "PAGAR" ? "PAGAR" : "RECEBER", t.id) : null,
-      campos: { data: campo("Data", m.dataMovimento), valor: dinheiro("Valor", m.valor === null ? null : Math.abs(m.valor)), natureza: campo("Natureza", m.natureza), descricao: campo("Descrição", m.descricao), conta: campo("Conta", m.contaBancariaRotulo), categoria: campo("Plano de contas", m.planoContaRotulo), documento: campo("Documento", m.documento), tratamento: campo("Tratamento", m.natureza === "TRANSFERENCIA" ? "Transferência interna, fora de receita/despesa" : "Movimento de caixa; não resoma a baixa do título") },
+      campos: { data: campo("Data", m.dataMovimento), valor: dinheiro("Valor", valor), natureza: campo("Natureza", m.natureza), descricao: campo("Descrição", m.descricao), conta: campo("Conta", m.contaBancariaRotulo), categoria: campo("Plano de contas", m.planoContaRotulo), documento: campo("Documento", m.documento), tratamento: campo("Tratamento", retido ? "A parcela vinculada a títulos assumidos pelo Brisa fica fora do caixa desta captura." : m.natureza === "TRANSFERENCIA" ? "Transferência interna, fora de receita/despesa" : "Movimento de caixa; não resoma a baixa do título") },
     }));
   }
   for (const p of parametros) fontes.push(fonte("PARAMETRO", "WIDESYS", p.id, {

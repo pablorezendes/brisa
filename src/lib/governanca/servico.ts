@@ -4,7 +4,7 @@ import { STATUS_BOLETO_ATIVOS } from "../dominio/boletos";
 import { carregarFontesUnificacao } from "../unificacao/fontes";
 import { projetarUnificados } from "../unificacao/reconciliacao";
 import { recursoEstaAtivo } from "./filtros";
-import { ErroGovernanca, validarIdentidade, type AtorGovernanca, type TipoGovernanca } from "./tipos";
+import { ErroGovernanca, MOVIMENTO_COM_BAIXA_LOCAL, TITULO_COM_BAIXA_LOCAL, validarIdentidade, type AtorGovernanca, type TipoGovernanca } from "./tipos";
 import { montarPolitica, pode, carteiraIrrestrita } from "../acesso/politica";
 import { referenciaDocumentoDespesa } from "../despesas/apresentacao";
 
@@ -13,6 +13,7 @@ type MovimentoVinculo = { tabela: "contrato" | "boleto" | "unidade" | "recebimen
 type Estado = { ativo?: boolean; movimentos?: MovimentoVinculo[]; nome?: string; exclusaoAdministrativa?: boolean; anterior?: { status: string; destinoId: string | null; motivo: string; estadoAnterior: string } | null };
 const chave = (tipo: TipoGovernanca, origemId: string) => ({ tipo_origemId: { tipo, origemId } });
 const hash = (v: unknown) => createHash("sha256").update(JSON.stringify(v)).digest("hex");
+const PREFIXO_TITULO_WIDESYS_RECEBER = "WIDESYS:RECEBER:";
 async function autorizar(tx: Tx, ator: AtorGovernanca, conta = false, restaurar = false) {
   const usuario = await tx.usuario.findUnique({ where: { id: ator.id }, select: {
     id: true, perfil: true, ativo: true, acessoGlobal: true, permissoesExtras: true, permissoesNegadas: true,
@@ -77,7 +78,17 @@ async function vinculos(tx: Tx, tipo: TipoGovernanca, id: string): Promise<Recor
     const d = await tx.despesaDocumento.findUnique({ where: { id: documentoId }, select: { lancamentoCaixaId: true } });
     return { pagamentos: d?.lancamentoCaixaId ? 1 : 0, rateios: await tx.despesaRateio.count({ where: { despesaId: documentoId } }) };
   }
-  if (tipo === "CAIXA") return { notasVinculadas: await tx.despesaDocumento.count({ where: { lancamentoCaixaId: id } }) };
+  if (tipo === "TITULO" && id.startsWith(PREFIXO_TITULO_WIDESYS_RECEBER)) {
+    const baixasLocais = await tx.recebimentoWidesysLocal.count({ where: { tituloId: id.slice(PREFIXO_TITULO_WIDESYS_RECEBER.length) } });
+    return baixasLocais ? { baixasLocais } : {};
+  }
+  if (tipo === "CAIXA") {
+    const [notasVinculadas, baixasLocais] = await Promise.all([
+      tx.despesaDocumento.count({ where: { lancamentoCaixaId: id } }),
+      tx.recebimentoWidesysLocal.count({ where: { lancamentoCaixaId: id } }),
+    ]);
+    return { notasVinculadas, ...(baixasLocais ? { baixasLocais } : {}) };
+  }
   if (tipo === "CONTRATO") return { recebimentos: await tx.recebimento.count({ where: { contratoId: id } }) };
   if (tipo === "BOLETO") return { pagamentos: await tx.pagamentoRecebimento.count({ where: { boletoId: id } }), eventosBancarios: await tx.eventoBoleto.count({ where: { boletoId: id } }) };
   if (tipo === "NFSE") return { eventosFiscais: await tx.eventoFiscal.count({ where: { notaFiscalId: id } }) };
@@ -112,7 +123,8 @@ export async function previaGovernanca(db: PrismaClient, tipo: string, origemId:
     const registro = await entidade(tx, tipo, origemId);
     const estado = await tx.recursoGovernado.findUnique({ where: chave(tipo, origemId) });
     const referencias = await vinculos(tx, tipo, origemId);
-    return { tipo, origemId, nome: registro.nome, referencia: registro.referencia, valor: registro.valor, status: estado?.status ?? (tipo === "CONTA" && registro.ativo === false ? "INATIVO" : "ATIVO"), versao: estado?.versao ?? 0, vinculos: referencias, podeExcluir: ["PESSOA", "LOCATARIO", "UNIDADE", "EMPREENDIMENTO", "IMOVEL_LEGADO", "CAIXA"].includes(tipo) && Object.values(referencias).every(n => n === 0), assinatura: hash({ registro, referencias, versao: estado?.versao ?? 0 }) };
+    const bloqueioExclusao = referencias.baixasLocais ? (tipo === "CAIXA" ? MOVIMENTO_COM_BAIXA_LOCAL : TITULO_COM_BAIXA_LOCAL) : null;
+    return { tipo, origemId, nome: registro.nome, referencia: registro.referencia, valor: registro.valor, status: estado?.status ?? (tipo === "CONTA" && registro.ativo === false ? "INATIVO" : "ATIVO"), versao: estado?.versao ?? 0, vinculos: referencias, bloqueioExclusao, podeExcluir: ["PESSOA", "LOCATARIO", "UNIDADE", "EMPREENDIMENTO", "IMOVEL_LEGADO", "CAIXA"].includes(tipo) && Object.values(referencias).every(n => n === 0), assinatura: hash({ registro, referencias, versao: estado?.versao ?? 0 }) };
   });
 }
 async function conferirPrevia(tx: Tx, tipo: TipoGovernanca, id: string, ator: AtorGovernanca) {
@@ -147,6 +159,7 @@ export async function excluirAdministrativamente(db: PrismaClient, tipo: string,
     const anterior = await tx.recursoGovernado.findUnique({ where: chave(tipo, id) });
     if (anterior?.status === "EXCLUIDO") return anterior;
     if (tipo === "CAIXA") await exigirMovimentoSemContaManual(tx, id);
+    if (tipo === "TITULO") await exigirTituloSemBaixaLocal(tx, id);
     await conferirPrevia(tx, tipo, id, ator);
     const registro = await entidade(tx, tipo, id);
     // A decisão explícita do administrador pode retirar registros pagos,
@@ -161,10 +174,19 @@ export async function excluirAdministrativamente(db: PrismaClient, tipo: string,
 }
 async function exigirMovimentoSemContaManual(tx: Tx, id: string) {
   const vinculado = await tx.lancamentoCaixa.findFirst({
-    where: { id, OR: [{ recebimentoManualId: { not: null } }, { despesaDocumento: { is: { criadoManualBrisa: true } } }] },
-    select: { id: true },
+    where: { id, OR: [{ recebimentoManualId: { not: null } }, { despesaDocumento: { is: { criadoManualBrisa: true } } }, { recebimentoWidesysLocal: { isNot: null } }] },
+    select: { recebimentoWidesysLocal: { select: { id: true } } },
   });
+  if (vinculado?.recebimentoWidesysLocal) throw new ErroGovernanca("CONTA_VINCULADA", MOVIMENTO_COM_BAIXA_LOCAL);
   if (vinculado) throw new ErroGovernanca("CONTA_VINCULADA", "Exclua pela conta vinculada para preservar a relação com o caixa.");
+}
+
+async function exigirTituloSemBaixaLocal(tx: Tx, id: string) {
+  if (!id.startsWith(PREFIXO_TITULO_WIDESYS_RECEBER)) return;
+  const baixa = await tx.recebimentoWidesysLocal.findFirst({
+    where: { tituloId: id.slice(PREFIXO_TITULO_WIDESYS_RECEBER.length) }, select: { id: true },
+  });
+  if (baixa) throw new ErroGovernanca("TITULO_COM_BAIXA", TITULO_COM_BAIXA_LOCAL);
 }
 
 export async function excluirRecurso(db: PrismaClient, tipo: string, id: string, motivo: string, ator: AtorGovernanca) {
@@ -297,6 +319,7 @@ export async function descartarTitulo(db: PrismaClient, origemId: string, destin
     await autorizar(tx, ator);
     const atual = await tx.recursoGovernado.findUnique({ where: chave("TITULO", origemId) });
     if (atual?.status === "DESCARTADO" && atual.destinoId === destinoId) return atual;
+    await exigirTituloSemBaixaLocal(tx, origemId);
     await conferirPrevia(tx, "TITULO", origemId, ator);
     if (!await recursoEstaAtivo(tx, "TITULO", origemId) || !await recursoEstaAtivo(tx, "TITULO", destinoId)) throw new ErroGovernanca("REGISTRO_INATIVO", "Os dois títulos precisam estar disponíveis.");
     const fontes = await carregarFontesUnificacao(tx);

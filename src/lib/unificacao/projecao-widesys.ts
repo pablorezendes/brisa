@@ -1,5 +1,6 @@
 import { chavesRestritasUnificacao } from "./privacidade";
 import { projetarUnificados } from "./reconciliacao";
+import { BAIXA_ORIGEM_APOS_BRISA, MOVIMENTO_WIDESYS_BAIXA_BRISA } from "./recebimentos-widesys-locais";
 import type { DecisaoUnificacao, DominioUnificacao, FonteUnificacao, LinhaUnificada } from "./tipos";
 
 const DOMINIOS_FINANCEIROS = new Set<DominioUnificacao>(["RECEBER", "PAGAR", "MOVIMENTO", "BAIXA_RECEBER", "BAIXA_PAGAR"]);
@@ -32,7 +33,7 @@ export function projetarFinanceiroWidesys(fontes: FonteUnificacao[], decisoes: D
       fontes: [f.chave],
       versao: porChave.get(f.chave)?.versao ?? 0,
       candidatos: [],
-      avisos: [],
+      avisos: f.motivos.filter(motivo => motivo === BAIXA_ORIGEM_APOS_BRISA || motivo === MOVIMENTO_WIDESYS_BAIXA_BRISA),
       contabiliza,
       conferidoNaOrigem,
       conferidoPorRegra: conferidoNaOrigem && contabiliza,

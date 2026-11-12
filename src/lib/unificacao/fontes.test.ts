@@ -5,13 +5,14 @@ import {
   type BancoUnificacao, type DadosFontesUnificacao,
 } from "./fontes";
 import { chavesRestritasUnificacao } from "./privacidade";
+import { projetarFinanceiroWidesys } from "./projecao-widesys";
 
 vi.mock("node:fs", () => ({ existsSync: vi.fn(), readFileSync: vi.fn() }));
 
 // Dados inteiramente artificiais: cada campo usado pela projeção recebe valor
 // para uma omissão em select não passar despercebida como null/undefined.
 const dados: DadosFontesUnificacao = {
-  despesas: [], caixasDespesasGovernados: [], caixasDespesasDecisoes: [],
+  despesas: [], caixasDespesasGovernados: [], caixasDespesasDecisoes: [], recebimentosWidesysLocais: [],
   locatarios: [{ id: "loc", nome: "Inquilino sintético", cpfCnpj: "00000000000", pessoaId: "pessoa",
     email: "inquilino@example.test", telefone: "62900000000", contato: "Contato sintético",
     endereco: "Rua de teste", numeroEndereco: "10", bairro: "Bairro", cidade: "Goiânia", uf: "GO", cep: "74000000" }],
@@ -44,14 +45,14 @@ const dados: DadosFontesUnificacao = {
     dataPagamento: "2026-06-12", valor: 103000, identificadorBanco: "ID-TESTE" }],
   baixas: [{ id: "baixa", legadoId: "5", tituloEscopo: "TITULO_RECEBER", tituloLegadoId: "4", escopo: "BAIXA_RECEBER",
     forma: "PIX", statusImportacao: "STAGING", quarentenaMotivo: null, valor: 50000, dataPagamento: "2026-06-12",
-    estornada: false, contaBancariaRotulo: "Conta sintética", movimentoLegadoId: "6" }],
+    estornada: false, contaBancariaRotulo: "Conta sintética", movimentoLegadoId: "6", importadoEm: new Date("2026-06-13T00:00:00Z") }],
   caixa: [{ id: "caixa", mesReferencia: "2026-06", centroCusto: "AL", tipo: "SAIDA", categoria: "Manutenção",
     criadoManualBrisa: false, recebimentoManualId: null,
     data: "2026-06-04", valor: 2000, descricao: "Teste de caixa", cliente: null, local: null, caixaOrigem: null, importacoesPlanilha: [] }],
   movimentos: [{ id: "movimento", legadoId: "6", tituloEscopo: "TITULO_RECEBER", tituloLegadoId: "4",
     descricao: "Entrada sintética", planoContaRotulo: "Locação", contaBancariaRotulo: "Conta sintética",
     statusImportacao: "STAGING", quarentenaMotivo: null, dataMovimento: "2026-06-12", competencia: "2026-06-01",
-    natureza: "ENTRADA", valor: 50000, documento: "DOC-6" }],
+    natureza: "ENTRADA", valor: 50000, documento: "DOC-6", importadoEm: new Date("2026-06-13T00:00:00Z") }],
   parametros: [{ id: "parametro", modulo: "CATEGORIAS", legadoId: "7", titulo: "Categoria", label: "Locação",
     status: "STAGING", quarentenaMotivo: null }],
 };
@@ -88,6 +89,7 @@ function bancoArtificial(importacoesPlanilha: DadosFontesUnificacao["caixa"][num
     catalogoLegadoRegistro: dados.parametros,
     despesaDocumento: dados.despesas,
     importacaoPlanilhaLinha: importacoesPlanilha,
+    recebimentoWidesysLocal: dados.recebimentosWidesysLocais,
   };
   const mocks = Object.fromEntries(Object.entries(tabelas).map(([nome, registros]) => [nome, {
     findMany: vi.fn(async (consulta: Consulta) => registros.map(registro => selecionar({ ...registro,
@@ -103,6 +105,63 @@ beforeEach(() => {
 });
 
 describe("fotografia compacta das fontes de unificação", () => {
+  it("preserva baixas locais e caixa uma única vez quando a nova captura repete o recebimento", async () => {
+    const primeira = {
+      id: "local-1", tituloId: "titulo", lancamentoCaixaId: "caixa-local-1", valor: 25000, dataPagamento: "2026-06-18",
+      via: "PIX", criadoEm: new Date("2026-06-18T18:00:00Z"), valorDevidoOrigemNaBaixa: 103000,
+      valorPagoOrigemNaBaixa: 50000, valorAbertoOrigemNaBaixa: 53000, restrito: false,
+    };
+    const segunda = { ...primeira, id: "local-2", lancamentoCaixaId: "caixa-local-2", valor: 28000,
+      dataPagamento: "2026-06-22", criadoEm: new Date("2026-06-22T18:00:00Z") };
+    const recebimentosWidesysLocais = [primeira, segunda];
+    const base = {
+      ...dados,
+      recebimentosWidesysLocais,
+      caixa: recebimentosWidesysLocais.map(baixa => ({ ...dados.caixa[0], id: baixa.lancamentoCaixaId, criadoManualBrisa: true,
+        tipo: "ENTRADA", data: baixa.dataPagamento, valor: baixa.valor, descricao: "Baixa manual de título importado" })),
+    };
+    const importadoEm = new Date("2026-06-20T18:00:00Z");
+    const movimentoAgrupado = { ...dados.movimentos[0], id: "agrupado", legadoId: "7", valor: 29000,
+      tituloEscopo: null, tituloLegadoId: null, dataMovimento: primeira.dataPagamento, importadoEm };
+    const captura = {
+      ...base,
+      titulos: [{ ...dados.titulos[0], valorPago: 75000, valorAberto: 28000 }],
+      baixas: [...dados.baixas, { ...dados.baixas[0], id: "importada", valor: 25000,
+        movimentoLegadoId: "7", dataPagamento: primeira.dataPagamento, importadoEm }],
+      movimentos: [...dados.movimentos, movimentoAgrupado],
+    };
+    const obterLinhas = async (dados: DadosFontesUnificacao) => projetarFinanceiroWidesys(await derivarFontesUnificacao(dados, false), []).linhas;
+    const antes = await obterLinhas(base);
+    const depois = await obterLinhas(captura);
+    const titulo = (linhas: typeof depois) => linhas.find(linha => linha.chave === "WIDESYS:RECEBER:titulo");
+    const somarCaixa = (linhas: typeof depois) => linhas.filter(linha => linha.dominio === "MOVIMENTO" && linha.contabiliza)
+      .reduce((total, linha) => total + (linha.valor ?? 0), 0);
+
+    expect(titulo(antes)).toMatchObject({ pago: 103000, aberto: 0, baixaLocalWidesys: true });
+    expect(titulo(depois)).toMatchObject({ pago: 103000, aberto: 0, avisos: [] });
+    expect(somarCaixa(antes)).toBe(103000);
+    expect(somarCaixa(depois)).toBe(107000);
+    expect(depois.find(linha => linha.chave === "WIDESYS:MOVIMENTO:agrupado")).toMatchObject({ valor: 4000, contabiliza: true });
+    expect(depois.some(linha => linha.chave === "WIDESYS:BAIXA_RECEBER:importada")).toBe(false);
+    expect(depois.find(linha => linha.chave === "BRISA:BAIXA_RECEBER:local-1")).toMatchObject({ valor: 25000, contabiliza: false, tituloChave: "WIDESYS:RECEBER:titulo" });
+  });
+
+  it("mantém o saldo local e indica conferência quando a captura traz apenas totais divergentes ou perde o título", async () => {
+    const leitura = await derivarFontesUnificacao({
+      ...dados,
+      recebimentosWidesysLocais: [{ id: "local-1", tituloId: "titulo", lancamentoCaixaId: "caixa-local-1", valor: 25000,
+        dataPagamento: "2026-06-18", via: "PIX", criadoEm: new Date("2026-06-18T18:00:00Z"), valorDevidoOrigemNaBaixa: 103000,
+        valorPagoOrigemNaBaixa: 50000, valorAbertoOrigemNaBaixa: 53000, restrito: true }],
+      titulos: [{ ...dados.titulos[0], valorPago: 75000, valorAberto: 28000, statusImportacao: "AUSENTE_NA_FONTE" }],
+      movimentos: [{ ...dados.movimentos[0], id: "sem-vinculo", legadoId: "9", tituloEscopo: null, tituloLegadoId: null,
+        valor: 25000, dataMovimento: "2026-06-18", importadoEm: new Date("2026-06-21T00:00:00Z") }],
+    }, false);
+    const linhas = projetarFinanceiroWidesys(leitura, []).linhas;
+    expect(linhas.find(linha => linha.chave === "WIDESYS:RECEBER:titulo")).toMatchObject({ pago: 75000, aberto: 28000, estado: "ATIVO",
+      contabiliza: true, restrito: true, avisos: ["BAIXA_ORIGEM_APOS_BRISA"] });
+    expect(linhas.find(linha => linha.chave === "WIDESYS:MOVIMENTO:sem-vinculo")).toMatchObject({ valor: 25000, contabiliza: true });
+  });
+
   it.each(["planoContaRotulo", "tipoCobrancaRotulo"] as const)("comissão explícita a receber em %s protege título, baixa e movimento sem alterar assinatura financeira", async campo => {
     const fontes = await derivarFontesUnificacao({ ...dados, titulos: [{ ...dados.titulos[0], [campo]: "Comissão de administração" }] });
     const chaves = ["WIDESYS:RECEBER:titulo", "WIDESYS:BAIXA_RECEBER:baixa", "WIDESYS:MOVIMENTO:movimento"];

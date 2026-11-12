@@ -1,5 +1,7 @@
 export const TIPOS_GOVERNANCA = ["PESSOA", "LOCATARIO", "UNIDADE", "EMPREENDIMENTO", "IMOVEL_LEGADO", "CAIXA", "TITULO", "CONTA", "CONTRATO", "CONTRATO_LEGADO", "MOVIMENTO_LEGADO", "BOLETO", "NFSE", "PARAMETRO", "TEMPORADA_UNIDADE", "TEMPORADA_RECEBIMENTO", "TEMPORADA_DESPESA", "TEMPORADA_LIMPEZA"] as const;
 export type TipoGovernanca = typeof TIPOS_GOVERNANCA[number];
+export const TITULO_COM_BAIXA_LOCAL = "O título tem recebimento vinculado ao caixa e está protegido contra exclusão.";
+export const MOVIMENTO_COM_BAIXA_LOCAL = "A entrada está vinculada a um recebimento do Brisa e está protegida contra exclusão.";
 export const ROTULOS_GOVERNANCA: Record<TipoGovernanca, string> = {
   PESSOA: "Pessoa / empresa (legado)", LOCATARIO: "Inquilino", UNIDADE: "Imóvel", EMPREENDIMENTO: "Empreendimento",
   IMOVEL_LEGADO: "Imóvel legado", CAIXA: "Lançamento de caixa", TITULO: "Título financeiro", CONTA: "Conta bancária",

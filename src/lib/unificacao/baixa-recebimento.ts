@@ -6,7 +6,7 @@ export function tipoBaixaRecebimento(
   acesso: PoliticaAcesso,
 ): "BRISA" | "WIDESYS" | null {
   if (titulo.dominio !== "RECEBER" || titulo.estado !== "ATIVO" || !titulo.contabiliza || titulo.cancelado || (titulo.aberto ?? 0) <= 0) return null;
+  if (!carteiraIrrestrita(acesso) || !pode(acesso, "recebimentos.editar") || !pode(acesso, "pagamentos.conciliar") || !pode(acesso, "caixa.editar")) return null;
   if (titulo.origem === "WIDESYS") return "WIDESYS";
-  return titulo.origem === "BRISA" && titulo.lancamentoManual && carteiraIrrestrita(acesso) && pode(acesso, "recebimentos.editar")
-    && pode(acesso, "pagamentos.conciliar") && pode(acesso, "caixa.editar") ? "BRISA" : null;
+  return titulo.origem === "BRISA" && titulo.lancamentoManual ? "BRISA" : null;
 }
