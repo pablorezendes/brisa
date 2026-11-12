@@ -12,7 +12,7 @@ import { basename, join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 
 import type { PrismaClient } from "@prisma/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   carregarPlanoCadastrosWidesys,
@@ -419,6 +419,35 @@ describe("planejamento de cadastros Widesys", () => {
 });
 
 describe("aplicação idempotente", () => {
+  it("preserva o locatário sem vínculo quando dois IDs do Widesys usam o mesmo documento", async () => {
+    const base = construirPlanoCadastrosWidesys(artefatosSinteticos());
+    const pessoaBase = base.pessoas.find(pessoa => pessoa.legadoId === "p-1")!;
+    const pessoa = { ...pessoaBase, papeis: pessoaBase.papeis.filter(papel => papel.papel === "INQUILINO"), emails: [], telefones: [] };
+    const vincular = vi.fn();
+    const modelos = {
+      recursoGovernado: { findMany: async () => [] },
+      pessoa: {
+        findMany: async () => [{ id: "pessoa-existente", legadoId: "p-2", cpfCnpj: pessoa.cpfCnpj }],
+        create: async () => ({ id: "pessoa-nova" }),
+      },
+      pessoaPapel: { findMany: async () => [], create: async () => {} },
+      pessoaEmail: { findMany: async () => [] },
+      pessoaTelefone: { findMany: async () => [] },
+      imovelLegado: { findMany: async () => [] },
+      imovelProprietarioLegado: { findMany: async () => [] },
+      locatario: {
+        findMany: async () => [{ id: "locatario", pessoaId: null, cpfCnpj: pessoa.cpfCnpj }],
+        update: vincular,
+      },
+    };
+    const banco = { $transaction: async (fn: (tx: typeof modelos) => Promise<unknown>) => fn(modelos) } as unknown as PrismaClient;
+    const resultado = await importarPlanoCadastrosWidesys(banco, { ...base, pessoas: [pessoa], imoveis: [] });
+
+    expect(resultado.alteracoes?.pessoas.criados).toBe(1);
+    expect(resultado.vinculosLocatario).toMatchObject({ ambiguos: 1, vinculados: 0 });
+    expect(vincular).not.toHaveBeenCalled();
+  });
+
   it("nova captura não recria, reativa nem vincula pessoas excluídas pela governança", async () => {
     const base = construirPlanoCadastrosWidesys(artefatosSinteticos());
     const pessoa = base.pessoas.find(p => p.legadoId === "p-2")!;

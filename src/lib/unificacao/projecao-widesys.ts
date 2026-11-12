@@ -32,7 +32,7 @@ export function projetarFinanceiroWidesys(fontes: FonteUnificacao[], decisoes: D
       fontes: [f.chave],
       versao: porChave.get(f.chave)?.versao ?? 0,
       candidatos: [],
-      avisos: conferidoNaOrigem ? ["WIDESYS_CONFERIDO_NA_ORIGEM"] : [],
+      avisos: [],
       contabiliza,
       conferidoNaOrigem,
       conferidoPorRegra: conferidoNaOrigem && contabiliza,

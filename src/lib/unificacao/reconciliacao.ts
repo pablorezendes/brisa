@@ -151,7 +151,7 @@ export function projetarUnificados(fontes: FonteUnificacao[], decisoes: DecisaoU
     const estado: EstadoUnificacao = f.qualidade !== "OK" ? (f.qualidade === "AUSENTE" ? "AUSENTE" : "QUARENTENA")
       : !d || reavaliarNativo ? estadoNovo : fonteMudou || alvoInvalido || regraReaberta ? "REVISAR" : d.status as EstadoUnificacao;
     const candidatos = propostas.flatMap(c => { const o = porChave.get(c.chave); return o && !registrosDistintosWidesys(f, o) && !valoresDevidosDiferentes(f, o) ? [{ ...c, titulo: o.titulo, descricao: o.descricao }] : []; });
-    const avisos = listaJson<string>(d?.motivos ?? "[]");
+    const avisos = listaJson<string>(d?.motivos ?? "[]").filter(motivo => motivo !== "WIDESYS_CONFERIDO_NA_ORIGEM");
     if (!d) avisos.push("ANALISE_NECESSARIA");
     if (fonteMudou || alvoInvalido) avisos.push("FONTE_ALTERADA_APOS_DECISAO");
     if (regraReaberta) avisos.push(d?.decisao === DECISAO_WIDESYS ? "CONCILIAR_COM_BASE_BRISA" : "CORRESPONDENCIA_APOS_REGRA_VALOR_DIFERENTE");

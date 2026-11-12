@@ -33,12 +33,12 @@ beforeEach(() => {
 });
 
 describe("origem e situação são informações diferentes", () => {
-  it("distingue origem Widesys conferida de conciliação pendente entre fontes", () => {
-    const ativo = registro({ conferidoNaOrigem: true, conferidoPorRegra: true });
-    expect(renderToStaticMarkup(<EstadoUnificado item={ativo} />)).toContain(">Conferido<");
+  it("mostra o efeito de um registro do Widesys e sinaliza vínculos pendentes", () => {
+    const ativo = registro({ origem: "WIDESYS", conferidoNaOrigem: true, conferidoPorRegra: true });
+    expect(renderToStaticMarkup(<EstadoUnificado item={ativo} />)).toContain(">Incluído nos totais<");
     expect(explicarConsolidacao(ativo)).toContain("Incluído uma única vez");
-    const cruzamento = registro({ conferidoNaOrigem: true, estado: "PENDENTE", contabiliza: false });
-    expect(renderToStaticMarkup(<EstadoUnificado item={cruzamento} />)).toContain("Conferido no Widesys · conciliar fontes");
+    const cruzamento = registro({ origem: "WIDESYS", conferidoNaOrigem: true, estado: "PENDENTE", contabiliza: false });
+    expect(renderToStaticMarkup(<EstadoUnificado item={cruzamento} />)).toContain("Vínculo a revisar");
     expect(explicarConsolidacao(cruzamento)).toContain("Ainda fora dos totais");
   });
   it("não chama um registro Brisa de manual nem de planilha sem evidência", () => {
@@ -94,7 +94,7 @@ describe("origem e situação são informações diferentes", () => {
     expect(html).toContain(">Brisa<");
     expect(html).not.toMatch(/planilha|excel/i);
   });
-  it("exibe a confirmação do Widesys sem oferecer nova decisão no recebimento", async () => {
+  it("mostra a origem e a inclusão do título do Widesys sem indicar conferência manual", async () => {
     mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "FINANCEIRO", ativo: true, global: true, regras: [], permissoes: ["financeiro.ver", "unificacao.ver", "cadastros.sensiveis"] });
     const dados = lista();
     dados.itens[0] = registro({ origem: "WIDESYS", chave: "WIDESYS:RECEBER:1", origens: ["WIDESYS"], conferidoNaOrigem: true, conferidoPorRegra: true });
@@ -102,7 +102,9 @@ describe("origem e situação são informações diferentes", () => {
     const html = renderToStaticMarkup(await OperacaoUnificada({ titulo: "A receber", base: "/recebimentos", dominio: "RECEBER" }));
     expect(html).not.toMatch(/<button[^>]*>Conferir(?:ido)?<\/button>/);
     expect(html).toContain("Ver detalhes");
-    expect(html).toContain(">Conferido<");
+    expect(html).toContain(">Widesys<");
+    expect(html).toContain(">Incluído nos totais<");
+    expect(html).not.toContain(">Conferido<");
     expect(html).toContain("Este registro compõe os totais");
   });
   it("mantém a inconsistência do Widesys identificada e permite consultar seus detalhes", async () => {

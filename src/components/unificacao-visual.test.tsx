@@ -27,6 +27,13 @@ describe("conferência visível sem confundir inclusão e pagamento", () => {
     expect(html).not.toContain("Incluído automaticamente");
     expect(explicarConsolidacao(registro)).toBe("Conferido pela regra: valores totais diferentes. Incluído nos totais.");
   });
+  it("mostra cadastro importado disponível e baixa disponível para consulta", () => {
+    const cadastro = item({ dominio: "PESSOA", conferidoNaOrigem: true, conferidoPorRegra: true });
+    expect(renderToStaticMarkup(<EstadoUnificado item={cadastro} />)).toContain(">Disponível<");
+    expect(explicarConsolidacao(cadastro)).toBe("Disponível para consulta.");
+    const baixa = item({ dominio: "BAIXA_PAGAR", conferidoNaOrigem: true, informativo: true, contabiliza: false });
+    expect(renderToStaticMarkup(<EstadoUnificado item={baixa} />)).toContain(">Somente consulta<");
+  });
   it("vínculo conferido explica que não soma uma segunda vez", () => {
     const vinculado = item({ estado: "VINCULADO", contabiliza: false, conferidoManualmente: true });
     expect(renderToStaticMarkup(<EstadoUnificado item={vinculado} />)).toContain("Conferido · vinculado");

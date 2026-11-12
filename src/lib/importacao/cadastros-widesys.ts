@@ -1494,7 +1494,7 @@ export async function importarPlanoCadastrosWidesys(
         await Promise.all([
           tx.pessoa.findMany({
             where: { origem: plano.origem },
-            select: { id: true, legadoId: true, snapshotHash: true, capturadoEm: true },
+            select: { id: true, legadoId: true, cpfCnpj: true, snapshotHash: true, capturadoEm: true },
           }),
           tx.pessoaPapel.findMany({ where: { origem: plano.origem }, select: { legadoId: true, papel: true, snapshotHash: true } }),
           tx.pessoaEmail.findMany({ where: { origem: plano.origem }, select: { legadoId: true, emailNorm: true, snapshotHash: true } }),
@@ -1541,6 +1541,7 @@ export async function importarPlanoCadastrosWidesys(
         }
       }
       const idsPessoa = new Map<string, string>();
+      const documentosPorPessoa = new Map(pessoasExistentes.map(pessoa => [pessoa.legadoId, pessoa.cpfCnpj]));
 
       for (const pessoa of plano.pessoas) {
         const existente = pessoasPorLegado.get(pessoa.legadoId);
@@ -1566,6 +1567,7 @@ export async function importarPlanoCadastrosWidesys(
         }
         if (!pessoaId) throw new Error("Pessoa importada sem identidade interna.");
         idsPessoa.set(pessoa.legadoId, pessoaId);
+        documentosPorPessoa.set(pessoa.legadoId, pessoa.cpfCnpj);
 
         for (const papel of pessoa.papeis) {
           const chave = `${pessoa.legadoId}|${papel.papel}`;
@@ -1704,6 +1706,10 @@ export async function importarPlanoCadastrosWidesys(
       const documentos = inquilinos
         .map((pessoa) => pessoa.cpfCnpj)
         .filter((documento): documento is string => Boolean(documento));
+      const ocorrenciasPorDocumento = new Map<string, number>();
+      for (const documento of documentosPorPessoa.values()) {
+        if (documento) ocorrenciasPorDocumento.set(documento, (ocorrenciasPorDocumento.get(documento) ?? 0) + 1);
+      }
       const locatarios = await tx.locatario.findMany({
         where: {
           id: { notIn: governados.filter(g => g.tipo === "LOCATARIO").map(g => g.origemId) },
@@ -1729,7 +1735,7 @@ export async function importarPlanoCadastrosWidesys(
           vinculosLocatario.semCorrespondencia += 1;
           continue;
         }
-        if (candidatos.length > 1) {
+        if (candidatos.length > 1 || (ocorrenciasPorDocumento.get(pessoa.cpfCnpj) ?? 0) > 1) {
           vinculosLocatario.ambiguos += 1;
           continue;
         }
