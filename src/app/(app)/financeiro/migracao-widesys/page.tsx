@@ -13,7 +13,6 @@ import {
   inputBase,
 } from "@/components/ui";
 import { dadosAuditoriaOperacaoWidesys } from "@/lib/consultas/operacao-widesys";
-import { listarUnificados } from "@/lib/consultas/unificacao";
 import { perfilAtual } from "@/lib/autorizacao";
 import type { EscopoOperacaoWidesys } from "@/lib/dominio/auditoria-widesys";
 import type { Nivel } from "@/lib/dominio/semaforo";
@@ -144,64 +143,20 @@ export default async function PaginaAuditoriaWidesys({
   if (perfil !== "ADMINISTRADOR" && perfil !== "FINANCEIRO") notFound();
 
   const sp = await searchParams;
-  const dominios = ["CONTRATO", "RECEBER", "PAGAR", "BAIXA_RECEBER", "BAIXA_PAGAR", "MOVIMENTO"] as const;
-  const [dados, unificados] = await Promise.all([
-    dadosAuditoriaOperacaoWidesys({
-      pagina: pagina(primeiro(sp.pagina)),
-      estado: primeiro(sp.estado),
-      natureza: primeiro(sp.natureza),
-    }),
-    Promise.all(dominios.map((dominio) => listarUnificados({ dominio, porPagina: 1 }))),
-  ]);
+  const dados = await dadosAuditoriaOperacaoWidesys({
+    pagina: pagina(primeiro(sp.pagina)),
+    estado: primeiro(sp.estado),
+    natureza: primeiro(sp.natureza),
+  });
   const lote = dados.lote;
   const nivelAtual = lote ? nivelLote(lote.status) : "neutro";
-  const porEscopo = new Map(dados.escopos.map((linha) => [linha.escopo, linha]));
-  const preservadosCaptura = (escopo: EscopoOperacaoWidesys) => porEscopo.get(escopo)?.totalAtual ?? 0;
-  const comparacaoOperacional = [
-    {
-      rotulo: "Contratos",
-      href: "/contratos",
-      plataforma: dados.origens.plataforma.contratos,
-      widesys: preservadosCaptura("CONTRATO"),
-    },
-    {
-      rotulo: "Títulos a receber",
-      href: "/recebimentos",
-      plataforma: dados.origens.plataforma.titulosReceber,
-      widesys: preservadosCaptura("TITULO_RECEBER"),
-    },
-    {
-      rotulo: "Títulos a pagar",
-      href: "/financeiro/contas-a-pagar",
-      plataforma: 0,
-      widesys: preservadosCaptura("TITULO_PAGAR"),
-    },
-    {
-      rotulo: "Baixas a receber detalhadas",
-      href: "/unificacao?dominio=BAIXA_RECEBER",
-      plataforma: dados.origens.plataforma.baixasReceber,
-      widesys: preservadosCaptura("BAIXA_RECEBER"),
-    },
-    {
-      rotulo: "Baixas a pagar detalhadas",
-      href: "/unificacao?dominio=BAIXA_PAGAR",
-      plataforma: 0,
-      widesys: preservadosCaptura("BAIXA_PAGAR"),
-    },
-    {
-      rotulo: "Movimentações",
-      href: "/caixa",
-      plataforma: dados.origens.plataforma.movimentos,
-      widesys: preservadosCaptura("MOVIMENTO"),
-    },
-  ].map((linha, indice) => ({ ...linha, dominio: dominios[indice], resumo: unificados[indice].resumo }));
 
   return (
     <div>
       <PageHeader
         titulo="Auditoria financeira Widesys"
-        descricao="Auditoria da captura preservada do Widesys, com a situação atual da unificação. Consulte e trabalhe os registros nos módulos de contratos, contas a receber, contas a pagar e movimentações."
-        acoes={<><Link href="/unificacao" className={btnSecundario}>Trabalhar dados na operação</Link><Link href="/financeiro" className={btnSecundario}>Voltar ao financeiro</Link></>}
+        descricao="Acompanhe o processamento das capturas, os títulos importados e as ocorrências que precisam de correção no Widesys."
+        acoes={<><Link href="/financeiro/dados" className={btnSecundario}>Dados do Widesys</Link><Link href="/financeiro" className={btnSecundario}>Voltar ao financeiro</Link></>}
       />
 
       {lote ? (
@@ -232,85 +187,10 @@ export default async function PaginaAuditoriaWidesys({
         <Card className="mb-4 border-dashed p-5">
           <h2 className="text-[15px] font-bold text-tinta">Nenhum lote operacional aplicado</h2>
           <p className="mt-1 max-w-3xl text-[12px] leading-relaxed text-tinta-suave">
-            A página já está pronta para a conferência. Depois que uma captura validada for aplicada ao staging, as contagens, somas, quarentenas e títulos aparecerão aqui automaticamente.
+            As informações de processamento estarão disponíveis após a primeira captura importada.
           </p>
         </Card>
       )}
-
-      <Card className="mb-4 overflow-hidden">
-        <div className="border-b border-contorno px-5 py-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <h2 className="text-[15px] font-bold text-tinta">Da captura à operação unificada</h2>
-              <p className="mt-1 max-w-3xl text-[11px] leading-relaxed text-tinta-suave">
-                Brisa original e captura Widesys mostram registros preservados em cada fonte. As colunas unificadas mostram as decisões atuais: registros consolidados, fontes vinculadas sem nova soma e itens que ainda exigem conferência.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Badge cor="verde">Operação unificada</Badge>
-              <Badge cor="azul">Captura preservada</Badge>
-              <Badge cor="ambar">correspondência · revisar</Badge>
-            </div>
-          </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-xl border border-contorno bg-[#f8faf9] px-4 py-3">
-              <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-tinta-suave">Cadastros Widesys já no Brisa</div>
-              <div className="mt-2 font-mono text-[12px] font-semibold text-tinta">
-                {dados.origens.widesysJaImportado.pessoas} pessoas · {dados.origens.widesysJaImportado.imoveis} imóveis · {dados.origens.widesysJaImportado.catalogos} parâmetros
-              </div>
-            </div>
-            <div className="rounded-xl border border-contorno bg-[#f8faf9] px-4 py-3">
-              <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-tinta-suave">Cadastros nativos do Brisa</div>
-              <div className="mt-2 font-mono text-[12px] font-semibold text-tinta">
-                {dados.origens.plataformaCadastros.empreendimentos} empreendimentos · {dados.origens.plataformaCadastros.unidades} unidades · {dados.origens.plataformaCadastros.locatarios} inquilinos
-              </div>
-              <div className="mt-1 text-[10px] text-tinta-suave">
-                {dados.origens.plataformaCadastros.locatariosVinculadosWidesys} inquilino(s) têm vínculo cadastral externo registrado. As demais decisões são consultadas na base unificada. Dos {dados.origens.plataforma.titulosReceber} recebimentos originais, {dados.origens.plataforma.titulosReceberComValorPago} já guardam valor recebido no próprio título, sem baixa detalhada.
-              </div>
-            </div>
-            <div className="rounded-xl border border-ambar/30 bg-ambar/5 px-4 py-3">
-              <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-tinta-suave">Regra contra duplicidade</div>
-              <div className="mt-2 text-[11px] font-semibold leading-snug text-tinta">
-                Nome e valor nunca bastam para unir registros. A chave externa, o vínculo e a competência precisam ser comprovados.
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
-          <table className="tabela">
-            <thead>
-              <tr>
-                <th>Domínio</th>
-                <th className="text-right">Brisa original</th>
-                <th className="text-right">Captura Widesys</th>
-                <th className="text-right">Consolidados</th>
-                <th className="text-right">Vinculados</th>
-                <th>Pendências</th>
-                <th>Fluxo atual</th>
-              </tr>
-            </thead>
-            <tbody>
-              {comparacaoOperacional.map((linha) => (
-                <tr key={linha.rotulo}>
-                  <td className="font-semibold text-tinta">{linha.rotulo}</td>
-                  <td className="text-right font-mono tabular-nums">
-                    {linha.plataforma}
-                  </td>
-                  <td className="text-right font-mono tabular-nums">{linha.widesys}</td>
-                  <td className="text-right font-mono tabular-nums">{linha.resumo.ativos}</td>
-                  <td className="text-right font-mono tabular-nums">{linha.resumo.vinculados}</td>
-                  <td>
-                    <Link href={`/unificacao?dominio=${linha.dominio}`} className="inline-block hover:underline"><Badge cor={linha.resumo.pendentes > 0 ? "ambar" : "verde"}>{linha.resumo.pendentes} a conferir</Badge></Link>
-                    {linha.resumo.quarentena > 0 ? <div className="mt-1"><Link href={`/unificacao?dominio=${linha.dominio}&estado=QUARENTENA`} className="text-[10px] text-erro hover:underline">{linha.resumo.quarentena} em quarentena</Link></div> : null}
-                  </td>
-                  <td><Link href={linha.href} className="text-xs font-semibold text-oliva-escura hover:underline">Abrir módulo →</Link></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="border-t border-contorno px-5 py-3 text-[10px] leading-relaxed text-tinta-suave">Consolidados são registros aceitos na consulta unificada; os totais financeiros respeitam cancelamentos e itens informativos. Baixas detalham o histórico dos títulos e não acrescentam valor novamente. As contagens das fontes permanecem preservadas após um vínculo.</p>
-      </Card>
 
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <Kpi
@@ -318,14 +198,14 @@ export default async function PaginaAuditoriaWidesys({
           valor={dados.totais.registrosAtuais}
           detalhe="Fotografia preservada da importação"
           nivel={dados.totais.registrosAtuais > 0 ? "info" : "neutro"}
-          ajuda="Contagem dos contratos, partes, títulos, baixas e movimentos preservados da captura. Consulte o quadro acima para saber o que já participa da operação unificada."
+          ajuda="Contagem dos contratos, partes, títulos, baixas e movimentos preservados da captura. Consulte os lançamentos na área financeira."
         />
         <Kpi
           rotulo="Quarentena atual"
           valor={dados.totais.quarentena}
           detalhe={`${dados.quarentenas.total} ocorrência(s) na trilha de lotes`}
           nivel={dados.totais.quarentena > 0 ? "critico" : dados.totais.registrosAtuais > 0 ? "otimo" : "neutro"}
-          ajuda="Registros que não podem seguir para reconciliação humana enquanto houver ambiguidade ou divergência."
+          ajuda="Registros com dados inconsistentes que precisam de correção no Widesys."
         />
         <Kpi
           rotulo="Ausentes na fonte"
@@ -354,7 +234,7 @@ export default async function PaginaAuditoriaWidesys({
       <Card className="mb-4 overflow-hidden">
         <div className="border-b border-contorno px-5 py-4">
           <h2 className="text-[15px] font-bold text-tinta">Conferência da captura por escopo</h2>
-          <p className="mt-0.5 text-[10px] text-tinta-suave">Contagens preservadas e somas registradas no último lote. As decisões da operação unificada são apresentadas no quadro acima.</p>
+          <p className="mt-0.5 text-[10px] text-tinta-suave">Contagens registradas na importação do Widesys.</p>
         </div>
         <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
           <table className="tabela">

@@ -3,7 +3,6 @@ import { pode, podeAbrirRota } from "@/lib/acesso/politica";
 import { operacaoNaRequisicao } from "@/lib/consultas/operacao-na-requisicao";
 import { chavesRestritasUnificacao } from "@/lib/unificacao/privacidade";
 import { consolidarExecutivo, mesPadraoConsolidado } from "@/lib/unificacao/executivo-consolidado";
-import { calcularApuracao, dadosTemporadaDoPeriodo } from "@/lib/consultas/temporada";
 import { prisma } from "@/lib/db";
 import Link from "next/link";
 import {
@@ -11,7 +10,6 @@ import {
   Card,
   Dinheiro,
   Kpi,
-  LinkCard,
   PageHeader,
   PainelAlertas,
   Ponto,
@@ -33,12 +31,10 @@ import {
   nivelAtraso,
   nivelInadimplencia,
   nivelSaldo,
-  nivelTarefas,
   nivelTaxaRecebimento,
   nivelVariacao,
   type Nivel,
 } from "@/lib/dominio/semaforo";
-import { contratosAReajustarDoPeriodo } from "@/lib/consultas/relatorios";
 import {
   BarraComposicao,
   BarrasDuplas,
@@ -66,7 +62,14 @@ export default async function PaginaExecutivo({
   await exigirPaginaAcesso("/executivo");
   const sp = await searchParams;
   const periodo = parsePeriodo(sp.de, sp.ate);
-  const [operacao, acesso] = await Promise.all([operacaoNaRequisicao(), acessoAtual()]);
+  const [operacao, acesso, captura] = await Promise.all([
+    operacaoNaRequisicao(), acessoAtual(),
+    prisma.importacaoLegadoLote.findFirst({
+      where: { origem: "WIDESYS", status: { in: ["CONCLUIDO", "QUARENTENA"] }, concluidoEm: { not: null } },
+      orderBy: { capturadoEm: "desc" },
+      select: { capturadoEm: true },
+    }),
+  ]);
   const restritas = pode(acesso, "comissoes.ver") ? new Set<string>() : chavesRestritasUnificacao(operacao.fontes, operacao.decisoes);
   const linhas = operacao.linhas.filter(l => !restritas.has(l.chave));
   const hoje = hojeISO();
@@ -77,19 +80,9 @@ export default async function PaginaExecutivo({
   const mesesSerie = periodo?.meses ?? mesesEntre(`${ano}-01`, `${ano}-12`);
   const rotulos = rotulosCompetencias(mesesSerie);
   const consolidado = consolidarExecutivo(linhas, mesesSerie, meses, hoje);
-  const [temporada, reajustes, fechamento] = await Promise.all([
-    dadosTemporadaDoPeriodo(meses),
-    contratosAReajustarDoPeriodo(meses),
-    periodo ? null : prisma.fechamentoMensal.findUnique({ where: { mesLancamento: mes }, select: { id: true } }),
-  ]);
-  const apuracao = calcularApuracao(temporada);
-  const temTemporada = temporada.limpezas.length + temporada.recebimentos.length + temporada.despesas.length > 0;
   const vm = {
     ...consolidado,
     naJanela: periodo ? "no período" : `em ${nomeMes}`,
-    lucroTemporada: temTemporada ? apuracao.lucro : null,
-    temporadaDetalhe: temTemporada ? `entrou ${formatarBRL(apuracao.receita)}, gastou ${formatarBRL(apuracao.despesa)}` : "Sem lançamentos de temporada",
-    reajustes: reajustes.map(r => ({ empreendimento: r.empreendimento, localizacao: r.identificacao, locatario: r.locatario ?? "Desocupado", valorBase: r.valorBase })),
     rotulos,
     serieDevido: consolidado.serie.map(m => m.devido),
     serieRecebido: consolidado.serie.map(m => m.recebido),
@@ -107,6 +100,7 @@ export default async function PaginaExecutivo({
   const qsFinanceiro = periodo ? `de=${meses[0]}-01&ate=${meses[meses.length - 1]}-${ultimoDia}` : qs;
   const perfilFinanceiro = acesso.perfil === "ADMINISTRADOR" || acesso.perfil === "FINANCEIRO";
   const podeVerTitulos = perfilFinanceiro && podeAbrirRota(acesso, "/financeiro/contas-a-receber");
+  const podeVerDespesas = perfilFinanceiro && podeAbrirRota(acesso, "/financeiro/contas-a-pagar");
   const podeVerMovimentos = perfilFinanceiro && podeAbrirRota(acesso, "/financeiro/movimentacoes");
   // Distribuição dos recebimentos por empreendimento.
   const empOrdenados = vm.porEmp
@@ -133,18 +127,6 @@ export default async function PaginaExecutivo({
   const nvTaxa = nivelTaxaRecebimento(vm.taxa);
   const nvInad = nivelInadimplencia(vm.inadValor, vm.devido);
   const nvCaixa: Nivel = vm.temCaixa ? nivelSaldo(vm.saldoCaixa) : "neutro";
-  const nvReaj = nivelTarefas(
-    vm.reajustes.length,
-    periodo ? 8 * Math.max(1, periodo.meses.length / 2) : 8
-  );
-  const nvTemporada: Nivel =
-    vm.lucroTemporada === null
-      ? "neutro"
-      : vm.lucroTemporada > 0
-        ? "otimo"
-        : vm.lucroTemporada < 0
-          ? "critico"
-          : "neutro";
   const gravesQtde = vm.pendentes.filter(
     (p) => p.diasAtraso !== null && p.diasAtraso > 30
   ).length;
@@ -166,27 +148,12 @@ export default async function PaginaExecutivo({
       acao: podeVerTitulos ? { rotulo: "Contas a receber", href: `/financeiro/contas-a-receber?${qsFinanceiro}` } : undefined,
     });
   }
-  if (vm.reajustes.length > 0) {
-    alertas.push({
-      nivel: nvReaj,
-      titulo: "Reajustes para aplicar",
-      texto: `${vm.reajustes.length} ${vm.reajustes.length === 1 ? "contrato faz" : "contratos fazem"} aniversário de correção ${vm.naJanela}. Aplique o índice e atualize o aluguel-base.`,
-      acao: { rotulo: "Abrir contratos", href: "/contratos" },
-    });
-  }
   if (vm.temCaixa && vm.saldoCaixa < 0) {
     alertas.push({
       nivel: "critico",
       titulo: periodo ? "Caixa negativo no período" : "Caixa negativo no mês",
       texto: `Saíram ${formatarBRL(Math.abs(vm.saldoCaixa))} a mais do que entraram ${vm.naJanela}. Verifique os centros de custo antes de fechar.`,
       acao: podeVerMovimentos ? { rotulo: "Ver movimentos", href: `/financeiro/movimentacoes?${qsFinanceiro}` } : undefined,
-    });
-  }
-  if (!periodo && !fechamento) {
-    alertas.push({
-      nivel: "info",
-      titulo: "Mês ainda aberto",
-      texto: `${NOME_MES_COMPLETO[mesNum]} continua recebendo lançamentos, então os números desta tela ainda vão mudar.`,
     });
   }
 
@@ -197,13 +164,7 @@ export default async function PaginaExecutivo({
         descricao={`Todos os indicadores da operação — ${periodo ? periodo.rotulo : `${NOME_MES_COMPLETO[mesNum]} de ${ano}`}`}
         acoes={
           <div className="flex flex-wrap items-center gap-2">
-            {periodo ? (
-              <Selo nivel="info">análise por período</Selo>
-            ) : fechamento ? (
-              <Selo nivel="otimo">locações fechadas</Selo>
-            ) : (
-              <Selo nivel="info">mês aberto</Selo>
-            )}
+            {periodo ? <Selo nivel="info">análise por período</Selo> : null}
             {!periodo ? <SeletorMes base="/executivo" mes={mes} /> : null}
             <SeletorPeriodo base="/executivo" periodo={periodo} />
           </div>
@@ -211,16 +172,15 @@ export default async function PaginaExecutivo({
       />
 
       <aside aria-label="Origem dos indicadores" className="mb-4 rounded-xl border border-contorno bg-carta px-5 py-3 text-sm">
-        <strong>Financeiro consolidado · Brisa, planilhas e Widesys.</strong>{" "}
-        O Widesys participa desta janela com {vm.origens.WIDESYS.receber} títulos a receber, {vm.origens.WIDESYS.pagar} a pagar e {vm.origens.WIDESYS.movimentos} movimentos de caixa.{" "}
-        <a href="#composicao-por-origem" className="font-semibold text-oliva-escura underline underline-offset-4">Ver valores por origem</a>
+        <strong>Fonte financeira · Widesys</strong>{" · "}
+        {captura ? `Dados capturados em ${new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }).format(captura.capturadoEm)}` : "Aguardando a primeira importação"}
       </aside>
       {/* ---------- resumo da janela em linguagem natural ---------- */}
       <Card className="mb-4 px-6 py-4" nivel={nvTaxa}>
         <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.1em] text-tinta-suave">
           {periodo ? "O período em uma frase" : "O mês em uma frase"}
           <Ajuda
-            dica={`A leitura ${periodo ? "do período" : "do mês"} em português: quanto entrou, o que ficou pendente e o que está na sua mesa. A cor da faixa lateral representa a taxa de recebimento.`}
+            dica="Pagamentos e saldos em aberto dos títulos da janela selecionada."
           />
         </div>
         <p className="text-sm leading-relaxed text-tinta">
@@ -241,16 +201,9 @@ export default async function PaginaExecutivo({
               pagas
             </>
           ) : (
-            <>{vm.origens.WIDESYS.receber + vm.origens.BRISA.receber > 0 ? "Os títulos da janela estão quitados" : "Nenhum título a receber contabilizado na janela"}</>
+            <>{vm.titulosReceber > 0 ? "Os títulos da janela estão quitados" : "Nenhum título a receber contabilizado na janela"}</>
           )}
-          {vm.reajustes.length > 0 ? (
-            <>
-              {" "}e <strong>{vm.reajustes.length} contrato(s)</strong>{" "}
-              fazem aniversário de reajuste.
-            </>
-          ) : (
-            <>.</>
-          )}
+          .
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           {vm.taxa !== null ? (
@@ -260,11 +213,6 @@ export default async function PaginaExecutivo({
             <Selo nivel={nvCaixa}>
               caixa {vm.saldoCaixa >= 0 ? "positivo" : "negativo"}{" "}
               {periodo ? "no período" : "no mês"}
-            </Selo>
-          ) : null}
-          {vm.reajustes.length > 0 ? (
-            <Selo nivel={nvReaj}>
-              {vm.reajustes.length} reajuste(s) para aplicar
             </Selo>
           ) : null}
           {vm.inadQtde > 0 ? (
@@ -278,11 +226,7 @@ export default async function PaginaExecutivo({
       <PainelAlertas
         itens={alertas}
         ajuda={`Fila de atenção ${periodo ? "do período" : "do mês"}, do mais urgente para o menos. Cada linha diz o que aconteceu, o que fazer e leva direto para a tela certa.`}
-        vazio={
-          periodo
-            ? "O período está em dia — nada pendente de cobrança, caixa positivo e nenhum reajuste a aplicar."
-            : `${NOME_MES_COMPLETO[mesNum]} está fechado e em dia — nada pendente de cobrança, caixa positivo e nenhum reajuste a aplicar.`
-        }
+        vazio="Nenhum alerta financeiro na janela."
       />
 
       {/* ---------- KPIs ---------- */}
@@ -309,7 +253,7 @@ export default async function PaginaExecutivo({
           detalhe="títulos a receber incluídos na soma"
           nivel="info"
           href={podeVerTitulos ? `/financeiro/contas-a-receber?${qsFinanceiro}` : undefined}
-          ajuda="Valor devido nos títulos a receber do Brisa, das planilhas e do Widesys na janela selecionada."
+          ajuda="Valor devido nos títulos a receber do Widesys na janela selecionada."
         />
         <Kpi
           rotulo="Taxa de recebimento"
@@ -395,89 +339,24 @@ export default async function PaginaExecutivo({
               : undefined
           }
           href={podeVerMovimentos ? `/financeiro/movimentacoes?${qsFinanceiro}` : undefined}
-          ajuda="Entradas menos saídas dos movimentos incluídos na base unificada. Transferências e registros informativos de espécie ficam fora do saldo."
+          ajuda="Entradas menos saídas dos movimentos do Widesys. Transferências internas ficam fora do saldo."
         />
         <Kpi
-          rotulo="Lucro de temporada"
-          valor={
-            vm.lucroTemporada !== null ? (
-              <Dinheiro centavos={vm.lucroTemporada} destaque />
-            ) : (
-              "—"
-            )
-          }
-          detalhe={vm.temporadaDetalhe}
-          nivel={nvTemporada}
-          selo={
-            vm.lucroTemporada === null
-              ? undefined
-              : vm.lucroTemporada > 0
-                ? "no azul"
-                : vm.lucroTemporada < 0
-                  ? "no vermelho"
-                  : undefined
-          }
-          nota={
-            vm.lucroTemporada !== null && vm.lucroTemporada < 0
-              ? "Despesas e limpezas passaram do que as plataformas repassaram."
-              : undefined
-          }
-          href={`/temporada?${qs}`}
-          ajuda={`Repasses do Airbnb menos despesas (energia, condomínio, IPTU, extras) e limpezas ${periodo ? "da janela" : "do mês"}, lançados na tela Temporada. A receita deve conciliar com a linha AIRBNB do núcleo de recebimentos.`}
+          rotulo="Despesas da competência"
+          valor={<Dinheiro centavos={vm.despesa} destaque />}
+          detalhe={`${vm.titulosPagar} título(s) a pagar na janela`}
+          href={podeVerDespesas ? `/financeiro/contas-a-pagar?${qsFinanceiro}` : undefined}
+          ajuda="Valor devido nos títulos a pagar do Widesys na competência selecionada."
         />
         <Kpi
-          rotulo="Contratos a reajustar"
-          valor={String(vm.reajustes.length)}
-          detalhe={
-            periodo
-              ? "aluguéis com aniversário dentro do período — hora de corrigir o valor"
-              : `aluguéis com aniversário em ${nomeMes} — hora de corrigir o valor`
-          }
-          nivel={nvReaj}
-          selo={vm.reajustes.length === 0 ? "nada a fazer" : "na sua mesa"}
-          nota={
-            vm.reajustes.length > 0
-              ? "O sistema avisa, mas quem aplica o índice e atualiza o aluguel é você."
-              : undefined
-          }
-          href={vm.reajustes.length > 0 ? "/contratos" : undefined}
-          ajuda={
-            periodo
-              ? "Contratos cujo aniversário de reajuste cai em algum mês da janela. Aplique o índice combinado (IGP-M, IPCA...) e atualize o valor em Contratos — o sistema avisa, mas não reajusta sozinho."
-              : "Contratos cujo mês de reajuste é o mês em tela. Aplique o índice combinado (IGP-M, IPCA...) e atualize o valor em Contratos — o sistema avisa, mas não reajusta sozinho."
-          }
+          rotulo="Despesas pagas"
+          valor={<Dinheiro centavos={vm.despesaPaga} destaque />}
+          detalhe="pagamentos dos títulos da competência"
+          href={podeVerDespesas ? `/financeiro/contas-a-pagar?${qsFinanceiro}` : undefined}
+          ajuda="Valor pago nos títulos a pagar da janela. Consulte as saídas de caixa pela data da movimentação."
         />
       </div>
 
-      <Card className="mt-4 p-5">
-        <div id="composicao-por-origem" className="scroll-mt-20" />
-        <TituloCard titulo="Composição por origem" ajuda="Cada lançamento entra pela sua origem principal. As baixas detalhadas já estão no valor pago dos títulos. Entradas e saídas vêm dos movimentos de caixa." />
-        <div className="grid gap-4 lg:grid-cols-2">
-          {(["WIDESYS", "BRISA"] as const).map(origem => {
-            const r = vm.origens[origem];
-            return <section key={origem} className="min-w-0 rounded-lg border border-contorno p-4">
-              <h3 className="mb-3 text-sm font-bold">{origem === "WIDESYS" ? "Widesys" : "Brisa e planilhas"}</h3>
-              <dl className="space-y-3 text-xs">
-                <div><dt className="font-semibold">{r.receber} títulos a receber</dt><dd>Devido <Dinheiro centavos={r.devido} /> · Recebido <Dinheiro centavos={r.recebido} /></dd></div>
-                <div><dt className="font-semibold">{r.pagar} títulos a pagar</dt><dd>Devido <Dinheiro centavos={r.despesa} /> · Pago <Dinheiro centavos={r.pago} /></dd></div>
-                <div><dt className="font-semibold">{r.movimentos} movimentos de caixa</dt><dd>Entradas <Dinheiro centavos={r.entradas} /> · Saídas <Dinheiro centavos={r.saidas} /></dd></div>
-              </dl>
-              {(r.vinculados + r.conciliar + r.inconsistentes > 0) && <p className="mt-3 border-t border-contorno pt-3 text-xs leading-relaxed text-tinta-suave">
-                {r.vinculados > 0 && <>{r.vinculados} já representado(s) pelo principal. </>}
-                {r.conferidosNaOrigemAConciliar > 0 && <>{r.conferidosNaOrigemAConciliar} conferido(s) no Widesys aguardam conciliação com o Brisa ou as planilhas, fora da soma. </>}
-                {r.conciliar > r.conferidosNaOrigemAConciliar && <>{r.conciliar - r.conferidosNaOrigemAConciliar} aguardando conferência, fora da soma. </>}
-                {r.inconsistentes > 0 && <>{r.inconsistentes} com inconsistência de importação.</>}
-              </p>}
-            </section>;
-          })}
-        </div>
-        {podeVerTitulos && <div className="mt-4 flex flex-wrap gap-4 text-xs font-semibold text-oliva-escura">
-          <Link href={`/financeiro/contas-a-receber?${qsFinanceiro}&origem=WIDESYS`}>Ver contas a receber do Widesys →</Link>
-          <Link href={`/financeiro/contas-a-pagar?${qsFinanceiro}&origem=WIDESYS`}>Ver contas a pagar do Widesys →</Link>
-        </div>}
-      </Card>
-
-      {/* ---------- cockpit visual: comparação primeiro, detalhe depois ---------- */}
       <section className="mt-6">
         <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -578,25 +457,16 @@ export default async function PaginaExecutivo({
             <TituloCard
               titulo="Entradas, saídas e saldo"
               nivel={nvCaixa}
-              ajuda="As saídas aparecem empilhadas por centro de custo e a linha azul mostra o saldo final de cada mês. Assim, a causa de qualquer aperto de caixa fica visível sem abrir outra tela."
+              ajuda="Entradas e saídas registradas no Widesys por mês. A linha mostra o saldo de cada mês."
               direita={
                 <span className="font-mono text-[11px] text-tinta-suave">
                   saldo em foco: <strong className="text-tinta">{formatarBRL(vm.saldoCaixa)}</strong>
                 </span>
               }
             />
-            {vm.caixaLinhas.some((linha) => linha.receita || linha.despesaAL || linha.despesaCH || linha.despesaOutros) ? (
+            {vm.caixaLinhas.some(linha => linha.receita || linha.saida) ? (
               <>
-                <FluxoCaixaInterativo
-                  dados={vm.caixaLinhas.map((linha) => ({
-                    rotulo: linha.rotulo,
-                    receita: linha.receita,
-                    despesaAL: linha.despesaAL,
-                    despesaCH: linha.despesaCH,
-                    despesaOutros: linha.despesaOutros,
-                    saldo: linha.saldo,
-                  }))}
-                />
+                <FluxoCaixaInterativo dados={vm.caixaLinhas} />
                 <p className="mt-2 text-xs leading-relaxed text-tinta-suave">
                   {periodo ? "Na janela selecionada" : `Em ${nomeMes}`}, entraram {formatarBRL(vm.caixaReceita)} e saíram {formatarBRL(vm.caixaDespesa)} — saldo de{" "}
                   <strong className="font-mono text-tinta">{formatarBRL(vm.saldoCaixa)}</strong>.
@@ -613,30 +483,23 @@ export default async function PaginaExecutivo({
                     <tr>
                       <th>Mês</th>
                       <th className="text-right">Receita</th>
-                      <th className="text-right">Despesa AL</th>
-                      <th className="text-right">Despesa CH</th>
-                      {vm.caixaLinhas.some(linha => linha.despesaOutros !== 0) ? <th className="text-right">Brisa / outros</th> : null}
+                      <th className="text-right">Saídas</th>
                       <th className="text-right">Saldo</th>
-                      <th className="text-right">Receb. dinheiro*</th>
                     </tr>
                   </thead>
                   <tbody>
                     {vm.caixaLinhas
-                      .filter((linha) => linha.receita || linha.despesaAL || linha.despesaCH || linha.despesaOutros || linha.dinheiro)
+                      .filter(linha => linha.receita || linha.saida)
                       .map((linha) => (
                         <tr key={linha.mes}>
                           <td>{linha.rotulo}</td>
                           <td className="text-right"><Dinheiro centavos={linha.receita} /></td>
-                          <td className="text-right"><Dinheiro centavos={linha.despesaAL} /></td>
-                          <td className="text-right"><Dinheiro centavos={linha.despesaCH} /></td>
-                          {vm.caixaLinhas.some(linha => linha.despesaOutros !== 0) ? <td className="text-right"><Dinheiro centavos={linha.despesaOutros} /></td> : null}
+                          <td className="text-right"><Dinheiro centavos={linha.saida} /></td>
                           <td className="text-right"><Dinheiro centavos={linha.saldo} destaque /></td>
-                          <td className="text-right"><Dinheiro centavos={linha.dinheiro} /></td>
                         </tr>
                       ))}
                   </tbody>
                 </table>
-                <p className="mt-1 text-[11px] text-tinta-suave">* registro paralelo de espécie — não entra no saldo.</p>
               </div>
             </details>
           </Card>
@@ -704,54 +567,7 @@ export default async function PaginaExecutivo({
       </Card>
 
       {/* ---------- listas operacionais ---------- */}
-      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <Card
-          className="p-5"
-          nivel={vm.reajustes.length > 0 ? nvReaj : undefined}
-        >
-          <TituloCard
-            titulo={periodo ? "Reajustes no período" : `Reajustes de ${nomeMes}`}
-            nivel={vm.reajustes.length > 0 ? nvReaj : "otimo"}
-            ajuda={`Contratos cujo aniversário de correção cai ${periodo ? "dentro do período" : "neste mês"}. Aplique o índice combinado sobre o aluguel-base (sem IPTU nem condomínio) e atualize o valor em Contratos — nada disso é automático.`}
-            direita={
-              vm.reajustes.length > 0 ? (
-                <LinkCard href="/contratos">Abrir contratos</LinkCard>
-              ) : (
-                <Selo nivel="otimo">nada a aplicar</Selo>
-              )
-            }
-          />
-          {vm.reajustes.length === 0 ? (
-            <p className="text-sm text-tinta-suave">
-              Nenhum contrato com aniversário de reajuste{" "}
-              {periodo ? "no período" : "neste mês"}.
-            </p>
-          ) : (
-            <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
-              <table className="tabela">
-                <thead>
-                  <tr>
-                    <th>Empreendimento</th>
-                    <th>Localização</th>
-                    <th>Locatário</th>
-                    <th className="text-right">Aluguel atual</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {vm.reajustes.map((r, i) => (
-                    <tr key={i}>
-                      <td>{r.empreendimento}</td>
-                      <td>{r.localizacao}</td>
-                      <td>{r.locatario}</td>
-                      <td className="text-right"><Dinheiro centavos={r.valorBase} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-
+      <div className="mt-4">
         <Card className="p-5">
           <TituloCard
             titulo={
@@ -855,9 +671,6 @@ export default async function PaginaExecutivo({
         </Card>
       </div>
 
-      <p className="mt-6 text-xs text-tinta-suave/60">
-        Fonte financeira: lançamentos principais da base unificada. Temporada e reajustes vêm dos respectivos módulos do Brisa.
-      </p>
     </div>
   );
 }

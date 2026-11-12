@@ -29,38 +29,33 @@ describe("menu financeiro por tarefa", () => {
     const financeiro = html.slice(html.indexOf('id="submenu-financeiro"'));
     const principais = financeiro.slice(0, financeiro.indexOf("<details"));
     expect([...principais.matchAll(/href="([^"]+)"/g)].map((link) => link[1])).toEqual([
-      "/financeiro", "/financeiro/dados", "/recebimentos", "/financeiro/contas-a-pagar",
+      "/financeiro", "/recebimentos", "/financeiro/contas-a-pagar",
       "/caixa", "/paineis/cobranca", "/financeiro/comissoes",
     ]);
     expect(principais).toContain("Resumo financeiro");
-    expect(principais).toContain("Conferir dados");
     expect(principais).toContain("Entradas e saídas");
     expect(principais).toContain("Cobranças");
     expect(grupo(html, "banco")).toContain("Banco e serviços");
-    expect(grupo(html, "importacoes")).toContain("Importações e histórico");
     expect(grupo(html, "banco")).not.toMatch(/^<details[^>]*\bopen=/);
-    expect(grupo(html, "importacoes")).not.toMatch(/^<details[^>]*\bopen=/);
+    expect(grupo(html, "importacoes")).toBeUndefined();
   });
 
-  it("mantém operação bancária e histórico local no financeiro sem duplicar integrações", () => {
+  it("mantém operação bancária no financeiro e concentra as capturas em integrações", () => {
     const html = renderizar();
     expect([...grupo(html, "banco")!.matchAll(/href="([^"]+)"/g)].map((link) => link[1])).toEqual([
       "/financeiro/boletos", "/financeiro/conciliacao", "/financeiro/contas-bancarias",
       "/financeiro/notas-fiscais",
     ]);
-    expect([...grupo(html, "importacoes")!.matchAll(/href="([^"]+)"/g)].map((link) => link[1])).toEqual([
-      "/financeiro/importacoes", "/unificacao",
-    ]);
+    expect(html).not.toContain('href="/financeiro/importacoes"');
+    expect(html).not.toContain('href="/unificacao"');
     for (const href of ["/financeiro/automacoes", "/financeiro/migracao-widesys", "/integracoes/sicoob"]) {
       expect(grupo(html, "banco")).not.toContain(`href="${href}"`);
-      expect(grupo(html, "importacoes")).not.toContain(`href="${href}"`);
       expect([...html.matchAll(new RegExp(`href="${href}"`, "g"))]).toHaveLength(1);
     }
   });
 
   it.each([
     ["/financeiro/conciliacao", "banco", "Conferir pagamentos"],
-    ["/financeiro/importacoes/lote-1", "importacoes", "Planilhas importadas"],
   ])("abre o grupo da rota %s e mantém o link e o breadcrumb reconhecíveis", (pathname, id, rotulo) => {
     mocks.pathname.mockReturnValue(pathname);
     const html = renderizar();
@@ -99,10 +94,10 @@ describe("menu financeiro por tarefa", () => {
       perfil: "FINANCEIRO", permissoesExtras: '["unificacao.ver","cadastros.sensiveis","comissoes.ver"]',
       permissoesNegadas: '["boletos.ver","contas.ver"]',
     });
-    expect(html).toContain('href="/financeiro/dados"');
+    expect(html).not.toContain('href="/financeiro/dados"');
     expect(html).toContain('href="/financeiro/contas-a-pagar"');
     expect(grupo(html, "banco")).toBeUndefined();
-    expect(grupo(html, "importacoes")).toContain('href="/unificacao"');
+    expect(grupo(html, "importacoes")).toBeUndefined();
     expect(html).not.toContain('href="/financeiro/comissoes"');
     expect(html).not.toContain('href="/financeiro/importacoes"');
   });

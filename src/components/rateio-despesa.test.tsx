@@ -2,9 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DespesaEditor } from "@/lib/despesas/tipos";
 
-const mocks = vi.hoisted(() => ({ salvar: vi.fn(), carregar: vi.fn(), buscar: vi.fn(), visiveis: false }));
-vi.mock("@/app/(app)/financeiro/contas-a-pagar/rateio-actions", () => ({ salvarRateioDespesa: mocks.salvar, carregarRateioDespesa: mocks.carregar, procurarPagamentoDespesa: mocks.buscar, carregarRevisaoDespesa: vi.fn(), confirmarRevisaoDespesa: vi.fn() }));
-vi.mock("@/app/(app)/recebimentos/revisao-actions", () => ({ carregarRevisaoRecebimento: vi.fn(), confirmarRevisaoRecebimento: vi.fn() }));
+const mocks = vi.hoisted(() => ({ salvar: vi.fn(), carregar: vi.fn(), visiveis: false }));
+vi.mock("@/app/(app)/financeiro/contas-a-pagar/rateio-actions", () => ({ salvarRateioDespesa: mocks.salvar, carregarRateioDespesa: mocks.carregar }));
 vi.mock("@/app/(app)/financeiro/contas-a-pagar/categorias-actions", () => ({ carregarCategoriasDespesas: vi.fn(), gravarCategoriaDespesa: vi.fn() }));
 vi.mock("@/app/(app)/cadastros/fornecedores/actions", () => ({ pesquisarFornecedores: vi.fn(), salvarCadastroFornecedor: vi.fn(), usarPessoaComoFornecedor: vi.fn() }));
 vi.mock("@/components/botao-sigilo", () => ({ BotaoSigilo: () => <button>Ver valores</button>, useValoresVisiveis: () => mocks.visiveis }));
@@ -21,7 +20,7 @@ beforeEach(() => { vi.clearAllMocks(); mocks.visiveis = false; });
 
 describe("rateio manual na própria tela", () => {
   it("botões não navegam nem carregam documentos enquanto fechados", () => {
-    expect(renderToStaticMarkup(<RateioDespesaBotao />)).toContain("Nova despesa");
+    expect(renderToStaticMarkup(<RateioDespesaBotao />)).toBe("");
     const html = renderToStaticMarkup(<RateioDespesaBotao origemChave="WIDESYS:PAGAR:t1" compacto />);
     expect(html).toContain("Organizar despesa"); expect(html).not.toContain("href=");
     expect(mocks.carregar).not.toHaveBeenCalled(); expect(mocks.salvar).not.toHaveBeenCalled();
@@ -40,32 +39,26 @@ describe("rateio manual na própria tela", () => {
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Salvar dados da despesa<\/button>/);
     expect(html).toContain('class="sigilo"');
   });
-  it("mostra nota única, rateio manual e opções de pagamento sem efetuar operação", () => {
+  it("mostra nota única, rateio manual e situação de pagamento somente para leitura", () => {
     mocks.visiveis = true;
     const html = formulario();
     expect(html).not.toContain('type="password"');
     expect(html).toContain("Adicionar empreendimento ou serviço");
     expect(html).toContain("Salvar rascunho");
-    expect(html).toContain("Já está no caixa");
-    expect(html).toContain("Vincular uma saída existente, sem repetir");
+    expect(html).toContain("Situação do pagamento no Widesys");
+    expect(html).not.toContain('name="modoPagamento"');
     expect(html).toContain("CPF/CNPJ do fornecedor para proteção adicional");
     expect(html).toContain("Salve a despesa primeiro para anexar");
-    expect(mocks.salvar).not.toHaveBeenCalled(); expect(mocks.buscar).not.toHaveBeenCalled();
+    expect(mocks.salvar).not.toHaveBeenCalled();
   });
   it("origem Widesys não oferece segundo pagamento e permite completar metadados", () => {
     mocks.visiveis = true;
     const html = formulario({ ...editor, documento: { ...editor.documento, origemChave: "WIDESYS:PAGAR:t1", numero: "", emissao: "" }, pagamento: { ...editor.pagamento, origem: "WIDESYS", valor: 10000, situacao: "PAGO" }, permitePagamento: false });
     expect(html).toContain("pode completar os dados locais");
-    expect(html).toContain("Situação do pagamento preservada do Widesys");
+    expect(html).toContain("Situação do pagamento no Widesys");
     expect(html).not.toContain('name="modoPagamento"');
     expect(html).toMatch(/Valor total \(R\$\)<input[^>]*readOnly/);
     expect(html).not.toMatch(/Número do documento<input[^>]*readOnly/);
-  });
-  it("saída vinculada fica somente leitura e não pode ser registrada novamente", () => {
-    const html = formulario({ ...editor, pagamento: { ...editor.pagamento, origem: "CAIXA", lancamentoCaixaId: "cx1", valor: 10000, situacao: "PAGO" }, permitePagamento: false });
-    expect(html).toContain("Saída já vinculada no caixa");
-    expect(html).not.toContain('name="modoPagamento"');
-    expect(html).toContain("não registra outro pagamento");
   });
   it("confirma atualização da fonte e não expõe documentos na carteira", () => {
     const html = formulario({ ...editor, documento: { ...editor.documento, id: "d1", fonteAlterada: true }, anexos: [{ id: "a1", nomeOriginal: "nota.pdf", mimeType: "application/pdf", tamanho: 1024 }] });
@@ -80,7 +73,7 @@ describe("rateio manual na própria tela", () => {
     expect(html).toContain("você pode salvar um rascunho");
     expect(html).not.toContain("Dividir igualmente");
   });
-  it("despesa administrativa dispensa nota e rateio, mantendo a escolha de pagamento", () => {
+  it("despesa administrativa dispensa nota e rateio", () => {
     mocks.visiveis = true;
     const html = formulario({ ...editor, documento: { ...editor.documento, destinoCusto: "ADMINISTRADORA", tipoDocumento: "SEM_DOCUMENTO", categoriaCodigo: "PROGRAMA_WIDESYS", descricao: "Mensalidade de outubro", numero: "", emissao: "", rateios: [] } });
     expect(html).toContain("O que será pago?");
@@ -92,7 +85,7 @@ describe("rateio manual na própria tela", () => {
     expect(html).not.toContain("Adicionar empreendimento ou serviço");
     expect(html).not.toContain("Falta distribuir");
     expect(html).toContain("sem distribuir custos para imóveis ou empreendimentos");
-    expect(html).toContain("Já está no caixa");
+    expect(html).toContain("Situação do pagamento no Widesys");
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Salvar dados da despesa<\/button>/);
     expect(html).not.toContain("Administração/comissão");
     expect(mocks.salvar).not.toHaveBeenCalled();
@@ -111,19 +104,16 @@ describe("rateio manual na própria tela", () => {
     expect(html).toContain("não impede o administrador de salvar os dados ou concluir a conferência");
     expect(html).not.toContain("Administração/comissão: esta despesa");
   });
-  it("expõe a decisão financeira em etapa separada e não promete resolver pendências ao salvar dados", () => {
+  it("permite organizar despesas Widesys sem comparar duplicidades", () => {
     const html = formulario({ ...editor, documento: { ...editor.documento, origemChave: "WIDESYS:PAGAR:t1" } });
     expect(html).toContain("Salvar dados da despesa");
-    expect(html).toContain("4. Conferência de duplicidade");
-    expect(html).toContain("decisão abaixo define se ela entra nos totais");
-    expect(html).not.toContain("Salvar e concluir conferência");
-    expect(html).not.toContain("Despesa conferida e salva");
+    expect(html).not.toContain("Conferência de duplicidade");
+    expect(html).not.toContain("decisão abaixo define se ela entra nos totais");
   });
   it("correção de honorários só aparece por autorização do servidor e exige confirmação também dos anexos", () => {
     const html = formulario({ ...editor, sigilo: { restrita: true, podeCorrigirHonorarios: true, motivo: "Restrição anterior a conferir" } });
     expect(html).toContain("Corrigir restrição indevida de honorários");
     expect(html).toContain("Conferi esta despesa e seus anexos");
-    expect(html).toContain("Não conclui a conferência de duplicidades");
     expect(html).not.toMatch(/type="checkbox"[^>]*checked/);
     expect(formulario()).not.toContain("Corrigir restrição indevida");
   });

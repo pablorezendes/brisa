@@ -1,6 +1,5 @@
 import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import { AcaoAutorizada, podeExibirAcao } from "@/components/acao-autorizada";
-import Link from "next/link";
 import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 import {
   Ajuda,
@@ -16,18 +15,14 @@ import {
   btnSecundario,
   inputBase,
 } from "@/components/ui";
-import { formatarBRL } from "@/lib/dominio/dinheiro";
 import { competencia, formatarCompetencia } from "@/lib/dominio/normalizacao";
 import { parsePeriodo } from "@/lib/dominio/periodo";
 import { nivelSaldo } from "@/lib/dominio/semaforo";
 import {
   calcularApuracao,
-  conciliacaoComNucleo,
-  conciliacaoComNucleoDoPeriodo,
   dadosTemporadaDoMes,
   dadosTemporadaDoPeriodo,
   totalLimpeza,
-  type ConciliacaoNucleo,
   type DadosTemporadaDoMes,
   type DadosTemporadaDoPeriodo,
 } from "@/lib/consultas/temporada";
@@ -71,25 +66,6 @@ function centavosParaInput(centavos: number): string {
   return (centavos / 100).toFixed(2).replace(".", ",");
 }
 
-function BadgeConciliacao({
-  c,
-  janela = "neste mês",
-}: {
-  c: ConciliacaoNucleo;
-  janela?: string;
-}) {
-  if (!c.existeLinhaNucleo) {
-    return <Badge cor="slate">Sem linha AIRBNB no núcleo {janela}</Badge>;
-  }
-  if (c.recebidoNucleo === null) {
-    return <Badge cor="ambar">Núcleo ainda sem valor recebido</Badge>;
-  }
-  if (c.conciliado) {
-    return <Badge cor="verde">Conciliado</Badge>;
-  }
-  return <Badge cor="ambar">Diferença de {formatarBRL(c.diferenca)}</Badge>;
-}
-
 export default async function PaginaTemporada({
   searchParams,
 }: {
@@ -106,9 +82,6 @@ export default async function PaginaTemporada({
   const dadosMes = periodo ? null : await dadosTemporadaDoMes(mes);
   const dadosPeriodo = periodo ? await dadosTemporadaDoPeriodo(periodo.meses) : null;
   const apuracao = calcularApuracao(dadosMes ?? dadosPeriodo ?? VAZIO_PERIODO);
-  const conciliacao = periodo
-    ? await conciliacaoComNucleoDoPeriodo(periodo.meses, apuracao.receita)
-    : await conciliacaoComNucleo(mes, apuracao.receita);
 
   // ---- modo mês -----------------------------------------------------------
   const { unidades, limpezas, despesas, recebimentos } = dadosMes ?? VAZIO_MES;
@@ -143,14 +116,11 @@ export default async function PaginaTemporada({
         titulo="Temporada"
         descricao={
           periodo
-            ? `Apuração agregada do período ${periodo.rotulo} — receita, despesas e limpezas somadas na janela`
-            : "Limpezas, despesas e recebimentos das unidades Airbnb — apuração derivada do mês"
+            ? `Controle operacional de temporada no período ${periodo.rotulo} — receita, despesas e limpezas somadas na janela`
+            : "Controle operacional de limpezas, despesas e recebimentos das unidades Airbnb"
         }
         acoes={
           <>
-            <Link href="/temporada/historico" className={btnSecundario}>
-              Histórico
-            </Link>
             {!periodo ? <SeletorMes base="/temporada" mes={mes} /> : null}
             <SeletorPeriodo base="/temporada" periodo={periodo} />
           </>
@@ -165,8 +135,8 @@ export default async function PaginaTemporada({
           detalhe={periodo ? "Σ recebimentos no período" : "Σ recebimentos do mês"}
           ajuda={
             periodo
-              ? "Soma dos repasses das plataformas (Airbnb, Booking...) e hospedagens de todos os meses da janela. Deve bater com a soma das linhas AIRBNB do núcleo no mesmo período — confira o selo de conciliação."
-              : "Soma dos repasses das plataformas (Airbnb, Booking...) e hospedagens lançados no bloco Recebimentos abaixo. Deve bater com a linha AIRBNB do núcleo — confira o selo de conciliação."
+              ? "Soma dos repasses das plataformas (Airbnb, Booking...) e hospedagens de todos os meses da janela."
+              : "Soma dos repasses das plataformas (Airbnb, Booking...) e hospedagens lançados no bloco Recebimentos abaixo."
           }
         />
         <Kpi
@@ -215,23 +185,6 @@ export default async function PaginaTemporada({
           }
         />
       </div>
-
-      {/* Conciliação com o núcleo */}
-      <Card className="mt-4 px-5 py-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-sm font-semibold">Conciliação com o núcleo</span>
-          <BadgeConciliacao c={conciliacao} janela={periodo ? "no período" : "neste mês"} />
-          <span className="text-sm text-tinta-suave">
-            Núcleo (AIRBNB/TODOS): <Dinheiro centavos={conciliacao.recebidoNucleo} /> · Receita da
-            temporada: <Dinheiro centavos={apuracao.receita} />
-          </span>
-        </div>
-        <p className="mt-1 text-xs text-tinta-suave">
-          {periodo
-            ? `A soma das linhas agregadas AIRBNB/TODOS do núcleo deve refletir a receita da temporada no período ${periodo.rotulo} — as duas pontas somadas sobre os mesmos meses.`
-            : `A linha agregada AIRBNB/TODOS do núcleo de recebimentos deve refletir a receita da temporada de ${formatarCompetencia(mes)}.`}
-        </p>
-      </Card>
 
       {periodo ? (
         <>

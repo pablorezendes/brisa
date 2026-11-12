@@ -1,39 +1,9 @@
-/** /caixa/novo — formulário de novo lançamento (?mes=YYYY-MM pré-seleciona o mês). */
 import { exigirPaginaAcesso, exigirPermissaoAcesso } from "@/lib/acesso/servidor";
-import { Card, PageHeader } from "@/components/ui";
-import { formatarCompetencia } from "@/lib/dominio/normalizacao";
-import { categoriasPorCentro, mesMaisRecente } from "@/lib/consultas/caixa";
-import { salvarLancamento } from "../actions";
-import { FormLancamento } from "../FormLancamento";
+import { hrefFinanceiroPeriodo } from "@/lib/consultas/rota-financeira";
+import { redirect } from "next/navigation";
 
-const RE_MES = /^\d{4}-(0[1-9]|1[0-2])$/;
-
-export default async function PaginaNovoLancamento({
-  searchParams,
-}: {
-  searchParams: Promise<{ mes?: string }>;
-}) {
+export default async function PaginaNovoLancamento({ searchParams }: { searchParams: Promise<{ mes?: string }> }) {
   await exigirPaginaAcesso("/caixa/novo");
   await exigirPermissaoAcesso("caixa.editar", { global: true });
-  const sp = await searchParams;
-  const mes = sp.mes && RE_MES.test(sp.mes) ? sp.mes : await mesMaisRecente();
-  const categorias = await categoriasPorCentro();
-
-  return (
-    <>
-      <PageHeader
-        titulo="Novo lançamento"
-        descricao={`Livro-caixa — mês em foco: ${formatarCompetencia(mes)}`}
-      />
-      <Card className="max-w-2xl p-5">
-        <FormLancamento
-          acao={salvarLancamento}
-          categoriasAL={categorias.AL}
-          categoriasCH={categorias.CH}
-          categoriasBRISA={categorias.BRISA}
-          mes={mes}
-        />
-      </Card>
-    </>
-  );
+  redirect(hrefFinanceiroPeriodo("/caixa", await searchParams));
 }

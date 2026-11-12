@@ -7,7 +7,6 @@ import { exigirPermissaoFinanceira } from "@/lib/autorizacao";
 import { ErroApiSicoob } from "@/lib/integracoes/sicoob";
 import {
   ErroOperacaoBoleto,
-  emitirBoletoSicoob,
   liberarEmissaoInconclusivaSicoob,
   registrarWebhookDaConta,
   sincronizarBoletoSicoob,
@@ -17,7 +16,6 @@ import {
 
 const RE_ID = /^[0-9a-f-]{20,64}$/i;
 const RE_MES = /^\d{4}-(0[1-9]|1[0-2])$/;
-const RE_DATA = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 
 function campo(formData: FormData, nome: string): string {
   const valor = formData.get(nome);
@@ -56,36 +54,8 @@ function revalidarFinanceiro() {
 
 export async function emitirBoleto(formData: FormData): Promise<void> {
   await exigirPermissaoAcesso("boletos.emitir", { global: true });
-  const sessao = await exigirPermissaoFinanceira("EMITIR_BOLETOS");
-  const recebimentoId = campo(formData, "recebimentoId");
-  const contaBancariaId = campo(formData, "contaBancariaId");
-  const dataVencimento = campo(formData, "dataVencimento");
-  const mes = campo(formData, "mes");
-  if (!RE_ID.test(recebimentoId) || !RE_ID.test(contaBancariaId)) {
-    voltar(mes, { erro: "Lançamento ou conta bancária inválidos." });
-  }
-  if (!RE_DATA.test(dataVencimento)) {
-    voltar(mes, { erro: "Informe uma data de vencimento válida." });
-  }
-  let resultado;
-  try {
-    resultado = await emitirBoletoSicoob({
-      recebimentoId,
-      contaBancariaId,
-      dataVencimento,
-      usuarioId: sessao.sub,
-    });
-  } catch (erro) {
-    revalidarFinanceiro();
-    voltar(mes, { erro: mensagemSegura(erro) });
-  }
-  revalidarFinanceiro();
-  voltar(mes, {
-    ok: resultado.reutilizado
-      ? "A emissão já existia e foi reutilizada sem duplicar o boleto."
-      : "Boleto registrado no Sicoob.",
-    boleto: resultado.boleto.id,
-  });
+  await exigirPermissaoFinanceira("EMITIR_BOLETOS");
+  voltar(campo(formData, "mes"), { erro: "Emita as cobranças no Widesys e atualize a captura financeira do Brisa." });
 }
 
 export async function sincronizarBoleto(formData: FormData): Promise<void> {

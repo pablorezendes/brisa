@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { acessoAtual, exigirPaginaAcesso } from "@/lib/acesso/servidor";
-import { podeAbrirRota } from "@/lib/acesso/politica";
+import { pode, podeAbrirRota } from "@/lib/acesso/politica";
 import { podeExibirAcao } from "@/components/acao-autorizada";
 import { IconeMenu, type IconeMenuNome } from "@/components/icones-menu";
-import { Card, Dinheiro, Kpi, PageHeader, SeletorMes, Sigilo, btnPrimario } from "@/components/ui";
-import { mesPadrao } from "@/lib/consultas/executivo";
+import { Dinheiro, Kpi, PageHeader, SeletorMes, Sigilo } from "@/components/ui";
+import { operacaoNaRequisicao } from "@/lib/consultas/operacao-na-requisicao";
 import { listarUnificados } from "@/lib/consultas/unificacao";
 import { formatarCompetencia } from "@/lib/dominio/normalizacao";
+import { hojeISO } from "@/lib/dominio/periodo";
+import { mesPadraoConsolidado } from "@/lib/unificacao/executivo-consolidado";
+import { chavesRestritasUnificacao } from "@/lib/unificacao/privacidade";
 
 export const metadata = { title: "Resumo financeiro — Brisa" };
 export const dynamic = "force-dynamic";
@@ -29,13 +32,20 @@ export default async function PaginaFinanceiro({
 }) {
   await exigirPaginaAcesso("/financeiro");
   const [sp, acesso] = await Promise.all([searchParams, acessoAtual()]);
-  const mes = sp.mes && RE_MES.test(sp.mes) ? sp.mes : await mesPadrao();
   const podeConsolidar = podeExibirAcao(acesso, {
     permissao: "cadastros.sensiveis",
     perfis: PERFIS_UNIFICACAO,
   });
+  const hoje = hojeISO();
+  let mes = hoje.slice(0, 7);
+  if (sp.mes && RE_MES.test(sp.mes)) {
+    mes = sp.mes;
+  } else if (podeConsolidar) {
+    const operacao = await operacaoNaRequisicao();
+    const restritas = pode(acesso, "comissoes.ver") ? new Set<string>() : chavesRestritasUnificacao(operacao.fontes, operacao.decisoes);
+    mes = mesPadraoConsolidado(operacao.linhas.filter(linha => !restritas.has(linha.chave)), hoje);
+  }
   const abrir = (href: string) => podeAbrirRota(acesso, href.split("?")[0]);
-  const podeConferir = podeConsolidar && abrir("/financeiro/dados");
   const permitido = (atalho: Atalho) => abrir(atalho.href)
     && (!atalho.perfis || atalho.perfis.includes(acesso.perfil));
   const [receber, pagar, movimentos] = await Promise.all([
@@ -53,7 +63,7 @@ export default async function PaginaFinanceiro({
     {
       titulo: "Banco e boletos",
       itens: [
-        { titulo: "Boletos", descricao: "Emissão e acompanhamento no Sicoob.", href: `/financeiro/boletos?mes=${mes}` },
+        { titulo: "Boletos", descricao: "Acompanhe boletos já emitidos no Sicoob.", href: `/financeiro/boletos?mes=${mes}` },
         { titulo: "Conferir pagamentos", descricao: "Compare pagamentos e confirmações do banco.", href: "/financeiro/conciliacao", perfis: PERFIS_UNIFICACAO },
         { titulo: "Contas bancárias", descricao: "Consulte as contas usadas na operação.", href: "/financeiro/contas-bancarias" },
       ],
@@ -66,10 +76,9 @@ export default async function PaginaFinanceiro({
       ],
     },
     {
-      titulo: "Arquivos importados",
+      titulo: "Widesys",
       itens: [
-        { titulo: "Planilhas importadas", descricao: "Veja arquivo, aba e histórico de cada carga.", href: "/financeiro/importacoes", perfis: ["ADMINISTRADOR"] },
-        { titulo: "Dados do Widesys", descricao: "Confira os lotes trazidos do sistema anterior.", href: "/financeiro/migracao-widesys", perfis: PERFIS_UNIFICACAO },
+        { titulo: "Dados do Widesys", descricao: "Veja a data da última captura e os registros com inconsistências.", href: "/financeiro/dados", perfis: PERFIS_UNIFICACAO },
       ],
     },
   ];
@@ -78,8 +87,6 @@ export default async function PaginaFinanceiro({
     .filter(grupo => grupo.itens.length > 0);
   const gestao: Atalho[] = [
     { titulo: "Executivo", descricao: "Indicadores de gestão", href: `/executivo?mes=${mes}` },
-    { titulo: "Recebimentos de locação", descricao: "Base de locações", href: `/recebimentos?visao=locacao&mes=${mes}` },
-    { titulo: "Livro-caixa original", descricao: "Base do livro-caixa", href: `/caixa?visao=livro&mes=${mes}` },
     { titulo: "Contratos e reajustes", descricao: "Contratos de locação", href: "/contratos?visao=locacao" },
   ].filter(permitido);
 
@@ -87,30 +94,9 @@ export default async function PaginaFinanceiro({
     <div>
       <PageHeader
         titulo="Resumo financeiro"
-        descricao="Escolha a tarefa do dia ou comece pela conferência dos dados."
+        descricao="Acompanhe contas, pagamentos e movimentos registrados no Widesys."
         acoes={<SeletorMes base="/financeiro" mes={mes} />}
       />
-
-      {podeConferir && (
-        <Card className="mb-6 p-5 sm:p-6" nivel="info">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="max-w-2xl">
-              <h2 className="text-lg font-bold tracking-tight text-tinta">Comece pelo que precisa conferir</h2>
-              <p className="mt-1 text-sm leading-relaxed text-tinta-suave">
-                Veja as pendências e a origem dos registros antes de tomar uma decisão.
-              </p>
-            </div>
-            <Link href="/financeiro/dados" className={btnPrimario}>
-              Conferir dados <span aria-hidden="true">→</span>
-            </Link>
-          </div>
-          <ol className="mt-5 grid gap-3 border-t border-contorno pt-4 text-xs leading-relaxed text-tinta-suave sm:grid-cols-3">
-            <li><strong className="text-tinta">1. Encontre a pendência.</strong> Escolha o que precisa de revisão.</li>
-            <li><strong className="text-tinta">2. Abra o registro.</strong> Em contas a pagar e receber, a conferência abre sobre a lista.</li>
-            <li><strong className="text-tinta">3. Confirme a decisão.</strong> Indique se é o mesmo registro ou se são registros diferentes.</li>
-          </ol>
-        </Card>
-      )}
 
       <section className="mb-6" aria-labelledby="tarefas-financeiras">
         <h2 id="tarefas-financeiras" className="mb-3 text-base font-bold text-tinta">O que você precisa fazer?</h2>
@@ -135,30 +121,27 @@ export default async function PaginaFinanceiro({
       {receber && pagar && movimentos && (
         <section className="mb-6" aria-labelledby="valores-financeiros">
           <h2 id="valores-financeiros" className="text-base font-bold text-tinta">Valores do mês · {formatarCompetencia(mes)}</h2>
-          <p className="mb-3 mt-1 text-xs leading-relaxed text-tinta-suave">
-            Base unificada: registros aceitos das fontes. Pendências ficam fora dos totais; inclusão não significa conferência concluída.
-          </p>
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
             <Kpi
               rotulo="A receber em aberto"
               valor={<Dinheiro centavos={receber.resumo.aberto} />}
               detalhe={<Sigilo>{receber.resumo.ativos} registros aceitos</Sigilo>}
               href={abrir("/recebimentos") ? `/recebimentos?mes=${mes}` : undefined}
-              ajuda="Valor devido menos o que já foi recebido nos registros aceitos. Possíveis repetições pendentes não entram neste total."
+              ajuda="Saldo em aberto dos títulos válidos a receber da captura do Widesys."
             />
             <Kpi
               rotulo="A pagar em aberto"
               valor={<Dinheiro centavos={pagar.resumo.aberto} />}
               detalhe={<Sigilo>{pagar.resumo.ativos} registros aceitos</Sigilo>}
               href={abrir("/financeiro/contas-a-pagar") ? `/financeiro/contas-a-pagar?mes=${mes}` : undefined}
-              ajuda="Saldo das obrigações aceitas na visão unificada. Registros que ainda precisam de decisão ficam fora deste total."
+              ajuda="Saldo em aberto dos títulos válidos a pagar da captura do Widesys."
             />
             <Kpi
               rotulo="Saldo de entradas e saídas"
               valor={<Dinheiro centavos={movimentos.resumo.entradas - movimentos.resumo.saidas} />}
               detalhe="Entradas menos saídas aceitas"
               href={abrir("/caixa") ? `/caixa?mes=${mes}` : undefined}
-              ajuda="Saldo dos movimentos aceitos. Cópias vinculadas não somam novamente; contas a receber e a pagar não são somadas ao caixa."
+              ajuda="Entradas menos saídas dos movimentos válidos da captura do Widesys."
             />
           </div>
         </section>
@@ -190,10 +173,7 @@ export default async function PaginaFinanceiro({
       )}
 
       {gestao.length > 0 && (
-        <aside className="border-t border-contorno pt-4" aria-label="Base de gestão de locações">
-          <p className="text-xs leading-relaxed text-tinta-suave">
-            <strong className="text-tinta">Gestão de locações e livro original.</strong> Estas consultas mantêm uma base própria. Seus valores não devem ser somados aos da visão unificada.
-          </p>
+        <aside className="border-t border-contorno pt-4" aria-label="Gestão de locações">
           <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2">
             {gestao.map(item => (
               <Link key={item.href} href={item.href} className="text-xs font-semibold text-oliva-escura hover:underline">

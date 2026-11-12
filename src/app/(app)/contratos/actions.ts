@@ -10,7 +10,6 @@ import { recursoEstaAtivo } from "@/lib/governanca/filtros";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { parseBRL } from "@/lib/dominio/dinheiro";
 import { normalizar, normalizarCpfCnpj } from "@/lib/dominio/normalizacao";
 import { RE_DATA, STATUS_CONTRATO, TIPOS_UNIDADE } from "@/lib/consultas/locacao";
 
@@ -94,9 +93,6 @@ async function resolverLocatario(fd: FormData): Promise<string | null> {
 function dadosComunsDoContrato(fd: FormData) {
   const statusInformado = campo(fd, "status");
   return {
-    valorBase: parseBRL(campo(fd, "valorBase")) ?? 0,
-    iptu: parseBRL(campo(fd, "iptu")) ?? 0,
-    condominio: parseBRL(campo(fd, "condominio")) ?? 0,
     diaVencimento: inteiroEntre(campo(fd, "diaVencimento"), 1, 31),
     mesReajuste: inteiroEntre(campo(fd, "mesReajuste"), 1, 12),
     indiceReajuste: campo(fd, "indiceReajuste") || null,

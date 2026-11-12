@@ -38,7 +38,7 @@ export default async function PaginaEditarContrato({
     <div>
       <PageHeader
         titulo={`Editar contrato — ${contrato.unidade.empreendimento.nome} · ${contrato.unidade.identificacao}`}
-        descricao={contrato.locatario?.nome ?? "Desocupado"}
+        descricao="Altere os vínculos e as condições cadastrais do Brisa. Os valores financeiros são mantidos no Widesys."
       />
       {sp.erro ? (
         <div className="mb-4 rounded-md border border-erro/25 bg-erro/5 px-4 py-2.5 text-sm text-erro">

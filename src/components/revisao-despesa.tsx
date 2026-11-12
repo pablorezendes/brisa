@@ -1,23 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { carregarRevisaoDespesa, confirmarRevisaoDespesa } from "@/app/(app)/financeiro/contas-a-pagar/rateio-actions";
 import { carregarRevisaoRecebimento, confirmarRevisaoRecebimento } from "@/app/(app)/recebimentos/revisao-actions";
 import type { ConcluirRevisaoFinanceiraEntrada as EntradaConcluirRevisaoFinanceira, ResumoRevisaoFinanceira, RevisaoFinanceira as DadosRevisao } from "@/lib/unificacao/tipos-revisao-financeira";
 import { useValoresVisiveis } from "./botao-sigilo";
 import { Dinheiro, Sigilo, btnPrimario, btnSecundario, inputBase } from "./ui";
 
-type Selecao = { id?: string; origemChave?: string | null };
-
-export function RevisaoDespesa({ selecao, alterado, bloqueado, aoOcupar }: { selecao: Selecao; alterado: boolean; bloqueado: boolean; aoOcupar: (valor: boolean) => void }) {
-  return <PainelRevisaoFinanceira selecao={selecao} dominio="PAGAR" alterado={alterado} bloqueado={bloqueado} aoOcupar={aoOcupar} />;
-}
-
 export function RevisaoRecebimento({ chave, aoOcupar }: { chave: string; aoOcupar: (valor: boolean) => void }) {
-  return <PainelRevisaoFinanceira chave={chave} dominio="RECEBER" alterado={false} bloqueado={false} aoOcupar={aoOcupar} />;
-}
-
-function PainelRevisaoFinanceira({ selecao, chave, dominio, alterado, bloqueado, aoOcupar }: { selecao?: Selecao; chave?: string; dominio: "PAGAR" | "RECEBER"; alterado: boolean; bloqueado: boolean; aoOcupar: (valor: boolean) => void }) {
   const [revisao, setRevisao] = useState<DadosRevisao | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [confirmando, setConfirmando] = useState(false);
@@ -25,31 +14,29 @@ function PainelRevisaoFinanceira({ selecao, chave, dominio, alterado, bloqueado,
   const [sucesso, setSucesso] = useState("");
   const consulta = useRef(0);
   const enviando = useRef(false);
-  const id = selecao?.id;
-  const origemChave = selecao?.origemChave || undefined;
   const carregar = useCallback(async () => {
     const versao = ++consulta.current;
     setCarregando(true); setErro(""); setSucesso("");
     try {
-      const resposta = dominio === "RECEBER" ? await carregarRevisaoRecebimento({ chave: chave! }) : await carregarRevisaoDespesa({ id, origemChave });
+      const resposta = await carregarRevisaoRecebimento({ chave });
       if (consulta.current !== versao) return;
       if (resposta.ok) setRevisao(resposta.revisao);
       else setErro(resposta.mensagem);
     } catch { if (consulta.current === versao) setErro("Não foi possível consultar a situação financeira. Atualize a conferência antes de concluir."); }
     finally { if (consulta.current === versao) setCarregando(false); }
-  }, [id, origemChave, chave, dominio]);
+  }, [chave]);
   useEffect(() => {
     const requisicao = consulta;
     let ativo = true;
-    if (id || origemChave || chave) queueMicrotask(() => { if (ativo) void carregar(); });
+    if (chave) queueMicrotask(() => { if (ativo) void carregar(); });
     return () => { ativo = false; requisicao.current++; };
-  }, [carregar, id, origemChave, chave]);
+  }, [carregar, chave]);
 
   async function confirmar(entrada: EntradaConcluirRevisaoFinanceira) {
-    if (enviando.current || alterado || bloqueado || carregando || !revisao?.podeConcluir) return;
+    if (enviando.current || carregando || !revisao?.podeConcluir) return;
     enviando.current = true; setConfirmando(true); aoOcupar(true); setErro(""); setSucesso("");
     try {
-      const resposta = dominio === "RECEBER" ? await confirmarRevisaoRecebimento(entrada) : await confirmarRevisaoDespesa(entrada);
+      const resposta = await confirmarRevisaoRecebimento(entrada);
       if (!resposta.ok) { setErro(resposta.mensagem); return; }
       setRevisao(resposta.revisao);
       setSucesso((resposta.revisao?.conferidoManualmente || resposta.revisao?.conferidoPorRegra) && !resposta.revisao.pendente && ["ATIVO", "VINCULADO"].includes(resposta.revisao.estado)
@@ -59,13 +46,13 @@ function PainelRevisaoFinanceira({ selecao, chave, dominio, alterado, bloqueado,
     finally { enviando.current = false; setConfirmando(false); aoOcupar(false); }
   }
 
-  if (!id && !origemChave && !chave) return null;
+  if (!chave) return null;
   return <section className="scroll-mt-6 rounded-xl border border-contorno p-4" aria-busy={carregando || confirmando} aria-label="Conferência de duplicidade">
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-sm font-bold">{dominio === "PAGAR" ? "4. Conferência de duplicidade" : "Conferência do lançamento"}</h3><p className="mt-1 text-xs leading-relaxed text-tinta-suave">{dominio === "PAGAR" ? "Salvar os dados organiza a despesa. A decisão abaixo define se ela entra nos totais ou corresponde a outro lançamento." : "Confira os dados e confirme se este título é único ou corresponde a outro registro. Esta conferência não cria outra cobrança nem registra um novo recebimento."}</p></div><button type="button" className={btnSecundario} disabled={carregando || confirmando || bloqueado} onClick={() => void carregar()}>Atualizar conferência</button></div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-sm font-bold">Conferência do lançamento</h3><p className="mt-1 text-xs leading-relaxed text-tinta-suave">Confira os dados e confirme se este título é único ou corresponde a outro registro. Esta conferência não cria outra cobrança nem registra um novo recebimento.</p></div><button type="button" className={btnSecundario} disabled={carregando || confirmando} onClick={() => void carregar()}>Atualizar conferência</button></div>
     {carregando && <p role="status" className="mt-4 text-sm">Consultando a situação financeira deste lançamento…</p>}
     {erro && <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">{erro}</p>}
     {sucesso && <p role="status" className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{sucesso}</p>}
-    {!carregando && revisao && <ConteudoRevisaoFinanceira key={`${revisao.chave}:${revisao.assinatura}`} revisao={revisao} alterado={alterado} bloqueado={bloqueado || confirmando || Boolean(erro)} confirmando={confirmando} aoConfirmar={confirmar} />}
+    {!carregando && revisao && <ConteudoRevisaoFinanceira key={`${revisao.chave}:${revisao.assinatura}`} revisao={revisao} alterado={false} bloqueado={confirmando || Boolean(erro)} confirmando={confirmando} aoConfirmar={confirmar} />}
     {!carregando && !erro && !revisao && <p className="mt-4 text-sm text-tinta-suave">A situação ainda não está disponível. Salve os dados e atualize a conferência.</p>}
   </section>;
 }

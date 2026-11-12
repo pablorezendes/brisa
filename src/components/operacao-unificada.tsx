@@ -2,11 +2,10 @@ import Link from "next/link";
 import { AcaoAutorizada } from "@/components/acao-autorizada";
 import { BotaoUnificacao } from "@/components/botao-unificacao";
 import { listarTitulosFinanceiros, listarUnificados } from "@/lib/consultas/unificacao";
-import type { DominioUnificacao } from "@/lib/unificacao/tipos";
+import { DOMINIOS_UNIFICACAO, type DominioUnificacao } from "@/lib/unificacao/tipos";
 import { origensDoRegistro } from "@/lib/unificacao/origens";
 import { explicarConsolidacao } from "@/components/situacao-consolidacao";
-import { sincronizarUnificacao, sincronizarUnificacaoNaTela } from "@/app/(app)/unificacao/actions";
-import { FormularioNaTela } from "@/components/formulario-na-tela";
+import { sincronizarUnificacao } from "@/app/(app)/unificacao/actions";
 import { Card, PageHeader, btnSecundario } from "@/components/ui";
 import { primeiroParametro, mensagemUnificacao, hrefUnificacao, motivoUnificacao, dataUnificada, exigirPerfilUnificacao, type ParametrosUnificacao } from "@/components/unificacao-apresentacao";
 import { contextoFinanceiro, validarRetornoFinanceiro } from "@/lib/interface/contexto-financeiro";
@@ -19,8 +18,7 @@ import { ResumoOperacaoUnificada } from "@/components/resumo-operacao-unificada"
 import { acessoAtual } from "@/lib/acesso/servidor";
 import { carteiraIrrestrita, pode, podeAbrirRota } from "@/lib/acesso/politica";
 import { alvoExclusaoUnificado } from "@/lib/governanca/alvos-ui";
-import { ProvedorRateioDespesa, RateioDespesaBotao } from "@/components/rateio-despesa-botao";
-import { ProvedorRevisaoRecebimento } from "@/components/revisao-recebimento-botao";
+import { ProvedorRateioDespesa } from "@/components/rateio-despesa-botao";
 import { ResumoRateiosDespesas } from "@/components/resumo-rateios-despesas";
 import { CategoriasDespesaBotao } from "@/components/categorias-despesa-botao";
 
@@ -37,20 +35,29 @@ const ABAS = [
 ];
 
 const ABAS_FINANCEIRAS = [
-  { href: "/financeiro/dados", dominio: "CONFERENCIA", titulo: "Conferir dados" },
+  { href: "/financeiro/dados", dominio: "CONFERENCIA", titulo: "Dados do Widesys" },
   { href: "/recebimentos", dominio: "RECEBER", titulo: "A receber" },
   { href: "/financeiro/contas-a-pagar", dominio: "PAGAR", titulo: "A pagar" },
   { href: "/caixa", dominio: "MOVIMENTO", titulo: "Entradas e saídas" },
 ];
+
+const DOMINIOS_CADASTRAIS = ["PESSOA", "IMOVEL", "CONTRATO", "PARAMETRO"];
 
 export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, parametros = {}, nativo, central = false }: {
   dominio?: DominioUnificacao; titulo: string; base: string; parametros?: ParametrosUnificacao;
   nativo?: { href: string; rotulo: string }; central?: boolean;
 }) {
   await exigirPerfilUnificacao();
-  const dominio = dominioFixo ?? primeiroParametro(parametros.dominio);
-  const estado = primeiroParametro(parametros.estado) ?? "";
-  const origem = primeiroParametro(parametros.origem) ?? "";
+  const dominioSolicitado = DOMINIOS_UNIFICACAO.find(dominio => dominio === primeiroParametro(parametros.dominio));
+  const dominio = dominioFixo ?? dominioSolicitado ?? (central ? "PESSOA" : undefined);
+  const financeiro = ["RECEBER", "PAGAR"].includes(dominio ?? "");
+  const movimento = dominio === "MOVIMENTO";
+  const baixa = ["BAIXA_RECEBER", "BAIXA_PAGAR"].includes(dominio ?? "");
+  const fonteFinanceiraUnica = financeiro || movimento || baixa;
+  const estadoSolicitado = primeiroParametro(parametros.estado) ?? "";
+  const estado = fonteFinanceiraUnica && !["ATIVO", "QUARENTENA", "AUSENTE"].includes(estadoSolicitado) ? "" : estadoSolicitado;
+  const origem = fonteFinanceiraUnica ? "" : primeiroParametro(parametros.origem) ?? "";
+  const parametrosContextuais = fonteFinanceiraUnica ? { ...parametros, origem: undefined, estado, destino: undefined, buscarDestino: undefined } : parametros;
   const q = (primeiroParametro(parametros.q) ?? "").slice(0, 120);
   const mes = primeiroParametro(parametros.mes) ?? "";
   const de = primeiroParametro(parametros.de) ?? "";
@@ -64,32 +71,24 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
   const dados = dominio === "PAGAR" || dominio === "RECEBER"
     ? await listarTitulosFinanceiros({ ...filtros, dominio })
     : await listarUnificados({ ...filtros, dominio });
-  const financeiro = ["RECEBER", "PAGAR"].includes(dominio ?? "");
-  const contexto = financeiro ? contextoFinanceiro(base, parametros) : null;
+  const contexto = financeiro ? contextoFinanceiro(base, parametrosContextuais) : null;
   const chaveSelecionada = primeiroParametro(parametros.registro);
   const painel = primeiroParametro(parametros.painel);
   // URLs servem apenas para navegação. O componente de detalhe/exclusão autoriza novamente no servidor.
-  const selecaoValida = contexto && chaveSelecionada && chaveSelecionada.split(":")[1] === dominio
+  const selecaoValida = contexto && chaveSelecionada?.startsWith("WIDESYS:") && chaveSelecionada.split(":")[1] === dominio
     && (painel === "detalhe" || painel === "excluir")
     && validarRetornoFinanceiro(`${contexto.retorno}${contexto.retorno.includes("?") ? "&" : "?"}${new URLSearchParams({ registro: chaveSelecionada, painel })}`);
   const conteudoJanela = selecaoValida ? painel === "excluir"
     ? await TelaExclusao({ tipo: "TITULO", origemId: chaveSelecionada!, contexto: { retorno: contexto!.retorno } })
-    : await ConferenciaRegistro({ chave: chaveSelecionada!, parametros, contexto: { retorno: contexto!.retorno, hrefDetalhe: contexto!.hrefDetalhe(chaveSelecionada!), hrefExcluir: contexto!.hrefExcluir(chaveSelecionada!) } })
+    : await ConferenciaRegistro({ chave: chaveSelecionada!, parametros: parametrosContextuais, contexto: { retorno: contexto!.retorno, hrefDetalhe: contexto!.hrefDetalhe(chaveSelecionada!), hrefExcluir: contexto!.hrefExcluir(chaveSelecionada!) } })
     : null;
   const hrefDetalhe = (chave: string) => contexto?.hrefDetalhe(chave) ?? hrefUnificacao(chave);
-  const baixa = ["BAIXA_RECEBER", "BAIXA_PAGAR"].includes(dominio ?? "");
-  const movimento = dominio === "MOVIMENTO";
   const acesso = await acessoAtual();
-  const listaFinanceira = !central && Boolean(dominioFixo) && (financeiro || movimento);
+  const listaFinanceira = fonteFinanceiraUnica;
   const abasVisiveis = (listaFinanceira ? ABAS_FINANCEIRAS : ABAS).filter(aba => podeAbrirRota(acesso, aba.href.split("?")[0]));
   const permiteExcluir = acesso.perfil === "ADMINISTRADOR" && pode(acesso, "governanca.editar") && carteiraIrrestrita(acesso);
   const permiteVerRateio = dominio === "PAGAR" && carteiraIrrestrita(acesso) && pode(acesso, "despesas.ver");
   const permiteEditarRateio = permiteVerRateio && pode(acesso, "despesas.editar");
-  const permiteConferirRecebimento = ["ADMINISTRADOR", "FINANCEIRO"].includes(acesso.perfil) && carteiraIrrestrita(acesso)
-    && pode(acesso, "financeiro.ver") && pode(acesso, "unificacao.ver") && pode(acesso, "cadastros.sensiveis");
-  const permiteConferirLote = ["ADMINISTRADOR", "FINANCEIRO"].includes(acesso.perfil) && carteiraIrrestrita(acesso)
-    && pode(acesso, "unificacao.editar") && pode(acesso, "pagamentos.conciliar") && pode(acesso, "cadastros.sensiveis")
-    && (dominio === "PAGAR" ? pode(acesso, "despesas.ver") : dominio === "RECEBER" && pode(acesso, "financeiro.ver") && pode(acesso, "unificacao.ver"));
   // Somente campos já visíveis na lista atravessam a fronteira RSC/cliente.
   // Nunca enviar o objeto do DAL, candidatos, campos fiscais, documentos ou hashes.
   const itensTabela: LinhaTabelaOperacao[] = dados.itens.map(item => {
@@ -108,9 +107,9 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
       cancelado: item.cancelado,
       informativo: item.informativo,
       contabiliza: item.contabiliza,
-      correspondencias: item.candidatos.length,
+      correspondencias: fonteFinanceiraUnica ? 0 : item.candidatos.length,
       aviso: item.avisos.length ? motivoUnificacao(item.avisos[0]) : null,
-      impacto: explicarConsolidacao(item),
+      impacto: fonteFinanceiraUnica ? item.contabiliza ? "Este registro compõe os totais." : "Este registro está fora dos totais." : explicarConsolidacao(item),
       data: dataUnificada(item.vencimento ?? item.data),
       competencia: item.competencia ?? null,
       valor: financeiro || movimento || baixa ? item.valor ?? null : null,
@@ -123,10 +122,9 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
         href: contexto?.hrefExcluir(item.chave) ?? `/cadastros/governanca?${new URLSearchParams({ tipo: alvo.tipo, origemId: alvo.origemId, modo: "excluir" })}`,
         rotulo: alvo.rotulo ?? "Excluir da plataforma",
       } : null,
-      rateio: permiteEditarRateio && item.dominio === "PAGAR" && ["ATIVO", "PENDENTE", "REVISAR", "QUARENTENA"].includes(item.estado)
-        ? item.chave.startsWith("BRISA:PAGAR:") ? { id: item.chave.slice("BRISA:PAGAR:".length) } : item.chave.startsWith("WIDESYS:PAGAR:") ? { origemChave: item.chave } : undefined
+      rateio: permiteEditarRateio && item.dominio === "PAGAR" && item.origem === "WIDESYS" && ["ATIVO", "QUARENTENA"].includes(item.estado)
+        ? { origemChave: item.chave }
         : undefined,
-      revisaoRecebimento: permiteConferirRecebimento && item.dominio === "RECEBER" && ["ATIVO", "VINCULADO", "PENDENTE", "REVISAR"].includes(item.estado),
     };
   });
   const hrefLista = (opcoes: { pagina?: number; estado?: string }) => {
@@ -137,17 +135,19 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
     return `${base}?${p}`;
   };
   const hrefPagina = (pagina: number) => hrefLista({ pagina });
-  return <ProvedorRateioDespesa><ProvedorRevisaoRecebimento><div>
-    <PageHeader titulo={titulo} descricao={listaFinanceira ? "Encontre o lançamento pela origem, confira a situação e abra o registro para resolver." : central ? "Consulta completa de registros e suas origens. Inclusão nos totais não significa conferência manual concluída." : "Consulte registros e pendências em um só lugar. A origem mostra de onde o dado veio; a situação indica seu efeito nos totais, não uma auditoria concluída."} acoes={permiteVerRateio ? <><ResumoRateiosDespesas />{podeAbrirRota(acesso, "/cadastros/fornecedores") && <Link href="/cadastros/fornecedores" prefetch={false} className={btnSecundario}>Fornecedores</Link>}{acesso.perfil === "ADMINISTRADOR" && <CategoriasDespesaBotao />}{permiteEditarRateio && <RateioDespesaBotao />}</> : undefined} />
+  const atalhos = fonteFinanceiraUnica
+    ? [["", "Todos os registros"], ["ATIVO", "Disponíveis"], ["QUARENTENA", "Inconsistências"], ["AUSENTE", "Ausentes na captura"]]
+    : [["", "Todos visíveis"], ["ATIVO", "Disponíveis"], ["PENDENTE", "Possíveis duplicatas"], ["REVISAR", "Decisões a revisar"], ["QUARENTENA", "Inconsistências"]];
+  return <ProvedorRateioDespesa><div>
+    <PageHeader titulo={titulo} descricao={listaFinanceira ? "Lançamentos da última captura do Widesys disponível no Brisa." : central ? "Consulte os registros e a situação de cada cadastro." : "Consulte registros e pendências cadastrais."} acoes={permiteVerRateio ? <><ResumoRateiosDespesas />{podeAbrirRota(acesso, "/cadastros/fornecedores") && <Link href="/cadastros/fornecedores" prefetch={false} className={btnSecundario}>Fornecedores</Link>}{acesso.perfil === "ADMINISTRADOR" && <CategoriasDespesaBotao />}</> : undefined} />
     <nav aria-label={listaFinanceira ? "Listas do financeiro" : "Operação unificada"} className="mb-5 flex flex-wrap gap-1.5 rounded-xl border border-contorno bg-carta p-2">{abasVisiveis.map((aba) => <Link prefetch={false} key={aba.dominio} href={aba.href} aria-current={(central ? aba.dominio === "CENTRAL" : aba.dominio === dominio) ? "page" : undefined} className={`rounded-lg px-3 py-2 text-xs font-semibold ${(central ? aba.dominio === "CENTRAL" : aba.dominio === dominio) ? "bg-oliva/10 text-oliva-escura" : "text-tinta-suave hover:bg-slate-50"}`}>{aba.titulo}</Link>)}</nav>
-    {listaFinanceira ? <div className="mb-5 flex flex-wrap items-center justify-between gap-3 text-xs leading-relaxed text-tinta-suave"><p><strong className="text-tinta">Como conferir:</strong>{permiteConferirLote && contexto ? <> selecione os lançamentos e use <strong className="text-tinta">Marcar selecionados como conferidos</strong>. Para revisar um por vez, clique em</> : " escolha uma situação abaixo e clique em"} <strong className="text-tinta">{dominio === "RECEBER" && permiteConferirRecebimento ? "Conferir" : dominio === "PAGAR" && permiteEditarRateio ? "Organizar despesa" : "Revisar e resolver"}</strong>.{contexto ? " A conferência abre nesta tela, sem perder seus filtros." : " Compare as informações antes de confirmar uma decisão."}</p><a href="#lista-lancamentos" className="shrink-0 font-semibold text-oliva-escura underline underline-offset-4">Ir para os lançamentos ↓</a></div> : null}
     {primeiroParametro(parametros.erro) ? <Card nivel="critico" className="mb-4 p-4 text-sm">{primeiroParametro(parametros.erro)}</Card> : null}
     {primeiroParametro(parametros.ok) ? <Card nivel="otimo" className="mb-4 p-4 text-sm">{mensagemUnificacao(primeiroParametro(parametros.ok)!)}</Card> : null}
-    {!dados.sincronizado ? <Card nivel="atencao" className="mb-4 p-4 text-sm">A análise das correspondências ainda não está registrada. Use “Reanalisar correspondências” para conferir os dados já disponíveis no Brisa. Essa ação não importa novas capturas do Widesys nem novas planilhas.</Card> : null}
-    {central ? <Card className="mb-5 p-5"><div className="flex flex-wrap items-start justify-between gap-4"><div className="max-w-2xl"><h2 className="text-sm font-bold">Uma operação, com a história de cada dado</h2><p className="mt-2 text-xs leading-relaxed text-tinta-suave">Widesys e Planilha Excel identificam fontes comprovadas. “Brisa · origem a confirmar” não significa lançamento manual: pode haver carga antiga ainda sem vínculo comprovado com a planilha.</p></div><Link prefetch={false} href="/financeiro/dados" className={btnSecundario}>Ver panorama dos dados</Link></div><ol className="mt-4 grid gap-3 text-xs leading-relaxed sm:grid-cols-3"><li className="rounded-lg border border-contorno p-3"><strong className="block text-tinta">1. Encontre a pendência</strong><span className="text-tinta-suave">Filtre pela origem e pela situação. Origem não é situação de pagamento.</span></li><li className="rounded-lg border border-contorno p-3"><strong className="block text-tinta">2. Compare as evidências</strong><span className="text-tinta-suave">Confira pessoa, imóvel, contrato e competência. Nome e valor iguais não bastam.</span></li><li className="rounded-lg border border-contorno p-3"><strong className="block text-tinta">3. Registre a decisão</strong><span className="text-tinta-suave">Mesma ocorrência: vincule ao principal. Ocorrências diferentes: mantenha ambas.</span></li></ol></Card> : null}
+    {!fonteFinanceiraUnica && !dados.sincronizado ? <Card nivel="atencao" className="mb-4 p-4 text-sm">A análise das correspondências ainda não está registrada. Use “Reanalisar correspondências” para conferir os dados cadastrais já disponíveis no Brisa.</Card> : null}
     <ResumoOperacaoUnificada
       financeiro={financeiro}
       movimento={movimento}
+      fonteFinanceiraUnica={fonteFinanceiraUnica}
       devido={financeiro ? dados.resumo.devido : 0}
       pago={financeiro ? dados.resumo.pago : 0}
       aberto={financeiro ? dados.resumo.aberto : 0}
@@ -161,30 +161,28 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
     />
     <div id="lista-lancamentos" className="scroll-mt-20" />
     <Card className="overflow-hidden">
-      <nav aria-label="Atalhos de situação da consolidação" className="flex flex-wrap gap-2 border-b border-contorno p-4">{[["", "Todos visíveis"], ["ATIVO", "Disponíveis"], ["PENDENTE", "Possíveis duplicatas"], ["REVISAR", "Decisões a revisar"], ["QUARENTENA", "Inconsistências"]].map(([valor, rotulo]) => <Link prefetch={false} key={valor} href={hrefLista({ estado: valor })} aria-current={estado === valor ? "page" : undefined} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${estado === valor ? "border-oliva bg-oliva/10 text-oliva-escura" : "border-contorno text-tinta-suave hover:bg-slate-50"}`}>{rotulo}</Link>)}</nav>
-      <FiltrosOperacaoUnificada base={base} dominio={dominio ?? ""} dominioFixo={Boolean(dominioFixo)} financeiro={financeiro} movimento={movimento} baixa={baixa} q={q} origem={origem} estado={estado} mes={mes} de={de} ate={ate} papel={papel} vencidos={vencidos} porPagina={porPagina} />
+      <nav aria-label="Atalhos por situação" className="flex flex-wrap gap-2 border-b border-contorno p-4">{atalhos.map(([valor, rotulo]) => <Link prefetch={false} key={valor} href={hrefLista({ estado: valor })} aria-current={estado === valor ? "page" : undefined} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${estado === valor ? "border-oliva bg-oliva/10 text-oliva-escura" : "border-contorno text-tinta-suave hover:bg-slate-50"}`}>{rotulo}</Link>)}</nav>
+      <FiltrosOperacaoUnificada base={base} dominio={dominio ?? ""} dominioFixo={Boolean(dominioFixo)} dominiosDisponiveis={central && !fonteFinanceiraUnica ? DOMINIOS_CADASTRAIS : undefined} financeiro={financeiro} movimento={movimento} baixa={baixa} fonteFinanceiraUnica={fonteFinanceiraUnica} q={q} origem={origem} estado={estado} mes={mes} de={de} ate={ate} papel={papel} vencidos={vencidos} porPagina={porPagina} />
       {financeiro || movimento || baixa ? <p className="border-b border-contorno px-4 py-2 text-[10px] leading-relaxed text-tinta-suave">{financeiro ? "Mês e intervalo usam a competência do título; no intervalo, ela corresponde ao primeiro dia do mês. Sem competência, usam o vencimento e, na falta dele, a data do registro." : "Mês e intervalo usam a data do movimento ou da baixa. Quando ausente, usam o vencimento e depois a competência, considerada no primeiro dia do mês."}</p> : null}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-contorno bg-slate-50/60 px-4 py-3 text-xs text-tinta-suave"><span>{dados.total} registro(s) · página {dados.pagina} de {dados.paginas || 1}</span><span>Possíveis duplicidades e inconsistências ficam fora dos totais.</span></div>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-contorno bg-slate-50/60 px-4 py-3 text-xs text-tinta-suave"><span>{dados.total} registro(s) · página {dados.pagina} de {dados.paginas || 1}</span><span>{fonteFinanceiraUnica ? "Os totais incluem os lançamentos válidos da captura." : "Possíveis duplicidades e inconsistências ficam fora dos totais."}</span></div>
       <TabelaOperacaoUnificada
         key={contexto?.retorno ?? hrefLista({ pagina: dados.pagina })}
-        itens={itensTabela} financeiro={financeiro} exibirDominio={!dominioFixo}
+        itens={itensTabela} financeiro={financeiro} exibirDominio={!dominioFixo} fonteFinanceiraUnica={fonteFinanceiraUnica}
         exibirValor={movimento || baixa} contextual={Boolean(contexto)}
         exclusaoLote={permiteExcluir && contexto && (dominio === "RECEBER" || dominio === "PAGAR")
-          ? { dominio, contexto: contexto.retorno } : undefined}
-        conferenciaLote={permiteConferirLote && contexto && (dominio === "RECEBER" || dominio === "PAGAR")
           ? { dominio, contexto: contexto.retorno } : undefined}
       />
       <div className="flex items-center justify-between gap-3 border-t border-contorno p-4"><span className="text-xs text-tinta-suave">A origem e as decisões ficam registradas no histórico.</span><div className="flex gap-2">{dados.pagina > 1 ? <Link prefetch={false} className={btnSecundario} href={hrefPagina(dados.pagina - 1)}>Anterior</Link> : null}{dados.pagina < dados.paginas ? <Link prefetch={false} className={btnSecundario} href={hrefPagina(dados.pagina + 1)}>Próxima</Link> : null}</div></div>
     </Card>
-    <details className="mt-5 rounded-xl border border-contorno bg-carta p-4">
+    {!fonteFinanceiraUnica ? <details className="mt-5 rounded-xl border border-contorno bg-carta p-4">
       <summary className="cursor-pointer text-sm font-semibold text-tinta">Ferramentas de conferência e base original</summary>
       <p className="mt-3 max-w-3xl text-xs leading-relaxed text-tinta-suave">Reanalisar compara os registros que já estão no Brisa. Não importa arquivos nem busca dados novos no Widesys. Nenhuma possível duplicata é aprovada por este botão.</p>
       <div className="mt-3 flex flex-wrap items-start gap-3">
-        <AcaoAutorizada permissao={["unificacao.editar", "pagamentos.conciliar"]} perfis={["ADMINISTRADOR", "FINANCEIRO"]}>{contexto ? <FormularioNaTela action={sincronizarUnificacaoNaTela}><button className={btnSecundario}>Reanalisar correspondências</button></FormularioNaTela> : <form action={sincronizarUnificacao}><BotaoUnificacao className={btnSecundario}>Reanalisar correspondências</BotaoUnificacao></form>}</AcaoAutorizada>
+        <AcaoAutorizada permissao={["unificacao.editar", "pagamentos.conciliar"]} perfis={["ADMINISTRADOR", "FINANCEIRO"]}><form action={sincronizarUnificacao}><BotaoUnificacao className={btnSecundario}>Reanalisar correspondências</BotaoUnificacao></form></AcaoAutorizada>
         {nativo && podeAbrirRota(acesso, nativo.href.split("?")[0]) ? <Link prefetch={false} href={nativo.href} className={btnSecundario}>{nativo.rotulo}</Link> : null}
       </div>
       {nativo ? <p className="mt-3 text-xs text-tinta-suave">A base original mantém suas próprias regras. Não some seus valores aos desta lista.</p> : null}
-    </details>
-    {conteudoJanela && contexto ? <JanelaContextual titulo={painel === "excluir" ? "Excluir ou restaurar registro" : "Conferir e resolver registro"} retorno={contexto.retorno} selecao={`${chaveSelecionada}:${painel}`} comparacao={primeiroParametro(parametros.destino)}>{conteudoJanela}</JanelaContextual> : null}
-  </div></ProvedorRevisaoRecebimento></ProvedorRateioDespesa>;
+    </details> : null}
+    {conteudoJanela && contexto ? <JanelaContextual titulo={painel === "excluir" ? "Excluir ou restaurar registro" : "Detalhes do lançamento"} retorno={contexto.retorno} selecao={`${chaveSelecionada}:${painel}`}>{conteudoJanela}</JanelaContextual> : null}
+  </div></ProvedorRateioDespesa>;
 }

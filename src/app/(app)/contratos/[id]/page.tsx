@@ -6,22 +6,16 @@ import { notFound } from "next/navigation";
 import {
   PageHeader,
   Card,
-  Dinheiro,
   Badge,
-  Kpi,
   btnPrimario,
   btnSecundario,
   inputBase,
 } from "@/components/ui";
-import { calcularRecebimento } from "@/lib/dominio/comissao";
-import { formatarBRL } from "@/lib/dominio/dinheiro";
 import {
-  formatarCompetencia,
   NOME_MES_COMPLETO,
 } from "@/lib/dominio/normalizacao";
 import {
   contratoDetalhe,
-  recebimentosDoContrato,
   formatarDataBR,
 } from "@/lib/consultas/locacao";
 import { encerrarContrato } from "../actions";
@@ -60,26 +54,11 @@ export default async function PaginaDetalheContrato({
   const acesso = await acessoAtual();
   const podeVerPii = pode(acesso, "cadastros.sensiveis");
   const podeEditar = pode(acesso, "contratos.editar");
-  const podeExcluir = acesso.perfil === "ADMINISTRADOR" && pode(acesso, "governanca.editar");
   const { id } = await params;
   const sp = await searchParams;
   const contrato = await contratoDetalhe(id);
   if (!contrato) notFound();
 
-  const recebimentos = await recebimentosDoContrato(id);
-  const linhas = recebimentos.map((r) => {
-    const calc = calcularRecebimento(r);
-    return {
-      r,
-      calc,
-      saldoAberto: Math.max((calc.totalDevido ?? 0) - (r.recebido ?? 0), 0),
-    };
-  });
-  const totalRecebido = recebimentos.reduce((s, r) => s + (r.recebido ?? 0), 0);
-  const totalSaldoAberto = linhas.reduce((s, linha) => s + linha.saldoAberto, 0);
-  const pendentes = linhas.filter((linha) => linha.saldoAberto > 0).length;
-  const totalContratado =
-    contrato.valorBase + contrato.iptu + contrato.condominio;
   const confirmarEncerrar =
     podeEditar && sp.encerrar === "1" && contrato.status !== "encerrado";
 
@@ -123,8 +102,7 @@ export default async function PaginaDetalheContrato({
       {confirmarEncerrar ? (
         <Card className="mb-4 border-ambar/40 bg-ambar/10 p-4">
           <p className="text-sm">
-            Encerrar este contrato? Ele deixará de gerar devidos mensais em
-            “Gerar devidos do mês”.
+            Encerrar este contrato no cadastro do Brisa?
           </p>
           <form
             action={encerrarContrato}
@@ -154,28 +132,6 @@ export default async function PaginaDetalheContrato({
         </Card>
       ) : null}
 
-      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Kpi
-          rotulo="Total recebido"
-          valor={<Dinheiro centavos={totalRecebido} />}
-          detalhe={pendentes > 0 ? `${pendentes} com saldo em aberto` : "sem pendências"}
-          nivel={pendentes > 0 ? "atencao" : "otimo"}
-          selo={pendentes > 0 ? `${pendentes} em aberto` : "em dia"}
-          nota={
-            pendentes > 0
-              ? `Ainda restam ${formatarBRL(totalSaldoAberto)} neste contrato — pagamentos parciais continuam no histórico abaixo.`
-              : undefined
-          }
-          ajuda="Soma de tudo que o locatário pagou neste contrato, incluindo IPTU e condomínio."
-        />
-        <Kpi
-          rotulo="Total contratado / mês"
-          valor={<Dinheiro centavos={totalContratado} />}
-          detalhe="valor + IPTU + condomínio"
-          ajuda="Quanto este contrato deveria gerar por mês se tudo fosse pago em dia: aluguel-base + IPTU + condomínio. É o teto teórico da cobrança mensal."
-        />
-      </div>
-
       <Card className="mb-4 p-4">
         <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
           <Item rotulo="Status">{badgeStatus(contrato.status)}</Item>
@@ -184,15 +140,6 @@ export default async function PaginaDetalheContrato({
           </Item>
           <Item rotulo="CPF/CNPJ">{podeVerPii ? contrato.locatario?.cpfCnpj ?? "—" : "Acesso restrito"}</Item>
           <Item rotulo="Contato">{podeVerPii ? contrato.locatario?.contato ?? "—" : "Acesso restrito"}</Item>
-          <Item rotulo="Valor (aluguel)">
-            <Dinheiro centavos={contrato.valorBase} />
-          </Item>
-          <Item rotulo="IPTU (repasse)">
-            <Dinheiro centavos={contrato.iptu} />
-          </Item>
-          <Item rotulo="Condomínio (repasse)">
-            <Dinheiro centavos={contrato.condominio} />
-          </Item>
           <Item rotulo="Dia de vencimento">
             {contrato.diaVencimento ?? "—"}
           </Item>
@@ -213,90 +160,6 @@ export default async function PaginaDetalheContrato({
             {contrato.observacao}
           </div>
         ) : null}
-      </Card>
-
-      <Card>
-        <div className="px-4 pb-1 pt-3">
-          <h2 className="text-sm font-bold">Histórico de recebimentos</h2>
-        </div>
-        <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
-          <table className="tabela tabela--acoes">
-            <thead>
-              <tr>
-                <th>Mês (lançamento)</th>
-                <th>Competência</th>
-                <th style={{ textAlign: "right" }}>Valor</th>
-                <th style={{ textAlign: "right" }}>IPTU</th>
-                <th style={{ textAlign: "right" }}>Cond.</th>
-                <th style={{ textAlign: "right" }}>Total</th>
-                <th style={{ textAlign: "right" }}>Recebido</th>
-                <th style={{ textAlign: "right" }}>Saldo</th>
-                <th>Data</th>
-                <th>Via</th>
-                <th>Observação</th>
-                {podeExcluir ? <th>Ações</th> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {linhas.length === 0 ? (
-                <tr>
-                  <td colSpan={podeExcluir ? 12 : 11} className="py-6 text-center text-tinta-suave/60">
-                    Nenhum recebimento lançado para este contrato.
-                  </td>
-                </tr>
-              ) : (
-                linhas.map(({ r, calc, saldoAberto }) => (
-                  <tr
-                    key={r.id}
-                    className={saldoAberto > 0 ? "bg-ambar/5" : ""}
-                  >
-                    <td>{formatarCompetencia(r.mesLancamento)}</td>
-                    <td>
-                      {r.competencia === r.mesLancamento ? (
-                        formatarCompetencia(r.competencia)
-                      ) : (
-                        <Badge cor="ambar">
-                          {formatarCompetencia(r.competencia)}
-                        </Badge>
-                      )}
-                    </td>
-                    <td className="text-right"><Dinheiro centavos={r.valor} /></td>
-                    <td className="text-right"><Dinheiro centavos={r.iptu} /></td>
-                    <td className="text-right"><Dinheiro centavos={r.cond} /></td>
-                    <td className="text-right"><Dinheiro centavos={calc.totalDevido} /></td>
-                    <td className="text-right">
-                      {r.recebido === null ? (
-                        <Badge cor="ambar">Pendente</Badge>
-                      ) : (
-                        <span className="inline-flex items-center justify-end gap-1.5">
-                          <Dinheiro centavos={r.recebido} destaque />
-                          {saldoAberto > 0 ? <Badge cor="ambar">Parcial</Badge> : null}
-                        </span>
-                      )}
-                    </td>
-                    <td className="text-right"><Dinheiro centavos={saldoAberto} destaque={saldoAberto > 0} /></td>
-                    <td>{formatarDataBR(r.dataPagamento)}</td>
-                    <td>{r.via ?? "—"}</td>
-                    <td className="max-w-48 truncate" title={podeVerPii ? r.observacao ?? undefined : undefined}>
-                      {podeVerPii ? r.observacao ?? "—" : "Acesso restrito"}
-                    </td>
-                    {podeExcluir ? <td><ExcluirRegistroLink tipo="TITULO" origemId={`BRISA:RECEBER:${r.id}`} /></td> : null}
-                  </tr>
-                ))
-              )}
-            </tbody>
-            {linhas.length > 0 ? (
-              <tfoot>
-                <tr>
-                  <td colSpan={6}>Total do contrato</td>
-                  <td className="text-right"><Dinheiro centavos={totalRecebido} /></td>
-                  <td className="text-right"><Dinheiro centavos={totalSaldoAberto} destaque /></td>
-                  <td colSpan={podeExcluir ? 4 : 3}></td>
-                </tr>
-              </tfoot>
-            ) : null}
-          </table>
-        </div>
       </Card>
     </div>
   );

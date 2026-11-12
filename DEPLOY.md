@@ -1169,35 +1169,67 @@ constam em `docker-compose.yml`; apenas defini-las não autoriza disparos.
   cobre tudo.
 
 
-## Conferir a origem Widesys sem duplicar planilhas (outubro/2026)
+## Financeiro com fonte única Widesys
 
-O administrador confirmou a validade dos registros Widesys. A atualização reconhece
-IDs externos distintos como registros independentes. Sem cruzamento pendente,
-o status passa a **Conferido**. As planilhas continuam sendo fontes válidas.
-Quando há correspondência com Brisa/planilhas, a origem aparece como **Conferido
-no Widesys · conciliar fontes**; a decisão de vínculo continua necessária antes
-de somar outra vez. O principal já aceito é preservado. Decisões manuais,
-exclusões e inconsistências de importação não são sobrescritas.
+O Executivo, as contas a pagar e a receber e as movimentações usam os registros
+da última captura importada do Widesys. Registros válidos aparecem como
+conferidos pela origem. Cancelamentos, exclusões administrativas, quarentenas
+e transferências internas continuam fora dos totais aplicáveis. O histórico
+das cargas de planilhas fica preservado no SQLite.
 
-Na atualização de novembro, execute a conferência novamente para liberar recebíveis retidos apenas por haver uma planilha na mesma competência. O Executivo identifica a participação do Widesys nos títulos e no caixa do período. Novas importações aplicadas executam a conferência ao concluir a carga.
-
-A rotina muda apenas metadados de conferência. Não cria títulos, pagamentos ou
-movimentações, nem modifica datas e valores. É idempotente e gera um backup
-SQLite consistente em `/data/backups-unificacao` antes de aplicar.
+A atualização da aplicação usa o banco atual e dispensa uma migração de dados
+ou uma rotina de comparação. O Executivo mostra a data da última captura.
 
 ```bash
-set -e
-cd /srv/stack/acamargo
-git pull --ff-only origin main
-docker compose build brisa
-docker compose stop brisa
-docker compose run --rm --no-deps brisa npm run unificar:conferir-widesys -- --dry-run
-docker compose run --rm --no-deps brisa npm run unificar:conferir-widesys -- --aplicar
-docker compose up -d --no-deps brisa
-docker compose logs --tail 80 brisa
-curl --retry 12 --retry-delay 5 --retry-all-errors -fsSI https://brisa.tescod.com/login
+(
+  set -e
+  cd /srv/stack/acamargo
+  git pull --ff-only origin main
+  docker compose up -d --build --no-deps brisa
+  curl --retry 12 --retry-delay 5 --retry-all-errors -fsSI https://brisa.tescod.com/login
+)
 ```
 
-Não execute seed ou reimportação para esta atualização. Se a rotina falhar,
-não continue a carga; consulte o erro e reinicie o serviço com
-`docker compose up -d --no-deps brisa`. O backup fica preservado.
+Para obter o financeiro atual, capture novamente com a conta Widesys vigente.
+A captura e a prévia ocorrem com a aplicação em execução. O comando de aplicação
+faz um backup consistente do SQLite antes de importar.
+
+```bash
+(
+  set -e
+  cd /srv/stack/acamargo
+  read -r -p 'Usuário Widesys: ' WIDESYS_USUARIO
+  read -r -s -p 'Senha Widesys: ' WIDESYS_SENHA
+  printf '\n'
+  export WIDESYS_USUARIO WIDESYS_SENHA
+  docker compose exec -T -e WIDESYS_USUARIO -e WIDESYS_SENHA brisa \
+    npm run legacy:capture-operation -- --refresh --from=2025-01 --titles-to=2100-12-31
+  unset WIDESYS_USUARIO WIDESYS_SENHA
+  docker compose exec -T brisa npm run importar:operacao-widesys:dry-run
+  docker compose stop brisa
+  trap 'docker compose start brisa' EXIT
+  docker compose run --rm --no-deps brisa node -e '
+    const { mkdirSync } = require("node:fs");
+    const { DatabaseSync } = require("node:sqlite");
+    const { randomUUID } = require("node:crypto");
+    const dir = "/data/backups-unificacao";
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const db = new DatabaseSync("/data/brisa.db");
+    const destino = dir + "/antes-atualizacao-widesys-" + randomUUID() + ".db";
+    db.prepare("VACUUM INTO ?").run(destino);
+    db.close();
+    console.log("Backup: " + destino);
+  '
+  trap - EXIT
+  docker compose run --rm --no-deps brisa npm run importar:operacao-widesys
+  docker compose start brisa
+  curl --retry 12 --retry-delay 5 --retry-all-errors -fsSI https://brisa.tescod.com/login
+)
+```
+
+Confirme a data no Executivo e consulte **Integrações → Widesys** para acompanhar
+o lote aplicado. A captura é sob demanda.
+
+Se a aplicação do lote for interrompida, corrija a causa e repita
+`docker compose run --rm --no-deps brisa npm run importar:operacao-widesys`
+usando a mesma captura. Inicie o serviço depois da aplicação bem-sucedida.

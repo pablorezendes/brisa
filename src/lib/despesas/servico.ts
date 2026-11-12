@@ -6,6 +6,7 @@ import { ErroDespesa, LIMITE_RATEIOS, type DespesaEditor, type DestinoCustoDespe
 import { categoriaDespesa, categoriaWidesys } from "./categorias";
 import { carregarCatalogoDespesas } from "./catalogo-servico";
 import { contemComissaoRestrita, descricaoHonorariosProfissionais, historicoSemComissao } from "./sigilo";
+import { despesaRestritaPorVinculo } from "./sigilo-vinculos";
 
 type Tx = Prisma.TransactionClient;
 type Ator = { id: string };
@@ -155,7 +156,7 @@ export async function obterEditorDespesa(db: PrismaClient, selecao: { id?: strin
     if (!pode(politica, "comissoes.ver") && (documento?.restrita || catalogo.find(categoria => categoria.codigo === documento?.categoriaCodigo)?.restrita || comissaoRestrita([
       documento?.descricao,
       ...(documento?.rateios.flatMap(r => [r.descricao, r.categoria]) ?? []), fonte?.planoContaRotulo, fonte?.tipoCobrancaRotulo,
-    ]))) throw new ErroDespesa("COMISSAO_RESTRITA", "Esta despesa está restrita ao administrador pela categoria, pelo conteúdo ou pela proteção já registrada.");
+    ]) || (origem && await despesaRestritaPorVinculo(tx, origem)))) throw new ErroDespesa("COMISSAO_RESTRITA", "Esta despesa está restrita ao administrador pela categoria, pelo conteúdo ou pela proteção já registrada.");
     const fornecedor = fonte?.pessoaLegadoId ? await tx.pessoa.findUnique({ where: { origem_legadoId: { origem: fonte.origem, legadoId: fonte.pessoaLegadoId } }, select: { nome: true, cpfCnpj: true } }) : null;
     const bloqueados = await tx.recursoGovernado.findMany({ where: { tipo: { in: ["EMPREENDIMENTO", "UNIDADE", "CONTA"] }, status: { not: "ATIVO" } }, select: { tipo: true, origemId: true } });
     const excluidos = (tipo: string) => bloqueados.filter(b => b.tipo === tipo).map(b => b.origemId);
@@ -282,7 +283,7 @@ export async function salvarDespesa(db: PrismaClient, input: SalvarDespesaEntrad
       ]);
       if (!pode(politica, "comissoes.ver") && (atual?.restrita || restrita || comissaoRestrita([
         ...validado.rateios.flatMap(r => [r.descricao, r.categoria]), ...(atual?.rateios.flatMap(r => [r.descricao, r.categoria]) ?? []), fonte?.planoContaRotulo, fonte?.tipoCobrancaRotulo,
-      ]))) throw new ErroDespesa("COMISSAO_RESTRITA", "Somente o administrador pode consultar ou alterar esta despesa restrita.");
+      ]) || (validado.origemChave && await despesaRestritaPorVinculo(tx, validado.origemChave)))) throw new ErroDespesa("COMISSAO_RESTRITA", "Somente o administrador pode consultar ou alterar esta despesa restrita.");
       if (fonte) {
         if (input.origemHash !== fonte.snapshotHash || (atual && atual.origemHash !== fonte.snapshotHash && !input.confirmarFonteAlterada)) throw new ErroDespesa("FONTE_ALTERADA", "A origem Widesys mudou. Reabra e confira o rateio antes de confirmar a nova versão.");
         if (input.pagamento.modo !== "MANTER" || input.total !== fonte.valorDevido) throw new ErroDespesa("FONTE_PROTEGIDA", "O valor e o pagamento vêm do Widesys e não podem ser duplicados neste rateio.");

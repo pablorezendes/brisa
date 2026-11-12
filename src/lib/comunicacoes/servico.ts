@@ -35,19 +35,22 @@ export type TituloComunicacao = {
 
 /** Projeção mínima: jamais exporta observações, comissão, dados bancários ou snapshot bruto. */
 export async function titulosComunicacao(db: PrismaClient, agora = new Date()): Promise<TituloComunicacao[]> {
-  const [{ linhas }, bloqueios, legados] = await Promise.all([
-    lerOperacaoUnificada(db),
+  const [{ linhas, decisoes }, bloqueios, legados] = await Promise.all([
+    lerOperacaoUnificada(db, { somenteWidesysFinanceiro: true }),
     db.boleto.findMany({ where: { OR: [{ status: { in: ["PAGAMENTO_REPORTADO", "RESULTADO_DESCONHECIDO"] } }, { conciliacaoStatus: "DIVERGENTE" }] }, select: { recebimentoId: true } }),
     db.tituloFinanceiroLegado.findMany({ where: { natureza: "RECEBER" }, select: { id: true, capturadoEm: true } }),
   ]);
   const bloqueados = new Set(bloqueios.map(b => `BRISA:RECEBER:${b.recebimentoId}`));
+  for (const decisao of decisoes) {
+    if (decisao.status === "VINCULADO" && decisao.destinoChave && bloqueados.has(decisao.destinoChave)) bloqueados.add(decisao.chave);
+  }
   const capturas = new Map(legados.map(l => [l.id, l.capturadoEm.getTime()]));
   const pessoas = new Map<string, typeof linhas[number]>();
   for (const p of linhas) if (p.dominio === "PESSOA" && p.estado === "ATIVO")
     for (const chave of p.fontes) pessoas.set(chave, p);
   const saida: TituloComunicacao[] = [];
   for (const t of linhas) {
-    if (t.dominio !== "RECEBER" || t.estado !== "ATIVO" || !t.contabiliza || t.cancelado || t.informativo || !t.pessoaChave || !t.vencimento || !Number.isSafeInteger(t.aberto) || t.aberto! <= 0) continue;
+    if (t.dominio !== "RECEBER" || t.estado !== "ATIVO" || !t.contabiliza || t.restrito || t.cancelado || t.informativo || !t.pessoaChave || !t.vencimento || !Number.isSafeInteger(t.aberto) || t.aberto! <= 0) continue;
     if (t.campos.origemAgregada?.valor === "Sim" || t.fontes.some(f => bloqueados.has(f))) continue;
     // Recebíveis de remuneração interna permanecem no fluxo restrito de comissões/fiscal.
     if (/COMISS|TAXA.{0,20}ADMINISTR/.test(normalizar(`${t.titulo} ${t.descricao}`))) continue;

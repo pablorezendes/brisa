@@ -6,6 +6,7 @@ import { Card, Dinheiro, Kpi, Sigilo } from "@/components/ui";
 type ResumoOperacaoUnificadaProps = {
   financeiro: boolean;
   movimento: boolean;
+  fonteFinanceiraUnica?: boolean;
   devido: number;
   pago: number;
   aberto: number;
@@ -18,7 +19,15 @@ type ResumoOperacaoUnificadaProps = {
   abertoPendente: number;
 };
 
-export function ResumoOperacaoUnificada({ financeiro, movimento, devido, pago, aberto, entradas, saidas, ativos, vinculados, pendentes, quarentena, abertoPendente }: ResumoOperacaoUnificadaProps) {
+export function ResumoOperacaoUnificada({ financeiro, movimento, fonteFinanceiraUnica, devido, pago, aberto, entradas, saidas, ativos, vinculados, pendentes, quarentena, abertoPendente }: ResumoOperacaoUnificadaProps) {
+  if (fonteFinanceiraUnica) return <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <Kpi rotulo={financeiro ? "Total devido" : movimento ? "Entradas" : "Baixas disponíveis"} valor={financeiro || movimento ? <Dinheiro centavos={financeiro ? devido : entradas} /> : ativos} ajuda="Considera os lançamentos válidos do Widesys no período e na busca selecionados." />
+    {financeiro || movimento ? <>
+      <Kpi rotulo={financeiro ? "Pago / recebido" : "Saídas"} valor={<Dinheiro centavos={financeiro ? pago : saidas} />} ajuda="Valores registrados na captura mais recente do Widesys." />
+      <Kpi rotulo={financeiro ? "Saldo em aberto" : "Saldo de movimentos"} valor={<Dinheiro centavos={financeiro ? aberto : entradas - saidas} />} ajuda={financeiro ? "Saldo em aberto dos títulos válidos do Widesys." : "Entradas menos saídas dos movimentos válidos do Widesys."} />
+    </> : null}
+    <Kpi rotulo="Inconsistências na captura" valor={quarentena} nivel={quarentena ? "atencao" : "otimo"} ajuda="Registros com inconsistências ficam fora dos totais até a correção na origem." />
+  </div>;
   return <>
     <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <Kpi rotulo={financeiro ? "Devido incluído" : movimento ? "Entradas incluídas" : "Registros disponíveis"} valor={financeiro || movimento ? <Dinheiro centavos={financeiro ? devido : entradas} /> : ativos} ajuda="Conta os registros atualmente disponíveis, inclusive decisões automáticas. Pendências, quarentena e cópias vinculadas não aumentam o total; inclusão não equivale a auditoria manual." />

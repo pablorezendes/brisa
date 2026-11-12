@@ -80,7 +80,7 @@ function filtrarLista({ linhas, decisoes, perfil }: Awaited<ReturnType<typeof le
     if (!perfilPodeVerComissoes(perfil) && parametroReservado(l)) return false;
     if (dominio && l.dominio !== dominio) return false;
     if (!correspondeOrigem(l, filtros.origem)) return false;
-    if (q && !normalizar(`${l.titulo} ${l.descricao} ${Object.values(l.campos).map(c => c.valor).join(" ")}`).includes(q)) return false;
+    if (q && !normalizar(`${l.titulo} ${l.descricao} ${Object.values(l.campos).filter(c => l.origem !== "BRISA" || c.tipo !== "dinheiro").map(c => c.valor).join(" ")}`).includes(q)) return false;
     if (mes && mesOperacionalUnificado(l) !== mes) return false;
     const data = dataOperacionalUnificada(l);
     if (de && (!data || data < de)) return false;

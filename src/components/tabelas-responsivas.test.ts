@@ -42,7 +42,13 @@ function tabelas() {
 describe("tabelas operacionais responsivas", () => {
   it("mantém todas as tabelas em uma região de rolagem própria acessível pelo teclado", () => {
     const itens = tabelas();
-    expect(itens.length).toBeGreaterThan(50);
+    const caminhos = itens.map(item => item.local.replaceAll("\\", "/"));
+    expect(caminhos).toEqual(expect.arrayContaining([
+      expect.stringMatching(/^components\/tabela-operacao-unificada\.tsx:/),
+      expect.stringMatching(/^app\/\(app\)\/executivo\/page\.tsx:/),
+      expect.stringMatching(/^app\/\(app\)\/financeiro\/boletos\/page\.tsx:/),
+      expect.stringMatching(/^app\/\(app\)\/carteira\/page\.tsx:/),
+    ]));
     for (const { local, tabela } of itens) {
       const pai = tabela.parent;
       expect(ts.isJsxElement(pai), local).toBe(true);

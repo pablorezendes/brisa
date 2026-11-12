@@ -52,6 +52,6 @@ export default async function CarteiraPage({ searchParams }: { searchParams: Pro
       </table></div>}
       <div className="flex items-center justify-between gap-3 border-t border-contorno p-4 text-sm">{pagina > 1 ? <Link className={btnSecundario} href={url(aba, pagina - 1)}>Anterior</Link> : <span />}<span>Página {pagina} de {paginas}</span>{pagina < paginas ? <Link className={btnSecundario} href={url(aba, pagina + 1)}>Próxima</Link> : <span />}</div>
     </Card>}
-    {aba === "financeiro" ? <p className="mt-3 text-xs leading-relaxed text-tinta-suave">Inclui apenas títulos operacionais reconciliados, por competência. Pendências, fontes fora da carteira, receitas de administração/comissão, títulos legados sem classificação e lançamentos sem contrato autorizado não entram na consulta nem na exportação.</p> : null}
+    {aba === "financeiro" ? <p className="mt-3 text-xs leading-relaxed text-tinta-suave">A consulta e a exportação incluem títulos vigentes do Widesys com classificação financeira e vínculo confirmado com um contrato autorizado. Comissões são restritas.</p> : null}
   </>;
 }

@@ -29,7 +29,7 @@ export default async function PaginaNovoContrato({
     <div>
       <PageHeader
         titulo="Novo contrato"
-        descricao="Vincule uma unidade (existente ou nova) a um locatário e defina os valores contratados"
+        descricao="Cadastre o vínculo de uma unidade com o locatário no Brisa."
       />
       {sp.erro ? (
         <div className="mb-4 rounded-md border border-erro/25 bg-erro/5 px-4 py-2.5 text-sm text-erro">

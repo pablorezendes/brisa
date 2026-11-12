@@ -1,14 +1,9 @@
 import type { LinhaUnificada } from "../unificacao/tipos";
 import { mesOperacionalUnificado } from "../unificacao/periodo";
-import type { CaixaMensal, Pendente } from "../consultas/executivo";
-
-function resumoOrigem() {
-  return { receber: 0, devido: 0, recebido: 0, pagar: 0, despesa: 0, pago: 0,
-    movimentos: 0, entradas: 0, saidas: 0, vinculados: 0, conciliar: 0, conferidosNaOrigemAConciliar: 0, inconsistentes: 0 };
-}
+import type { Pendente } from "../consultas/executivo";
 
 function novoMes(mes: string) {
-  const caixa: CaixaMensal = { mes, receita: 0, despesaAL: 0, despesaCH: 0, despesaOutros: 0, dinheiro: 0, saldo: 0 };
+  const caixa = { mes, receita: 0, saida: 0, saldo: 0 };
   return { mes, devido: 0, recebido: 0, pendentes: 0, pendenteValor: 0, caixa };
 }
 
@@ -16,7 +11,7 @@ export function mesPadraoConsolidado(linhas: LinhaUnificada[], hoje: string) {
   const atual = hoje.slice(0, 7);
   let ultimo = "";
   for (const linha of linhas) {
-    if (!linha.contabiliza) continue;
+    if (linha.origem !== "WIDESYS" || !linha.contabiliza) continue;
     if (!(linha.dominio === "RECEBER" && (linha.pago ?? 0) > 0) && linha.dominio !== "MOVIMENTO") continue;
     const mes = mesOperacionalUnificado(linha);
     if (mes && mes <= atual && mes > ultimo) ultimo = mes;
@@ -30,7 +25,8 @@ export function consolidarExecutivo(linhas: LinhaUnificada[], mesesSerie: string
   const janela = new Set(mesesJanela);
   const serie = mesesSerie.map(novoMes);
   const porMes = new Map(serie.map(m => [m.mes, m]));
-  const origens = { WIDESYS: resumoOrigem(), BRISA: resumoOrigem() };
+  let titulosReceber = 0, devido = 0, recebido = 0, titulosPagar = 0, despesa = 0, despesaPaga = 0;
+  let movimentos = 0, caixaReceita = 0, caixaDespesa = 0;
   const porEmp = new Map<string, { recebido: number; pagos: number }>();
   const pendentes: (Pendente & { mes: string })[] = [];
   const cadastroImovel = new Map<string, LinhaUnificada>();
@@ -41,50 +37,35 @@ export function consolidarExecutivo(linhas: LinhaUnificada[], mesesSerie: string
     if (l.estado === "ATIVO") for (const chave of l.fontes) cadastroImovel.set(chave, l);
   }
   for (const l of linhas) {
+    if (l.origem !== "WIDESYS" || !l.contabiliza) continue;
     if (l.dominio !== "RECEBER" && l.dominio !== "PAGAR" && l.dominio !== "MOVIMENTO") continue;
     const mes = mesOperacionalUnificado(l);
     if (!mes) continue;
     const linhaMes = porMes.get(mes);
     if (!linhaMes) continue;
     const naJanela = janela.has(mes);
-    const origem = origens[l.origem];
-    if (naJanela && !l.cancelado && !l.informativo) {
-      if (l.estado === "VINCULADO") origem.vinculados++;
-      if (l.estado === "PENDENTE" || l.estado === "REVISAR") {
-        origem.conciliar++;
-        if (l.conferidoNaOrigem) origem.conferidosNaOrigemAConciliar++;
-      }
-      if (l.estado === "QUARENTENA") origem.inconsistentes++;
-    }
     const valor = l.valor ?? 0;
     const pago = l.pago ?? 0;
     const aberto = l.aberto ?? 0;
-    if (!l.contabiliza) {
-      if (l.estado === "ATIVO" && l.origem === "BRISA" && l.dominio === "MOVIMENTO" && l.informativo && !l.cancelado && l.natureza === "ENTRADA") linhaMes.caixa.dinheiro += valor;
-      continue;
-    }
     if (l.dominio === "MOVIMENTO") {
       const caixa = linhaMes.caixa;
       if (l.natureza === "ENTRADA") {
         caixa.receita += valor;
         caixa.saldo += valor;
-        if (naJanela) origem.entradas += valor;
+        if (naJanela) caixaReceita += valor;
       } else if (l.natureza === "SAIDA") {
-        const centro = l.campos.centro?.valor;
-        if (centro === "AL") caixa.despesaAL += valor;
-        else if (centro === "CH") caixa.despesaCH += valor;
-        else caixa.despesaOutros += valor;
+        caixa.saida += valor;
         caixa.saldo -= valor;
-        if (naJanela) origem.saidas += valor;
+        if (naJanela) caixaDespesa += valor;
       } else continue;
-      if (naJanela) origem.movimentos++;
+      if (naJanela) movimentos++;
       continue;
     }
     if (l.dominio === "PAGAR") {
       if (naJanela) {
-        origem.pagar++;
-        origem.despesa += valor;
-        origem.pago += pago;
+        titulosPagar++;
+        despesa += valor;
+        despesaPaga += pago;
       }
       continue;
     }
@@ -95,9 +76,9 @@ export function consolidarExecutivo(linhas: LinhaUnificada[], mesesSerie: string
       linhaMes.pendenteValor += aberto;
     }
     if (!naJanela) continue;
-    origem.receber++;
-    origem.devido += valor;
-    origem.recebido += pago;
+    titulosReceber++;
+    devido += valor;
+    recebido += pago;
     const imovel = l.imovelChave ? cadastroImovel.get(l.imovelChave) : undefined;
     const empreendimento = String(imovel?.campos.empreendimento?.valor || "Sem empreendimento identificado");
     const grupo = porEmp.get(empreendimento) ?? { recebido: 0, pagos: 0 };
@@ -110,13 +91,9 @@ export function consolidarExecutivo(linhas: LinhaUnificada[], mesesSerie: string
         totalDevido: valor, recebido: pago, saldoAberto: aberto, diasAtraso: Number.isFinite(dias) ? Math.max(0, Math.floor(dias)) : null });
     }
   }
-  const { WIDESYS, BRISA } = origens;
-  const devido = WIDESYS.devido + BRISA.devido;
-  const recebido = WIDESYS.recebido + BRISA.recebido;
-  const caixaReceita = WIDESYS.entradas + BRISA.entradas;
-  const caixaDespesa = WIDESYS.saidas + BRISA.saidas;
-  return { origens, serie, devido, recebido, taxa: devido > 0 ? recebido / devido : null, caixaReceita, caixaDespesa,
-    saldoCaixa: caixaReceita - caixaDespesa, temCaixa: WIDESYS.movimentos + BRISA.movimentos > 0,
+  return { serie, titulosReceber, devido, recebido, titulosPagar, despesa, despesaPaga,
+    taxa: devido > 0 ? recebido / devido : null, caixaReceita, caixaDespesa,
+    saldoCaixa: caixaReceita - caixaDespesa, temCaixa: movimentos > 0,
     inadQtde: pendentes.length, inadValor: pendentes.reduce((s, p) => s + p.saldoAberto, 0),
     pendentes: pendentes.sort((a, b) => b.saldoAberto - a.saldoAberto),
     porEmp: [...porEmp].map(([nome, e]) => ({ id: nome, nome, recebido: e.recebido, ticket: e.pagos ? Math.round(e.recebido / e.pagos) : null })),

@@ -92,7 +92,7 @@ function whereTitulos(
 
 export async function resumoAtalhoMigracaoWidesys() {
   const lote = await prisma.importacaoLegadoLote.findFirst({
-    where: { origem: ORIGEM_CADASTROS_WIDESYS },
+    where: { origem: ORIGEM_CADASTROS_WIDESYS, status: { in: ["CONCLUIDO", "QUARENTENA"] }, concluidoEm: { not: null } },
     orderBy: [{ capturadoEm: "desc" }, { iniciadoEm: "desc" }],
     select: {
       status: true,
@@ -135,18 +135,6 @@ export async function dadosAuditoriaOperacaoWidesys(entrada: {
     totalTitulos,
     totalItensQuarentena,
     quarentenasRecentes,
-    contratosPlataforma,
-    recebimentosPlataforma,
-    recebimentosComValorRecebido,
-    pagamentosPlataforma,
-    movimentosPlataforma,
-    pessoasWidesys,
-    imoveisWidesys,
-    catalogosWidesys,
-    empreendimentosPlataforma,
-    unidadesPlataforma,
-    locatariosPlataforma,
-    locatariosVinculadosWidesys,
   ] = await Promise.all([
     prisma.importacaoLegadoLote.findFirst({
       where: { origem },
@@ -249,22 +237,6 @@ export async function dadosAuditoriaOperacaoWidesys(entrada: {
         processadoEm: true,
         lote: { select: { capturaId: true } },
       },
-    }),
-    prisma.contrato.count(),
-    prisma.recebimento.count(),
-    prisma.recebimento.count({ where: { recebido: { gt: 0 } } }),
-    prisma.pagamentoRecebimento.count(),
-    prisma.lancamentoCaixa.count(),
-    prisma.pessoa.count({ where: { origem } }),
-    prisma.imovelLegado.count({ where: { origem } }),
-    prisma.catalogoLegadoRegistro.count({
-      where: { origem },
-    }),
-    prisma.empreendimento.count(),
-    prisma.unidade.count(),
-    prisma.locatario.count(),
-    prisma.locatario.count({
-      where: { pessoa: { is: { origem } } },
     }),
   ]);
 
@@ -394,28 +366,6 @@ export async function dadosAuditoriaOperacaoWidesys(entrada: {
         processadoEm: item.processadoEm,
         capturaId: item.lote.capturaId,
       })),
-    },
-    origens: {
-      /** Núcleo operacional nativo. Nenhuma destas contagens lê o staging. */
-      plataforma: {
-        contratos: contratosPlataforma,
-        titulosReceber: recebimentosPlataforma,
-        titulosReceberComValorPago: recebimentosComValorRecebido,
-        baixasReceber: pagamentosPlataforma,
-        movimentos: movimentosPlataforma,
-      },
-      /** Cadastros cuja origem externa já está explicitamente gravada. */
-      widesysJaImportado: {
-        pessoas: pessoasWidesys,
-        imoveis: imoveisWidesys,
-        catalogos: catalogosWidesys,
-      },
-      plataformaCadastros: {
-        empreendimentos: empreendimentosPlataforma,
-        unidades: unidadesPlataforma,
-        locatarios: locatariosPlataforma,
-        locatariosVinculadosWidesys,
-      },
     },
   };
 }

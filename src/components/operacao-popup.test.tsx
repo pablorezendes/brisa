@@ -36,10 +36,11 @@ import { OperacaoUnificada } from "./operacao-unificada";
 import { TabelaOperacaoUnificada, type LinhaTabelaOperacao } from "./tabela-operacao-unificada";
 import { ResumoOperacaoUnificada } from "./resumo-operacao-unificada";
 
-const filtros = {
-  q: "Conta com espaço", origem: "WIDESYS", estado: "PENDENTE", mes: "2026-06",
+const filtrosCanonicos = {
+  q: "Conta com espaço", mes: "2026-06",
   de: "2026-06-01", ate: "2026-06-30", pagina: "3", vencidos: "1",
 };
+const filtros = { ...filtrosCanonicos, origem: "PLANILHA", estado: "PENDENTE" };
 const cenarios = [
   { base: "/financeiro/contas-a-pagar", dominio: "PAGAR" },
   { base: "/financeiro/contas-a-receber", dominio: "RECEBER" },
@@ -51,7 +52,7 @@ function registro(dominio: DominioUnificacao = "PAGAR"): LinhaUnificada {
   return {
     chave, dominio, origem: "WIDESYS", origemId: "teste_1", titulo: "Registro de teste", descricao: "Fonte preservada",
     href: "/cadastros/pessoas/fixture", hash: "fixture", qualidade: "OK", motivos: [], campos: {}, nomeNorm: "REGISTRO",
-    estado: "PENDENTE", origens: ["WIDESYS"], fontes: [chave], versao: 1, candidatos: [], avisos: [], contabiliza: false,
+    estado: "ATIVO", origens: ["WIDESYS"], fontes: [chave], versao: 1, candidatos: [], avisos: [], contabiliza: true, conferidoPorRegra: true,
     divergencias: [], valor: 10000, pago: 0, aberto: 10000,
   };
 }
@@ -71,7 +72,7 @@ function links(html: string, texto: string): URL[] {
 
 function conferirContexto(url: URL, base: string, extras: Record<string, string> = {}) {
   expect(url.pathname).toBe(base);
-  expect(Object.fromEntries(url.searchParams)).toEqual({ ...filtros, ...extras });
+  expect(Object.fromEntries(url.searchParams)).toEqual({ ...filtrosCanonicos, ...extras });
 }
 
 function linhasEnviadasAoCliente(arvore: ReactNode): LinhaTabelaOperacao[] {
@@ -127,7 +128,7 @@ describe("popup financeiro integrado à lista SSR", () => {
   it("mantém navegação financeira curta, sem abas de cadastro", async () => {
     const html = renderToStaticMarkup(await OperacaoUnificada({ dominio: "PAGAR", titulo: "Pagar", base: "/financeiro/contas-a-pagar" }));
     const nav = html.match(/<nav aria-label="Listas do financeiro"[^>]*>([\s\S]*?)<\/nav>/)?.[1];
-    expect(nav).toContain("Conferir dados");
+    expect(nav).toContain("Dados do Widesys");
     expect(nav).toContain("Entradas e saídas");
     expect(nav).not.toContain("Pessoas");
     expect(nav).not.toContain("Contratos");
@@ -141,19 +142,19 @@ describe("popup financeiro integrado à lista SSR", () => {
     const html = renderToStaticMarkup(await OperacaoUnificada({ dominio: "PAGAR", titulo: "Pagar", base: "/financeiro/contas-a-pagar" }));
     const nav = html.match(/<nav aria-label="Listas do financeiro"[^>]*>([\s\S]*?)<\/nav>/)?.[1];
     expect(nav).toContain("A receber");
-    expect(nav).not.toContain("Conferir dados");
+    expect(nav).not.toContain("Dados do Widesys");
     expect(nav).not.toContain("Entradas e saídas");
   });
 
-  it("recolhe ferramentas e filtros opcionais, sem perder campos ou ações", async () => {
+  it("recolhe filtros opcionais e retira as ferramentas de comparação", async () => {
     const html = renderToStaticMarkup(await OperacaoUnificada({ dominio: "PAGAR", titulo: "Pagar", base: "/financeiro/contas-a-pagar" }));
     expect(html).toMatch(/<details[^>]*><summary[^>]*>Mais filtros<\/summary>/);
     expect(html).toContain('name="estado"');
     expect(html).toContain('name="de"');
     expect(html).toContain('name="ate"');
     expect(html).toContain('name="vencidos"');
-    expect(html).toMatch(/<details[^>]*><summary[^>]*>Ferramentas de conferência e base original<\/summary>/);
-    expect(html).toContain("Reanalisar correspondências");
+    expect(html).not.toContain("Ferramentas de conferência e base original");
+    expect(html).not.toContain("Reanalisar correspondências");
     expect(html).toContain("Entenda a situação");
   });
 
@@ -178,11 +179,10 @@ describe("popup financeiro integrado à lista SSR", () => {
     const itens = linhasEnviadasAoCliente(await OperacaoUnificada({ dominio: "PAGAR", titulo: "Pagar", base: "/financeiro/contas-a-pagar" }));
     expect(itens).toHaveLength(25);
     expect(itens[24].titulo).toBe("Título 24");
-    expect(itens[0].correspondencias).toBe(1);
+    expect(itens[0].correspondencias).toBe(0);
     expect(JSON.stringify(itens)).not.toContain("SEGREDO");
-    expect(Object.keys(itens[0]).sort()).toEqual(["chave", "dominio", "titulo", "descricao", "origens", "papeis", "estado", "conferidoManualmente", "conferidoPorRegra", "conferidoNaOrigem", "cancelado", "informativo", "contabiliza", "correspondencias", "aviso", "impacto", "data", "competencia", "valor", "pago", "aberto", "natureza", "hrefDetalhe", "hrefCadastro", "exclusao", "rateio", "revisaoRecebimento"].sort());
+    expect(Object.keys(itens[0]).sort()).toEqual(["chave", "dominio", "titulo", "descricao", "origens", "papeis", "estado", "conferidoManualmente", "conferidoPorRegra", "conferidoNaOrigem", "cancelado", "informativo", "contabiliza", "correspondencias", "aviso", "impacto", "data", "competencia", "valor", "pago", "aberto", "natureza", "hrefDetalhe", "hrefCadastro", "exclusao", "rateio"].sort());
     expect(itens[0].rateio).toEqual({ origemChave: "WIDESYS:PAGAR:linha_0" });
-    expect(itens[0].revisaoRecebimento).toBe(false);
   });
 
   it("não envia ação de rateio sem permissão própria de edição", async () => {
@@ -196,36 +196,17 @@ describe("popup financeiro integrado à lista SSR", () => {
     expect(html).not.toContain("Organizar despesa");
   });
 
-  it("conferido manual não continua pedindo comparação dos candidatos já decididos", async () => {
+  it("mostra conferência na origem sem sugerir comparações antigas", async () => {
     const dados = lista("RECEBER");
-    dados.itens[0] = { ...dados.itens[0], estado: "ATIVO", contabiliza: true, conferidoManualmente: true, avisos: ["REGISTRO_DISTINTO_CONFIRMADO"], candidatos: [{ chave: "BRISA:RECEBER:outro", titulo: "Outro registro", descricao: "Comparação preservada", motivos: [] }] };
-    mocks.listar.mockResolvedValue(dados);
-    const html = renderToStaticMarkup(await OperacaoUnificada({ dominio: "RECEBER", titulo: "Receber", base: "/recebimentos" }));
-    expect(html).toMatch(/<button[^>]*>Conferido<\/button>/);
-    expect(html).toContain("Conferido e incluído nos totais");
-    expect(html).toContain("Registro confirmado como distinto");
-    expect(html).not.toContain("correspondência(s) para comparar");
-    expect(html).not.toContain("Nenhum vínculo confirmado");
-    dados.itens[0] = { ...dados.itens[0], estado: "REVISAR", conferidoManualmente: false, contabiliza: false };
-    const revisao = renderToStaticMarkup(await OperacaoUnificada({ dominio: "RECEBER", titulo: "Receber", base: "/recebimentos" }));
-    expect(revisao).toContain("correspondência(s) para comparar");
-    expect(revisao).toMatch(/<button[^>]*>Conferir<\/button>/);
-  });
-  it("recebimento conferido pela regra mostra resultado na lista e reabre como Conferido", async () => {
-    const dados = lista("RECEBER");
-    dados.itens[0] = { ...dados.itens[0], estado: "ATIVO", contabiliza: true, conferidoPorRegra: true, candidatos: [{ chave: "BRISA:RECEBER:outro", titulo: "Outro registro", descricao: "Comparação anterior", motivos: [] }] };
+    dados.itens[0] = { ...dados.itens[0], conferidoNaOrigem: true, candidatos: [{ chave: "BRISA:RECEBER:outro", titulo: "Outro registro", descricao: "Comparação anterior", motivos: [] }] };
     mocks.listar.mockResolvedValue(dados);
     const arvore = await OperacaoUnificada({ dominio: "RECEBER", titulo: "Receber", base: "/recebimentos" });
     expect(linhasEnviadasAoCliente(arvore)[0].conferidoPorRegra).toBe(true);
     const html = renderToStaticMarkup(arvore);
-    expect(html).toMatch(/<button[^>]*>Conferido<\/button>/);
-    expect(html).toContain("Conferido pela regra: valores totais diferentes. Incluído nos totais.");
+    expect(html).toContain(">Conferido<");
+    expect(html).toContain("Este registro compõe os totais");
     expect(html).not.toContain("correspondência(s) para comparar");
-    expect(html).not.toContain("Ainda não foi conferido manualmente");
-    dados.itens[0] = { ...dados.itens[0], estado: "REVISAR", contabiliza: false };
-    const revisao = renderToStaticMarkup(await OperacaoUnificada({ dominio: "RECEBER", titulo: "Receber", base: "/recebimentos" }));
-    expect(revisao).toMatch(/<button[^>]*>Conferir<\/button>/);
-    expect(revisao).toContain("correspondência(s) para comparar");
+    expect(html).not.toMatch(/<button[^>]*>Conferir<\/button>/);
   });
 
   it("não envia montantes que não são exibidos em cadastros", async () => {
@@ -246,7 +227,7 @@ describe("popup financeiro integrado à lista SSR", () => {
     mocks.listar.mockResolvedValue(dados);
     const arvore = await OperacaoUnificada({ titulo: "Todos os registros", base: "/unificacao", central: true });
     expect(resumoEnviadoAoCliente(arvore)).toEqual({
-      financeiro: false, movimento: false, ativos: 12, vinculados: 3, pendentes: 4, quarentena: 2,
+      financeiro: false, movimento: false, fonteFinanceiraUnica: false, ativos: 12, vinculados: 3, pendentes: 4, quarentena: 2,
       devido: 0, pago: 0, aberto: 0, entradas: 0, saidas: 0, abertoPendente: 0,
     });
   });
@@ -285,13 +266,13 @@ describe("popup financeiro integrado à lista SSR", () => {
     mocks.listar.mockResolvedValue(lista(dominio));
     const chave = registro(dominio).chave;
     const html = renderToStaticMarkup(await OperacaoUnificada({ dominio, titulo: "Financeiro", base, parametros: filtros }));
-    for (const texto of ["Registro de teste", dominio === "RECEBER" ? "Ver detalhes" : "Revisar e resolver"]) {
+    for (const texto of ["Registro de teste", "Ver detalhes"]) {
       const alvos = links(html, texto);
       expect(alvos).toHaveLength(1);
       conferirContexto(alvos[0], base, { registro: chave, painel: "detalhe" });
     }
     if (dominio === "RECEBER") {
-      expect(html).toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*aria-expanded="false"[^>]*>Conferir<\/button>/);
+      expect(html).not.toMatch(/<button[^>]*>Conferir<\/button>/);
       expect(links(html, "Conferir")).toHaveLength(0);
       expect(links(html, "Revisar e resolver")).toHaveLength(0);
       expect(html).toContain('<th class="tabela-valor-separado text-right!">Recebido</th>');
@@ -303,13 +284,13 @@ describe("popup financeiro integrado à lista SSR", () => {
     expect(html).toContain('aria-label="Selecionar todos os registros desta página"');
     conferirContexto(links(html, "Anterior")[0], base, { pagina: "2" });
     conferirContexto(links(html, "Próxima")[0], base, { pagina: "4" });
-    expect(html).toContain('data-formulario-na-tela="true"');
+    expect(html).not.toContain('data-formulario-na-tela="true"');
     expect(html).not.toContain('href="/cadastros/pessoas/fixture"');
     expect(html).not.toContain("Abrir cadastro / lançamento");
     expect(html).not.toContain('href="/cadastros/governanca');
     expect(mocks.conferencia).not.toHaveBeenCalled();
     expect(mocks.exclusao).not.toHaveBeenCalled();
-    expect(mocks.listar).toHaveBeenCalledWith(expect.objectContaining({ ...filtros, dominio, pagina: 3, vencidos: true }));
+    expect(mocks.listar).toHaveBeenCalledWith(expect.objectContaining({ ...filtrosCanonicos, origem: undefined, estado: undefined, dominio, pagina: 3, vencidos: true }));
   });
 
   it.each(["25", "50", "100"])("preserva %s registros por página nos filtros e na navegação", async porPagina => {
@@ -320,7 +301,7 @@ describe("popup financeiro integrado à lista SSR", () => {
     if (porPagina !== "25") expect(links(html, "Próxima")[0].searchParams.get("porPagina")).toBe(porPagina);
   });
 
-  it.each(cenarios)("abre conferência em $base, encaminhando comparação e retorno limpo", async ({ base, dominio }) => {
+  it.each(cenarios)("abre detalhes em $base e descarta parâmetros de comparação", async ({ base, dominio }) => {
     mocks.listar.mockResolvedValue(lista(dominio));
     const chave = registro(dominio).chave;
     const parametros = { ...filtros, registro: chave, painel: "detalhe", destino: `BRISA:${dominio}:principal`, buscarDestino: "principal distinto" };
@@ -329,12 +310,12 @@ describe("popup financeiro integrado à lista SSR", () => {
     expect(mocks.exclusao).not.toHaveBeenCalled();
     const argumentos = mocks.conferencia.mock.calls[0][0];
     expect(argumentos.chave).toBe(chave);
-    expect(argumentos.parametros).toEqual(parametros);
+    expect(argumentos.parametros).toEqual({ ...parametros, origem: undefined, estado: "", destino: undefined, buscarDestino: undefined });
     conferirContexto(new URL(argumentos.contexto.retorno, "http://brisa.test"), base);
     conferirContexto(new URL(argumentos.contexto.hrefDetalhe, "http://brisa.test"), base, { registro: chave, painel: "detalhe" });
     conferirContexto(new URL(argumentos.contexto.hrefExcluir, "http://brisa.test"), base, { registro: chave, painel: "excluir" });
     expect(html).toContain('data-janela="true"');
-    expect(html).toContain("Conferir e resolver registro");
+    expect(html).toContain("Detalhes do lançamento");
     expect(html).toContain("Conteúdo da conferência");
   });
 
@@ -353,7 +334,7 @@ describe("popup financeiro integrado à lista SSR", () => {
 
   it.each([
     { registro: "WIDESYS:RECEBER:outro_dominio", painel: "detalhe" },
-    { registro: "BRISA:RECEBER:outro_dominio", painel: "excluir" },
+    { registro: "BRISA:PAGAR:arquivado", painel: "excluir" },
     { registro: "WIDESYS:PESSOA:pessoa", painel: "detalhe" },
     { registro: "PLANILHA:PAGAR:origem_nao_canonica", painel: "detalhe" },
     { registro: "WIDESYS:PAGAR:../alvo", painel: "excluir" },
@@ -372,7 +353,7 @@ describe("popup financeiro integrado à lista SSR", () => {
     mocks.listar.mockResolvedValue(lista("MOVIMENTO"));
     const chave = registro("MOVIMENTO").chave;
     const html = renderToStaticMarkup(await OperacaoUnificada({ dominio: "MOVIMENTO", titulo: "Caixa", base: "/caixa", parametros: { registro: chave, painel: "detalhe" } }));
-    const detalhe = links(html, "Revisar e resolver")[0];
+    const detalhe = links(html, "Ver detalhes")[0];
     expect(detalhe.pathname).toBe(`/unificacao/${encodeURIComponent(chave)}`);
     expect(links(html, "Abrir cadastro / lançamento")[0].pathname).toBe("/cadastros/pessoas/fixture");
     expect(links(html, "Excluir da plataforma")[0].pathname).toBe("/cadastros/governanca");

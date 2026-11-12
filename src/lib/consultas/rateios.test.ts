@@ -5,7 +5,6 @@ import { PrismaClient } from "@prisma/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { montarPolitica, type Regra } from "../acesso/politica";
 import { criarSchemaSinteticoDespesas } from "../despesas/testes-banco";
-import { carregarFontesUnificacao } from "../unificacao/fontes";
 import { consultarResumoRateios } from "./rateios";
 
 vi.mock("server-only", () => ({}));
@@ -30,7 +29,8 @@ beforeEach(async () => {
   copyFileSync(join(diretorio, "modelo.db"), arquivo); db = criarBanco(arquivo);
   await db.empreendimento.createMany({ data: [{ id: "e1", nome: "Empreendimento liberado" }, { id: "e2", nome: "Empreendimento reservado" }] });
   await db.unidade.createMany({ data: [{ id: "u1", empreendimentoId: "e1", identificacao: "Unidade autorizada" }, { id: "u2", empreendimentoId: "e2", identificacao: "Unidade reservada" }] });
-  await db.despesaDocumento.create({ data: { id: "nota", fornecedorNome: "Fornecedor confidencial", fornecedorDocumento: "00000000000", tomadorNome: "Tomador confidencial", numero: "NF-42-TESTE", emissao: "2026-10-07", competencia: "2026-10", total: 256000, statusRateio: "CONFERIDO", criadoPorId: "admin", atualizadoPorId: "admin",
+  await db.tituloFinanceiroLegado.create({ data: { id: "w1", origem: "WIDESYS", escopo: "TITULO_PAGAR", legadoId: "w1", ultimoItemId: "item-w1", natureza: "PAGAR", competencia: "2026-10", situacaoNormalizada: "PENDENTE", statusImportacao: "STAGING", valorDevido: 256000, valorAberto: 256000, valorPago: 0, snapshot: "{}", snapshotHash: "captura-1", capturadoEm: new Date("2026-10-23T12:00:00Z") } });
+  await db.despesaDocumento.create({ data: { id: "nota", origemChave: "WIDESYS:PAGAR:w1", origemHash: "captura-1", fornecedorNome: "Fornecedor confidencial", fornecedorDocumento: "00000000000", tomadorNome: "Tomador confidencial", numero: "NF-42-TESTE", emissao: "2026-10-07", competencia: "2026-10", total: 256000, statusRateio: "CONFERIDO", criadoPorId: "admin", atualizadoPorId: "admin",
     rateios: { create: [{ ordem: 0, empreendimentoId: "e1", unidadeId: "u1", descricao: "Manutenção privativa", valor: 43000 }, { ordem: 1, empreendimentoId: "e2", descricao: "Manutenção reservada", valor: 213000 }] },
   } });
 });
@@ -40,11 +40,6 @@ afterAll(() => {
   if (!alvo.toLowerCase().startsWith(`${resolve(tmpdir())}${sep}`.toLowerCase()) || !basename(alvo).startsWith("brisa-rateios-relatorio-")) throw new Error("Diretório fora do escopo temporário.");
   rmSync(alvo, { recursive: true, force: true });
 });
-
-async function decisao(status: string) {
-  const f = (await carregarFontesUnificacao(db)).find(f => f.chave === "BRISA:PAGAR:nota")!;
-  await db.unificacaoRegistro.create({ data: { chave: f.chave, dominio: "PAGAR", origem: "BRISA", origemId: "nota", hashFonte: f.hash, status, decisao: "MANUAL" } });
-}
 
 describe("rateios gerenciais sem duplicação e com carteira isolada", () => {
   it.each(["CONFERIDO", "RASCUNHO"])("despesa administrativa %s não cria custo nem pendência de empreendimento", async statusRateio => {
@@ -66,6 +61,13 @@ describe("rateios gerenciais sem duplicação e com carteira isolada", () => {
     expect(await db.lancamentoCaixa.count()).toBe(1);
   });
 
+  it("títulos Widesys usam o snapshot vigente e rateios sem origem Widesys ficam fora", async () => {
+    await db.unificacaoRegistro.create({ data: { chave: "WIDESYS:PAGAR:w1", dominio: "PAGAR", origem: "WIDESYS", origemId: "w1", hashFonte: "antiga", status: "PENDENTE", decisao: "MANUAL" } });
+    expect((await consultarResumoRateios(db, politica(), "2026-10")).total).toBe(256000);
+    await db.despesaDocumento.update({ where: { id: "nota" }, data: { origemChave: null } });
+    expect(await consultarResumoRateios(db, politica(), "2026-10")).toEqual({ custos: [], total: 0, notasConferidas: 0, notasPendentes: 0 });
+  });
+
   it("sócio vê somente sua parcela, sem total da nota, fornecedor, anexo ou outra carteira", async () => {
     const resumo = await consultarResumoRateios(db, politica("SOCIO", [permitir("EMPREENDIMENTO", "e1")]), "2026-10");
     expect(resumo).toEqual({ custos: [{ empreendimentoId: "e1", empreendimento: "Empreendimento liberado", competencia: "2026-10", valor: 43000, parcelas: 1 }], total: 43000, notasConferidas: 1, notasPendentes: 0 });
@@ -84,34 +86,23 @@ describe("rateios gerenciais sem duplicação e com carteira isolada", () => {
     expect((await consultarResumoRateios(db, politica("SOCIO", [permitir("EMPREENDIMENTO", "e1"), bloquear("UNIDADE", "u1")]), "2026-10")).total).toBe(0);
   });
 
-  it.each(["RASCUNHO", "SOMA_INCOMPLETA", "PENDENTE", "QUARENTENA", "EXCLUIDO"])("%s não entra nos custos conferidos", async situacao => {
+  it.each(["RASCUNHO", "SOMA_INCOMPLETA", "QUARENTENA", "EXCLUIDO"])("%s não entra nos custos conferidos", async situacao => {
     if (situacao === "RASCUNHO") await db.despesaDocumento.update({ where: { id: "nota" }, data: { statusRateio: "RASCUNHO" } });
     if (situacao === "SOMA_INCOMPLETA") await db.despesaRateio.updateMany({ where: { despesaId: "nota", ordem: 0 }, data: { valor: 1 } });
-    if (situacao === "PENDENTE") await decisao("PENDENTE");
-    if (situacao === "QUARENTENA") {
-      await db.lancamentoCaixa.create({ data: { id: "pix", tipo: "SAIDA", valor: 1, mesReferencia: "2026-10", centroCusto: "BRISA" } });
-      await db.despesaDocumento.update({ where: { id: "nota" }, data: { lancamentoCaixaId: "pix" } });
-    }
-    if (situacao === "EXCLUIDO") await db.recursoGovernado.create({ data: { tipo: "TITULO", origemId: "BRISA:PAGAR:nota", status: "EXCLUIDO", motivo: "Nota duplicada", autorId: "admin" } });
+    if (situacao === "QUARENTENA") await db.tituloFinanceiroLegado.update({ where: { id: "w1" }, data: { statusImportacao: "QUARENTENA" } });
+    if (situacao === "EXCLUIDO") await db.recursoGovernado.create({ data: { tipo: "TITULO", origemId: "WIDESYS:PAGAR:w1", status: "EXCLUIDO", motivo: "Nota duplicada", autorId: "admin" } });
     expect(await consultarResumoRateios(db, politica(), "2026-10")).toMatchObject({ total: 0, notasConferidas: 0, notasPendentes: situacao === "EXCLUIDO" ? 0 : 1 });
     expect((await consultarResumoRateios(db, politica("SOCIO", [permitir("EMPREENDIMENTO", "e1")]), "2026-10")).notasPendentes).toBe(0);
   });
 
   it("snapshot Widesys alterado invalida rateio mesmo se o valor financeiro permaneceu igual", async () => {
-    await db.despesaDocumento.update({ where: { id: "nota" }, data: { origemChave: "WIDESYS:PAGAR:w1", origemHash: "captura-1" } });
-    await db.tituloFinanceiroLegado.create({ data: { id: "w1", origem: "WIDESYS", escopo: "TITULO_PAGAR", legadoId: "w1", ultimoItemId: "item-w1", natureza: "PAGAR", competencia: "2026-10", situacaoNormalizada: "PENDENTE", statusImportacao: "STAGING", valorDevido: 256000, valorAberto: 256000, valorPago: 0, snapshot: "{}", snapshotHash: "captura-1", capturadoEm: new Date("2026-10-23T12:00:00Z") } });
-    const fonte = (await carregarFontesUnificacao(db)).find(f => f.chave === "WIDESYS:PAGAR:w1")!;
-    await db.unificacaoRegistro.create({ data: { chave: fonte.chave, dominio: "PAGAR", origem: "WIDESYS", origemId: "w1", hashFonte: fonte.hash, status: "ATIVO", decisao: "MANUAL" } });
     expect((await consultarResumoRateios(db, politica(), "2026-10")).total).toBe(256000);
     await db.tituloFinanceiroLegado.update({ where: { id: "w1" }, data: { snapshotHash: "captura-2" } });
     expect(await consultarResumoRateios(db, politica(), "2026-10")).toMatchObject({ total: 0, notasPendentes: 1 });
   });
 
   it.each(["planoContaRotulo", "tipoCobrancaRotulo"] as const)("classificação de comissão em %s não vaza no rateio de descrição genérica", async campo => {
-    await db.despesaDocumento.update({ where: { id: "nota" }, data: { origemChave: "WIDESYS:PAGAR:w1", origemHash: "captura-1" } });
-    await db.tituloFinanceiroLegado.create({ data: { id: "w1", origem: "WIDESYS", escopo: "TITULO_PAGAR", legadoId: "w1", ultimoItemId: "item-w1", natureza: "PAGAR", competencia: "2026-10", situacaoNormalizada: "PENDENTE", statusImportacao: "STAGING", valorDevido: 256000, valorAberto: 256000, valorPago: 0, snapshot: "{}", snapshotHash: "captura-1", capturadoEm: new Date("2026-10-23T12:00:00Z"), [campo]: "Comissão da administradora" } });
-    const fonte = (await carregarFontesUnificacao(db)).find(f => f.chave === "WIDESYS:PAGAR:w1")!;
-    await db.unificacaoRegistro.create({ data: { chave: fonte.chave, dominio: "PAGAR", origem: "WIDESYS", origemId: "w1", hashFonte: fonte.hash, status: "ATIVO", decisao: "MANUAL" } });
+    await db.tituloFinanceiroLegado.update({ where: { id: "w1" }, data: { [campo]: "Comissão da administradora" } });
     expect((await consultarResumoRateios(db, politica(), "2026-10")).total).toBe(256000);
     expect(await consultarResumoRateios(db, politica("FINANCEIRO", [], true), "2026-10")).toEqual({ custos: [], total: 0, notasConferidas: 0, notasPendentes: 0 });
     expect(await consultarResumoRateios(db, politica("SOCIO", [permitir("EMPREENDIMENTO", "e1")]), "2026-10")).toEqual({ custos: [], total: 0, notasConferidas: 0, notasPendentes: 0 });

@@ -60,7 +60,7 @@ describe("exclusões nos leitores operacionais", () => {
     ] as const) for (const [args] of tabela.findMany.mock.calls) expect(args.where.id).toEqual({ notIn: [`excluido-${tipo}`] });
   });
 
-  it("boleto e título excluídos ficam fora das listas, contagens e KPIs de emissão", async () => {
+  it("boleto e título excluídos ficam fora da consulta bancária e lançamentos locais não alimentam fila de emissão", async () => {
     await dadosPaginaBoletos("2026-06");
     for (const metodo of [mocks.db.boleto.findMany, mocks.db.boleto.count, mocks.db.boleto.groupBy]) {
       expect(metodo).toHaveBeenCalled();
@@ -69,8 +69,7 @@ describe("exclusões nos leitores operacionais", () => {
         expect(JSON.stringify(args.where)).toContain("recebimento-excluido");
       }
     }
-    expect(JSON.stringify(mocks.db.recebimento.findMany.mock.calls[0][0].where)).toContain("recebimento-excluido");
-    expect(mocks.db.contaBancaria.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { ativa: true, id: { notIn: ["excluido-CONTA"] } } }));
+    expect(mocks.db.recebimento.findMany).not.toHaveBeenCalled();
   });
 
   it("conciliação filtra pagamentos excluídos mas mantém eventos para auditoria", async () => {
@@ -79,6 +78,7 @@ describe("exclusões nos leitores operacionais", () => {
       for (const [args] of metodo.mock.calls) {
         expect(JSON.stringify(args.where)).toContain("excluido-BOLETO");
         expect(JSON.stringify(args.where)).toContain("recebimento-excluido");
+        expect(JSON.stringify(args.where)).toContain('"origem":"SICOOB"');
       }
     }
     expect(mocks.db.eventoBoleto.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { statusProcessamento: { in: ["PENDENTE", "ERRO"] } } }));

@@ -11,7 +11,7 @@ const exemplo: LinhaUnificada = {
 function linha(dados: Partial<LinhaUnificada>) { return { ...exemplo, ...dados }; }
 
 describe("Executivo consolidado", () => {
-  it("soma cada principal uma vez, distribui por competência, e separa obrigação, pagamento e fluxo de caixa", () => {
+  it("soma somente o Widesys e separa obrigação, pagamento e fluxo de caixa", () => {
     const linhas = [
       exemplo, linha({ origem: "BRISA", valor: 5300, pago: 5000, aberto: 300 }),
       linha({ estado: "VINCULADO", contabiliza: false }), linha({ estado: "PENDENTE", contabiliza: false }),
@@ -25,10 +25,10 @@ describe("Executivo consolidado", () => {
       linha({ competencia: "2027-04", valor: 77700, pago: 0, aberto: 77700 }),
     ];
     const r = consolidarExecutivo(linhas, ["2026-06", "2026-07"], ["2026-06"], "2026-06-30");
-    expect(r).toMatchObject({ devido: 13300, recebido: 11500, inadQtde: 2, inadValor: 1800, caixaReceita: 6500, caixaDespesa: 5600, saldoCaixa: 900 });
-    expect(r.origens.WIDESYS).toMatchObject({ receber: 1, pagar: 1, movimentos: 2, pago: 5600, vinculados: 1, conciliar: 1, inconsistentes: 1 });
+    expect(r).toMatchObject({ devido: 8000, recebido: 6500, inadQtde: 1, inadValor: 1500, caixaReceita: 6500, caixaDespesa: 5600, saldoCaixa: 900,
+      titulosReceber: 1, titulosPagar: 1, despesaPaga: 5600 });
     expect(r.serie.map(m => m.caixa.saldo)).toEqual([900, -900]);
-    expect(r.porEmp).toEqual([{ id: "Sem empreendimento identificado", nome: "Sem empreendimento identificado", recebido: 11500, ticket: 5750 }]);
+    expect(r.porEmp).toEqual([{ id: "Sem empreendimento identificado", nome: "Sem empreendimento identificado", recebido: 6500, ticket: 6500 }]);
     expect(r.pendentes[0].diasAtraso).toBe(18);
     expect(mesPadraoConsolidado(linhas, "2026-11-03")).toBe("2026-07");
   });

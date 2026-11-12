@@ -1,6 +1,5 @@
 import { exigirPaginaAcesso } from "@/lib/acesso/servidor";
 import Link from "next/link";
-import { ExcluirRegistroLink } from "@/components/excluir-registro-link";
 import {
   Card,
   Dinheiro,
@@ -50,7 +49,7 @@ export default async function PaginaConciliacao({
     <div>
       <PageHeader
         titulo="Conciliação bancária"
-        descricao="Acompanhe os avisos do Sicoob e só efetive a baixa quando o arquivo de movimentações tipo 5 (LIQUI) confirmar o pagamento."
+        descricao="Acompanhe os avisos e as liquidações dos boletos registrados no Brisa."
         acoes={
           <>
             <Link href="/financeiro/boletos" className={btnPrimario}>Abrir boletos</Link>
@@ -77,7 +76,7 @@ export default async function PaginaConciliacao({
             ["1", "Aviso recebido", "Webhook tipo 7 registra um aviso operacional, sem dar baixa."],
             ["2", "Título acompanhado", "A consulta autenticada atualiza a situação, mas não confirma liquidação."],
             ["3", "LIQUI importado", "O arquivo tipo 5 confirma título, conta, data e valor pagos."],
-            ["4", "Baixa conciliada", "Valores exatos atualizam o recebimento com trilha auditável."],
+            ["4", "Baixa conciliada", "A confirmação do Sicoob fica registrada no histórico do boleto."],
           ].map(([passo, titulo, texto]) => (
             <div key={passo} className="rounded-lg border border-contorno bg-white p-3">
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#e7f1ee] font-mono text-[10px] font-bold text-oliva-escura">{passo}</span>
@@ -112,16 +111,14 @@ export default async function PaginaConciliacao({
         ) : (
           <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
             <table className="tabela tabela--acoes">
-              <thead><tr><th>Pagador e imóvel</th><th>Data</th><th className="text-right">Banco</th><th className="text-right">Devido</th><th>Conta</th><th>Resultado</th><th>Origem</th><th className="text-right">Ação</th></tr></thead>
+              <thead><tr><th>Pagador e imóvel</th><th>Data</th><th className="text-right">Valor liquidado</th><th>Conta</th><th>Resultado</th><th>Origem</th><th className="text-right">Ação</th></tr></thead>
               <tbody>
                 {dados.pagamentos.map((pagamento) => {
-                  const devido = pagamento.recebimento.valor + pagamento.recebimento.iptu + pagamento.recebimento.cond;
                   return (
                     <tr key={pagamento.id}>
                       <td><div className="font-semibold text-tinta">{pagamento.recebimento.contrato.locatario?.nome ?? "Sem pagador"}</div><div className="mt-0.5 text-[10px] text-tinta-suave">{pagamento.recebimento.empreendimento.nome} · {pagamento.recebimento.contrato.unidade.identificacao}</div></td>
                       <td>{formatarDataBR(pagamento.dataPagamento)}</td>
                       <td className="text-right"><Sigilo><Dinheiro centavos={pagamento.valor} destaque /></Sigilo></td>
-                      <td className="text-right"><Sigilo><Dinheiro centavos={devido} /></Sigilo></td>
                       <td>{pagamento.contaBancaria?.apelido ?? "—"}</td>
                       <td>{pagamento.conciliadoEm ? <Selo nivel="otimo">conciliado</Selo> : <div><Selo nivel="critico">pendente</Selo><div className="mt-1 text-[9px] text-tinta-suave">{MOTIVOS[pagamento.motivoPendencia ?? ""] ?? pagamento.motivoPendencia ?? "Revisão necessária"}</div></div>}</td>
                       <td><div className="text-[10px] font-semibold text-tinta">{pagamento.origem === "SICOOB" ? "Sicoob · LIQUI tipo 5" : pagamento.origem.toLowerCase()}</div><div className="mt-0.5 text-[9px] text-tinta-suave">{dataHora(pagamento.criadoEm)}</div></td>
@@ -134,7 +131,6 @@ export default async function PaginaConciliacao({
                             </button>
                           </form>
                         ) : null}
-                        <ExcluirRegistroLink tipo="TITULO" origemId={`BRISA:RECEBER:${pagamento.recebimentoId}`}>Excluir lançamento vinculado</ExcluirRegistroLink>
                         </div>
                       </td>
                     </tr>
@@ -145,8 +141,6 @@ export default async function PaginaConciliacao({
           </div>
         )}
       </Card>
-
-      <p className="mb-5 text-xs leading-relaxed text-tinta-suave">Excluir o lançamento vinculado retira o título financeiro da plataforma, com histórico. Isso não estorna o pagamento no banco nem desfaz a liquidação externa.</p>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
         <Card>

@@ -66,74 +66,63 @@ describe("origem e situação são informações diferentes", () => {
     expect(explicarConsolidacao(registro({ estado: "VINCULADO", contabiliza: false }))).toContain("Não soma novamente");
     expect(explicarConsolidacao(registro({ estado: "PENDENTE", contabiliza: false }))).toContain("Fora dos totais");
   });
-  it("envia filtro de origem ao DAL e o preserva na paginação e atalhos", async () => {
-    const html = renderToStaticMarkup(await OperacaoUnificada({ titulo: "Conferir", base: "/unificacao", central: true, parametros: { dominio: "RECEBER", origem: "PLANILHA", q: "teste", mes: "2026-06", vencidos: "1" } }));
-    expect(mocks.listar).toHaveBeenCalledWith(expect.objectContaining({ origem: "PLANILHA", dominio: "RECEBER", q: "teste", mes: "2026-06", vencidos: true }));
-    expect(html).toContain('name="origem"');
-    expect(html).toContain("De onde veio");
-    expect(html).toContain("Situação na consolidação");
+  it("descarta filtros antigos de origem e duplicidade e preserva período e paginação", async () => {
+    const html = renderToStaticMarkup(await OperacaoUnificada({ titulo: "A receber", base: "/recebimentos", dominio: "RECEBER", parametros: { estado: "PENDENTE", origem: "PLANILHA", q: "teste", mes: "2026-06", vencidos: "1" } }));
+    expect(mocks.listar).toHaveBeenCalledWith(expect.objectContaining({ origem: undefined, estado: undefined, dominio: "RECEBER", q: "teste", mes: "2026-06", vencidos: true }));
+    expect(html).not.toContain('name="origem"');
+    expect(html).not.toContain("Possíveis duplicatas");
+    expect(html).not.toContain("Reanalisar correspondências");
     const proxima = html.match(/<a\b[^>]*href="([^"]+)"[^>]*>Próxima<\/a>/)?.[1];
-    expect(proxima).toContain("origem=PLANILHA");
+    expect(proxima).not.toContain("origem=PLANILHA");
     expect(proxima).toContain("mes=2026-06");
     expect(proxima).toContain("pagina=2");
-    expect(html).toContain("estado=PENDENTE&amp;origem=PLANILHA");
-    expect(html).toContain('href="/cadastros/governanca?tipo=TITULO&amp;origemId=BRISA%3ARECEBER%3Ar1&amp;modo=excluir"');
-    expect(html).not.toContain("consolidação concluída");
+    expect(html).toContain("estado=QUARENTENA");
   });
   it("não consulta a lista quando o perfil não pode acessar dados globais", async () => {
     mocks.perfil.mockResolvedValue("CONTABILIDADE");
     await expect(OperacaoUnificada({ titulo: "Teste", base: "/unificacao" })).rejects.toThrow("ACESSO_NEGADO");
     expect(mocks.listar).not.toHaveBeenCalled();
   });
-  it("habilita conferência de recebimentos na janela somente para acesso integral e preserva os detalhes", async () => {
+  it("exibe a confirmação do Widesys sem oferecer nova decisão no recebimento", async () => {
     mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "FINANCEIRO", ativo: true, global: true, regras: [], permissoes: ["financeiro.ver", "unificacao.ver", "cadastros.sensiveis"] });
+    const dados = lista();
+    dados.itens[0] = registro({ origem: "WIDESYS", chave: "WIDESYS:RECEBER:1", origens: ["WIDESYS"], conferidoNaOrigem: true, conferidoPorRegra: true });
+    mocks.listar.mockResolvedValue(dados);
     const html = renderToStaticMarkup(await OperacaoUnificada({ titulo: "A receber", base: "/recebimentos", dominio: "RECEBER" }));
-    expect(html).toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*>Conferir<\/button>/);
+    expect(html).not.toMatch(/<button[^>]*>Conferir(?:ido)?<\/button>/);
     expect(html).toContain("Ver detalhes");
-    expect(html).toContain("Incluído automaticamente");
-    const dados = lista(); dados.itens[0] = registro({ conferidoManualmente: true }); mocks.listar.mockResolvedValue(dados);
-    const conferido = renderToStaticMarkup(await OperacaoUnificada({ titulo: "A receber", base: "/recebimentos", dominio: "RECEBER" }));
-    expect(conferido).toMatch(/<button[^>]*>Conferido<\/button>/);
-    expect(conferido).toContain("Conferido e incluído nos totais");
-    mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "FINANCEIRO", ativo: true, global: true, regras: [], permissoes: ["financeiro.ver", "cadastros.sensiveis"] });
-    const restrito = renderToStaticMarkup(await OperacaoUnificada({ titulo: "A receber", base: "/recebimentos", dominio: "RECEBER" }));
-    expect(restrito).not.toMatch(/<button[^>]*>Conferido<\/button>/);
+    expect(html).toContain(">Conferido<");
+    expect(html).toContain("Este registro compõe os totais");
   });
-  it("quarentena conserva a revisão da origem sem oferecer conclusão direta no popup", async () => {
-    mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "FINANCEIRO", ativo: true, global: true, regras: [], permissoes: ["financeiro.ver", "unificacao.ver", "cadastros.sensiveis"] });
-    const dados = lista(); dados.itens[0] = registro({ estado: "QUARENTENA", contabiliza: false }); mocks.listar.mockResolvedValue(dados);
+  it("mantém a inconsistência do Widesys identificada e permite consultar seus detalhes", async () => {
+    const dados = lista();
+    dados.itens[0] = registro({ origem: "WIDESYS", chave: "WIDESYS:RECEBER:1", origens: ["WIDESYS"], estado: "QUARENTENA", contabiliza: false });
+    mocks.listar.mockResolvedValue(dados);
     const html = renderToStaticMarkup(await OperacaoUnificada({ titulo: "A receber", base: "/recebimentos", dominio: "RECEBER" }));
-    expect(html).toContain("Revisar e resolver");
-    expect(html).not.toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*>Conferir<\/button>/);
+    expect(html).toContain("Ver detalhes");
+    expect(html).toContain("Dado inconsistente");
+    expect(html).toContain("Este registro está fora dos totais");
+    expect(html).not.toContain("Revisar e resolver");
   });
-  it.each(["PAGAR", "RECEBER"] as const)("habilita lote em %s ao financeiro autorizado sem permissão de excluir", async dominio => {
-    const permissoes = ["unificacao.editar", "pagamentos.conciliar", "cadastros.sensiveis", ...(dominio === "PAGAR" ? ["despesas.ver"] : ["financeiro.ver", "unificacao.ver"])];
-    mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "FINANCEIRO", ativo: true, global: true, regras: [], permissoes });
-    const dados = lista(); dados.itens[0] = registro({ dominio, chave: `WIDESYS:${dominio}:1` }); mocks.listar.mockResolvedValue(dados);
+  it.each(["PAGAR", "RECEBER"] as const)("conserva exclusão administrativa sem conferência em lote em %s", async dominio => {
+    const dados = lista();
+    dados.itens[0] = registro({ dominio, origem: "WIDESYS", chave: `WIDESYS:${dominio}:1`, origens: ["WIDESYS"] });
+    mocks.listar.mockResolvedValue(dados);
     const base = dominio === "PAGAR" ? "/financeiro/contas-a-pagar" : "/recebimentos";
     const html = renderToStaticMarkup(await OperacaoUnificada({ titulo: "Financeiro", base, dominio }));
-    expect(html).toContain("Marcar selecionados como conferidos");
+    expect(html).not.toContain("Marcar selecionados como conferidos");
     expect(html).toContain("Selecionar todos os registros desta página");
-    expect(html).not.toContain("Excluir selecionados");
-    mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "FINANCEIRO", ativo: true, global: true, regras: [], permissoes: permissoes.filter(p => p !== "pagamentos.conciliar") });
-    const consulta = renderToStaticMarkup(await OperacaoUnificada({ titulo: "Financeiro", base, dominio }));
-    expect(consulta).not.toContain("Marcar selecionados como conferidos");
-    expect(consulta).not.toContain("Selecionar todos os registros desta página");
-    mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "FINANCEIRO", ativo: true, global: false, regras: [], permissoes });
-    await expect(OperacaoUnificada({ titulo: "Financeiro", base, dominio })).rejects.toThrow("ACESSO_NEGADO");
+    expect(html).toContain("Excluir selecionados");
+    expect(html).not.toContain("Nova despesa");
   });
-  it("detalhe mostra evidência da fonte associada sem expor campos de comissão", async () => {
-    const principal = registro({ origens: ["BRISA", "PLANILHA"], campos: { pessoa: { rotulo: "Pessoa", valor: "Pessoa permitida" }, taxa: { rotulo: "Taxa reservada", valor: "SEGREDO_TAXA" }, administracao: { rotulo: "Administração", valor: "SEGREDO_ADMINISTRACAO" } } });
+  it("detalhe financeiro omite evidência de planilha, comparação e campos de comissão", async () => {
+    const principal = registro({ chave: "WIDESYS:RECEBER:1", origem: "WIDESYS", origens: ["WIDESYS"], campos: { pessoa: { rotulo: "Pessoa", valor: "Pessoa permitida" }, taxa: { rotulo: "Taxa reservada", valor: "SEGREDO_TAXA" }, administracao: { rotulo: "Administração", valor: "SEGREDO_ADMINISTRACAO" } } });
     const planilha = registro({ chave: "BRISA:RECEBER:planilha", proveniencia: { arquivo: "fixture.xlsx", aba: "Plan1", linha: 12 } });
     mocks.detalhe.mockResolvedValue({ registro: principal, fontes: [principal, planilha], candidatos: [], historico: [], baixas: [] });
-    const html = renderToStaticMarkup(await PaginaDetalhe({ params: Promise.resolve({ chave: encodeURIComponent(principal.chave) }), searchParams: Promise.resolve({}) }));
-    expect(html).toContain("fixture.xlsx");
-    expect(html).toContain("Linha: 12");
-    expect(html).toContain("não há decisão manual registrada");
-    expect(html).toContain("origem ainda a confirmar");
-    expect(html).toContain('data-revisao-exclusao="BRISA:RECEBER:r1"');
-    expect(html).not.toContain("SEGREDO_TAXA");
-    expect(html).not.toContain("SEGREDO_ADMINISTRACAO");
-    expect(html).not.toContain('name="justificativa"');
+    const html = renderToStaticMarkup(await PaginaDetalhe({ params: Promise.resolve({ chave: encodeURIComponent(principal.chave) }), searchParams: Promise.resolve({ buscarDestino: "fixture" }) }));
+    expect(mocks.detalhe).toHaveBeenCalledWith(principal.chave, "");
+    expect(html).toContain("Pessoa permitida");
+    expect(html).toContain('data-revisao-exclusao="WIDESYS:RECEBER:1"');
+    expect(html).not.toMatch(/fixture\.xlsx|Comparar lado a lado|SEGREDO_TAXA|SEGREDO_ADMINISTRACAO|name="justificativa"/);
   });
 });

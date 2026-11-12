@@ -74,7 +74,7 @@ describe("carteira: isolamento por vínculos comprovados", () => {
     expect(dados.imoveis.map(x => x.id)).toEqual(["BRISA:UA1", "BRISA:UA2"]);
     expect(dados.empreendimentos.map(x => x.id)).toEqual(["EA"]);
     expect(dados.contratos.map(x => x.id)).toEqual(["BRISA:CA1", "BRISA:CA2"]);
-    expect(dados.titulos.map(x => x.id)).toEqual(["BRISA:RECEBER:RA1", "BRISA:RECEBER:RA2"]);
+    expect(dados.titulos).toEqual([]);
     expect(JSON.stringify(dados)).not.toMatch(/Cliente B|Unidade B|BRISA:CB|BRISA:RB/);
   });
   it("bloqueio explícito da unidade prevalece sobre o empreendimento permitido", async () => {
@@ -138,6 +138,8 @@ describe("carteira: isolamento por vínculos comprovados", () => {
     const dados = await consultarCarteira(db, politica([liberar("IMOVEL_LEGADO", "IL1")]), "2026-10");
     expect(dados.contratos.map(x => x.id)).toEqual(["WIDESYS:CL1"]);
     expect(dados.titulos.map(x => x.id)).toEqual(["WIDESYS:RECEBER:TL1"]);
+    expect(vi.mocked(lerOperacaoUnificada).mock.calls[0]?.[0]).toBe(db);
+    expect(vi.mocked(lerOperacaoUnificada).mock.calls[0]?.[1]).toEqual({ somenteWidesysFinanceiro: true });
     expect(dados.clientes.map(x => x.id)).toEqual(["WIDESYS:P1"]);
     expect(JSON.stringify(dados)).not.toMatch(/OUTRO|outra origem|COMISSAO|TLX/);
   });
@@ -149,7 +151,7 @@ describe("carteira: isolamento por vínculos comprovados", () => {
   });
   it("nunca exporta comissão rotulada, origem agregada ou título de outro mês", async () => {
     const dados = await consultarCarteira(db, politica([], { global: true }), "2026-10");
-    expect(dados.titulos.some(x => /COMISSAO|AGREGADO|OUTROMES/.test(x.id))).toBe(false);
+    expect(dados.titulos.map(t => t.id)).toEqual(["WIDESYS:RECEBER:TL1", "WIDESYS:RECEBER:TL2"]);
   });
   it("não compartilha título legado sem classificação comprovada", async () => {
     await db.$executeRaw`UPDATE TituloFinanceiroLegado SET planoContaRotulo=NULL,tipoCobrancaRotulo=NULL WHERE id='TL1'`;
@@ -157,35 +159,38 @@ describe("carteira: isolamento por vínculos comprovados", () => {
     expect(dados.titulos).toEqual([]);
   });
   it("fontes vinculadas fora da carteira bloqueiam a linha inteira", async () => {
-    linhas[0].fontes.push("BRISA:RECEBER:RB1");
-    const dados = await consultarCarteira(db, politica(), "2026-10");
-    expect(dados.titulos.map(x => x.id)).toEqual(["BRISA:RECEBER:RA2"]);
+    linhas.find(l => l.origemId === "TL1")!.fontes.push("WIDESYS:RECEBER:TL2");
+    const dados = await consultarCarteira(db, politica([liberar("IMOVEL_LEGADO", "IL1")]), "2026-10");
+    expect(dados.titulos).toEqual([]);
   });
   it("vínculo alterado entre leitura do cadastro e projeção é negado", async () => {
-    linhas[0].contratoChave = "BRISA:CONTRATO:CB1";
-    const dados = await consultarCarteira(db, politica(), "2026-10");
-    expect(dados.titulos.map(x => x.id)).toEqual(["BRISA:RECEBER:RA2"]);
+    linhas.find(l => l.origemId === "TL1")!.contratoChave = "WIDESYS:CONTRATO:CL2";
+    const dados = await consultarCarteira(db, politica([liberar("IMOVEL_LEGADO", "IL1")]), "2026-10");
+    expect(dados.titulos).toEqual([]);
   });
   it("confere vínculo de todas as fontes, não apenas da linha canônica", async () => {
     const fontes = linhas.map(l => ({ ...l }));
-    fontes[1].imovelChave = "BRISA:IMOVEL:UB1";
-    linhas[0].fontes.push("BRISA:RECEBER:RA2");
+    fontes.find(l => l.origemId === "TL2")!.imovelChave = "WIDESYS:IMOVEL:IL1";
+    linhas.find(l => l.origemId === "TL1")!.fontes.push("WIDESYS:RECEBER:TL2");
     vi.mocked(lerOperacaoUnificada).mockResolvedValue({ fontes, linhas, decisoes: [] });
-    const dados = await consultarCarteira(db, politica(), "2026-10");
+    const dados = await consultarCarteira(db, politica([], { global: true }), "2026-10");
     expect(dados.titulos).toEqual([]);
   });
   it("fora dos totais, cancelado e sem fontes não aparecem", async () => {
-    linhas[0].contabiliza = false;
-    linhas[1].cancelado = true;
-    linhas[2].fontes = [];
-    const dados = await consultarCarteira(db, politica([], { global: true }), "2026-10");
-    expect(dados.titulos.some(x => ["BRISA:RECEBER:RA1", "BRISA:RECEBER:RA2", "BRISA:RECEBER:RB1"].includes(x.id))).toBe(false);
+    const polit = politica([], { global: true });
+    const primeira = linhas.find(l => l.origemId === "TL1")!;
+    primeira.contabiliza = false;
+    linhas.find(l => l.origemId === "TL2")!.cancelado = true;
+    expect((await consultarCarteira(db, polit, "2026-10")).titulos).toEqual([]);
+    primeira.contabiliza = true;
+    primeira.fontes = [];
+    expect((await consultarCarteira(db, polit, "2026-10")).titulos).toEqual([]);
   });
   it("governança lógica prevalece sobre permissão de cadastro", async () => {
     await db.$executeRaw`INSERT INTO RecursoGovernado VALUES ('g1','UNIDADE','UA1','EXCLUIDO')`;
     const dados = await consultarCarteira(db, politica(), "2026-10");
     expect(dados.imoveis.map(x => x.id)).toEqual(["BRISA:UA2"]);
-    expect(dados.titulos.map(x => x.id)).toEqual(["BRISA:RECEBER:RA2"]);
+    expect(dados.titulos).toEqual([]);
   });
   it("sem carteira.ver ou usuário inativo não lê banco nem unificação", async () => {
     const spy = vi.spyOn(db.recursoGovernado, "findMany");
@@ -214,7 +219,7 @@ describe("carteira: isolamento por vínculos comprovados", () => {
     expect(lerOperacaoUnificada).not.toHaveBeenCalled();
   });
   it("exportação valida mês e usa exatamente o mesmo filtro de carteira sem cache", async () => {
-    ambiente.politica = politica(undefined, { permissoes: [...politica().permissoes, "relatorios.exportar"] });
+    ambiente.politica = politica([liberar("IMOVEL_LEGADO", "IL1")], { permissoes: [...politica().permissoes, "relatorios.exportar"] });
     const invalido = await GET(new Request("http://localhost/carteira/exportar?mes=2026-99"));
     expect(invalido.status).toBe(400);
     const resposta = await GET(new Request("http://localhost/carteira/exportar?mes=2026-10"));
@@ -223,7 +228,7 @@ describe("carteira: isolamento por vínculos comprovados", () => {
     expect(resposta.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(resposta.headers.get("Content-Disposition")).toContain("carteira-2026-10.csv");
     const csv = await resposta.text();
-    expect(csv).toContain("Unidade A1");
-    expect(csv).not.toMatch(/Unidade B|Cliente B|DOC_|comissao|privado.xlsx/);
+    expect(csv).toContain("Imóvel legado A");
+    expect(csv).not.toMatch(/Imóvel legado B|Unidade A1|Cliente B|DOC_|comissao|privado.xlsx/);
   });
 });

@@ -181,13 +181,13 @@ describe("catálogo de categorias de despesas", () => {
     expect(await db.eventoAcesso.count({ where: { tipo: "CATEGORIA_DESPESA", motivo: { contains: "correção" } } })).toBe(1);
   });
 
-  it("corrige uma despesa e seus anexos só após conferência expressa, preservando a nota e o pagamento", async () => {
+  it("corrige o sigilo no histórico nativo só após conferência expressa e preserva nota, anexo e pagamento", async () => {
     const categoria = await criarCategoria("Honorários contábeis");
     const resultado = await salvarDespesa(db, entrada(categoria.codigo, { descricao: "Honorários contábeis", pagamento: { modo: "REGISTRAR", data: "2026-10-10", centroCusto: "BRISA", categoria: "Honorários", via: "PIX" } }), admin);
     // Reproduz a proteção gravada pela inferência antiga, sem mudar a base real.
     await db.despesaDocumento.update({ where: { id: resultado.id }, data: { restrita: true } });
     const anexo = await db.despesaAnexo.create({ data: { despesaId: resultado.id, nomeOriginal: "honorarios-contabeis.pdf", mimeType: "application/pdf", tamanho: 5, hash: "arquivo-sintetico", conteudo: Buffer.from("%PDF-"), criadoPorId: "admin" } });
-    await expect(lerAnexoDespesa(db, anexo.id, "fin")).rejects.toThrow(/restrita/);
+    await expect(lerAnexoDespesa(db, anexo.id, "fin")).rejects.toThrow("Despesa não encontrada");
     const editor = await obterEditorDespesa(db, { id: resultado.id }, admin);
     expect(editor.sigilo).toMatchObject({ restrita: true, podeCorrigirHonorarios: true });
     await expect(salvarDespesa(db, entrada(categoria.codigo, { ...editor.documento, corrigirSigiloHonorarios: true }), fin)).rejects.toMatchObject({ codigo: "SEM_PERMISSAO" });
@@ -198,7 +198,8 @@ describe("catálogo de categorias de despesas", () => {
     const repetida = await salvarDespesa(db, comando, admin);
     expect(repetida.repetido).toBe(true);
     expect((await fonteDespesa(resultado.id)).restrito).toBe(false);
-    expect((await lerAnexoDespesa(db, anexo.id, "fin")).id).toBe(anexo.id);
+    await expect(lerAnexoDespesa(db, anexo.id, "fin")).rejects.toThrow("Despesa não encontrada");
+    expect(await db.despesaAnexo.findUniqueOrThrow({ where: { id: anexo.id } })).toMatchObject({ despesaId: resultado.id, hash: "arquivo-sintetico" });
     expect(await db.despesaDocumento.count()).toBe(1);
     expect(await db.lancamentoCaixa.count()).toBe(1);
     expect(await db.lancamentoCaixa.findUniqueOrThrow({ where: { id: resultado.lancamentoCaixaId! } })).toMatchObject({ valor: 15000 });

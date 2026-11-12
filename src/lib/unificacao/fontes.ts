@@ -52,7 +52,7 @@ export function fonteLancamentoCaixa(l: Pick<LancamentoCaixa, "id" | "descricao"
  * metadados não usados na projeção não precisam atravessar o Prisma em cada
  * navegação. Todos os insumos dos hashes e da proveniência são preservados.
  */
-export async function carregarDadosFontesUnificacao(db: BancoUnificacao, dominioFinanceiro?: "RECEBER" | "PAGAR") {
+export async function carregarDadosFontesUnificacao(db: BancoUnificacao, dominioFinanceiro?: "RECEBER" | "PAGAR", incluirProvenienciaPlanilha = true) {
   const completa = !dominioFinanceiro;
   const [locatarios, pessoas, unidades, imoveis, contratos, contratosLegados, recebimentos, titulos, pagamentos, baixas, caixa, movimentos, parametros, importacoesPlanilha, despesas] = await Promise.all([
     completa ? db.locatario.findMany({ select: {
@@ -138,7 +138,7 @@ export async function carregarDadosFontesUnificacao(db: BancoUnificacao, dominio
     // A relação reversa LancamentoCaixa.importacoesPlanilha dispara panic no
     // engine Prisma/SQLite desta versão quando há linhas vinculadas. Uma leitura
     // em lote pela FK evita a expansão reversa e mantém a mesma fotografia.
-    completa ? db.importacaoPlanilhaLinha.findMany({
+    completa && incluirProvenienciaPlanilha ? db.importacaoPlanilhaLinha.findMany({
       where: { reservado: false, status: { in: ["IMPORTADO", "JA_EXISTENTE"] }, lancamentoCaixaId: { not: null } },
       orderBy: [{ criadoEm: "asc" }, { id: "asc" }],
       select: { lancamentoCaixaId: true, aba: true, linha: true, faixa: true, celulas: true, caixaOrigem: true,
@@ -180,7 +180,7 @@ export async function carregarDadosFontesUnificacao(db: BancoUnificacao, dominio
 export type DadosFontesUnificacao = Awaited<ReturnType<typeof carregarDadosFontesUnificacao>>;
 
 /** Deriva hashes e proveniência da fotografia, sem novas consultas ao banco. */
-export async function derivarFontesUnificacao(dados: DadosFontesUnificacao): Promise<FonteUnificacao[]> {
+export async function derivarFontesUnificacao(dados: DadosFontesUnificacao, incluirProvenienciaPlanilha = true): Promise<FonteUnificacao[]> {
   const { locatarios, pessoas, unidades, imoveis, contratos, contratosLegados, recebimentos, titulos, pagamentos, baixas, caixa, movimentos, parametros, despesas, caixasDespesasGovernados, caixasDespesasDecisoes } = dados;
   const pLegado = new Map(pessoas.map(p => [p.legadoId, p]));
   const iLegado = new Map(imoveis.map(i => [i.legadoId, i]));
@@ -333,7 +333,7 @@ export async function derivarFontesUnificacao(dados: DadosFontesUnificacao): Pro
   // Proveniência das planilhas só será atribuída quando comprovada pelo
   // fingerprint completo. A ausência do dataset no servidor não impede uso.
   const datasetPath = resolve(process.cwd(), "data/dataset.json");
-  if ((recebimentos.length || caixa.length) && existsSync(datasetPath)) {
+  if (incluirProvenienciaPlanilha && (recebimentos.length || caixa.length) && existsSync(datasetPath)) {
     const { reconstruirProvenienciaPlanilhas } = await import("./proveniencia-planilhas");
     const prova = reconstruirProvenienciaPlanilhas(JSON.parse(readFileSync(datasetPath, "utf8")), {
       recebimentos: recebimentos.map(r => ({ ...r, empreendimentoNome: r.empreendimento.nome, unidadeIdentificacao: r.contrato.unidade.identificacao, locatarioNome: r.contrato.locatario?.nome ?? null })),

@@ -2,7 +2,6 @@ import "server-only";
 
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { boletoEstaAtivo, totalDevido } from "@/lib/dominio/boletos";
 import { filtroRecebimentosUnificados } from "@/lib/consultas/filtro-unificacao-nativa";
 import { filtroGovernanca } from "@/lib/governanca/filtros";
 
@@ -39,25 +38,6 @@ const incluirBoleto = {
 
 export type BoletoComRelacoes = Prisma.BoletoGetPayload<{
   include: typeof incluirBoleto;
-}>;
-
-const incluirRecebimentoParaBoleto = {
-  empreendimento: true,
-  contrato: { include: { unidade: true, locatario: true } },
-  boletos: {
-    select: {
-      id: true,
-      status: true,
-      nossoNumero: true,
-      contaBancariaId: true,
-      atualizadoEm: true,
-    },
-    orderBy: { criadoEm: "desc" as const },
-  },
-} satisfies Prisma.RecebimentoInclude;
-
-export type RecebimentoParaBoleto = Prisma.RecebimentoGetPayload<{
-  include: typeof incluirRecebimentoParaBoleto;
 }>;
 
 const incluirPagamentoConciliacao = {
@@ -154,40 +134,18 @@ export async function dadosPaginaBoletos(
   const competencia: Prisma.BoletoWhereInput = {
     AND: [{ recebimento: { mesLancamento: mes } }, ativos],
   };
-  const [listagem, recebimentos, contas, fechamento, statusAgrupados, totalAtencao] =
-    await Promise.all([
-      listarBoletosPriorizados(mes, filtro, ativos),
-      prisma.recebimento.findMany({
-        where: { AND: [{ mesLancamento: mes, recebido: null, origemAgregada: false }, await filtroRecebimentosUnificados()] },
-        include: incluirRecebimentoParaBoleto,
-        orderBy: [
-          { empreendimento: { nome: "asc" } },
-          { contrato: { unidade: { identificacao: "asc" } } },
-        ],
-      }),
-      prisma.contaBancaria.findMany({
-        where: { ativa: true, ...await filtroGovernanca(prisma, "CONTA") },
-        orderBy: [{ padrao: "desc" }, { apelido: "asc" }],
-      }),
-      prisma.fechamentoMensal.findUnique({
-        where: { mesLancamento: mes },
-        select: { id: true },
-      }),
-      prisma.boleto.groupBy({
-        by: ["status"],
-        where: competencia,
-        _count: { _all: true },
-      }),
-      prisma.boleto.count({
-        where: { AND: [competencia, criterioAtencao()] },
-      }),
-    ]);
+  const [listagem, statusAgrupados, totalAtencao] = await Promise.all([
+    listarBoletosPriorizados(mes, filtro, ativos),
+    prisma.boleto.groupBy({
+      by: ["status"],
+      where: competencia,
+      _count: { _all: true },
+    }),
+    prisma.boleto.count({
+      where: { AND: [competencia, criterioAtencao()] },
+    }),
+  ]);
 
-  const aEmitir = recebimentos.filter(
-    (recebimento) =>
-      totalDevido(recebimento) > 0 &&
-      !recebimento.boletos.some((boleto) => boletoEstaAtivo(boleto.status)),
-  );
   const porStatus = new Map(
     statusAgrupados.map((grupo) => [grupo.status, grupo._count._all]),
   );
@@ -201,10 +159,6 @@ export async function dadosPaginaBoletos(
   return {
     boletos: listagem.boletos,
     totalBoletosFiltro: listagem.total,
-    recebimentos,
-    aEmitir,
-    contas,
-    fechado: Boolean(fechamento),
     contagensFiltro: {
       todos: totalBoletos,
       abertos: contar(...STATUS_ABERTOS),
@@ -212,7 +166,6 @@ export async function dadosPaginaBoletos(
       pagos: contar("LIQUIDADO"),
     },
     kpis: {
-      aEmitir: aEmitir.length,
       emAberto: contar(...STATUS_ABERTOS),
       pagamentosReportados: contar("PAGAMENTO_REPORTADO"),
       liquidados: contar("LIQUIDADO"),
@@ -242,7 +195,7 @@ async function listarPagamentosPriorizados(ativos: Prisma.PagamentoRecebimentoWh
 export async function dadosPaginaConciliacao() {
   const boletosAtivos: Prisma.BoletoWhereInput = { ...await filtroGovernanca(prisma, "BOLETO"), recebimento: await filtroRecebimentosUnificados() };
   const pagamentosAtivos: Prisma.PagamentoRecebimentoWhereInput = {
-    recebimento: await filtroRecebimentosUnificados(), OR: [{ boletoId: null }, { boleto: boletosAtivos }],
+    origem: "SICOOB", recebimento: await filtroRecebimentosUnificados(), OR: [{ boletoId: null }, { boleto: boletosAtivos }],
   };
   const eventoPendente: Prisma.EventoBoletoWhereInput = {
     statusProcessamento: { in: ["PENDENTE", "ERRO"] },

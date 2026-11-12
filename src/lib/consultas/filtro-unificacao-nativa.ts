@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { cache } from "react";
 import { prisma } from "../db";
-import { operacaoNaRequisicao } from "./operacao-na-requisicao";
+import { lerOperacaoUnificada } from "../unificacao/servico";
 import { idsGovernadosInativos } from "../governanca/filtros";
 import { acessoAtual } from "../acesso/servidor";
 import { filtroCaixaDespesasRestritas } from "../despesas/sigilo-caixa";
@@ -24,7 +24,7 @@ const idsSuprimidos = cache(async (): Promise<{ recebimentos: string[]; caixa: s
   });
   if (!candidato) return { recebimentos: recebimentosGovernados, caixa: caixaInativo };
 
-  const { linhas, decisoes } = await operacaoNaRequisicao();
+  const { linhas, decisoes } = await lerOperacaoUnificada(prisma);
   const porChave = new Map(linhas.map(linha => [linha.chave, linha]));
   const recebimentos = new Set<string>(recebimentosGovernados);
   const caixa = new Set<string>(caixaInativo);

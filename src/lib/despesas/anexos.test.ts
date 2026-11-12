@@ -28,7 +28,8 @@ beforeEach(async () => {
     { id: "socio", nome: "Sócio sintético", usuario: "socio", perfil: "SOCIO", acessoGlobal: true, permissoesExtras: '["despesas.ver","despesas.editar"]' },
   ].map(u => ({ ...u, senhaHash: "nao-autenticavel" })) });
   await db.empreendimento.create({ data: { id: "e1", nome: "Prédio sintético" } });
-  await db.despesaDocumento.create({ data: { id: "nota", fornecedorNome: "Fornecedor sintético", numero: "NF-42-TESTE", emissao: "2026-10-07", competencia: "2026-10", total: 256000, criadoPorId: "admin", atualizadoPorId: "admin",
+  await db.tituloFinanceiroLegado.create({ data: { id: "legado", origem: "WIDESYS", escopo: "TITULO_PAGAR", legadoId: "legado", ultimoItemId: "item-legado", natureza: "PAGAR", competencia: "2026-10", situacaoNormalizada: "PENDENTE", statusImportacao: "STAGING", valorDevido: 256000, valorAberto: 256000, valorPago: 0, snapshot: "{}", snapshotHash: "captura-1", capturadoEm: new Date("2026-10-23T12:00:00Z") } });
+  await db.despesaDocumento.create({ data: { id: "nota", origemChave: "WIDESYS:PAGAR:legado", origemHash: "captura-1", fornecedorNome: "Fornecedor sintético", numero: "NF-42-TESTE", emissao: "2026-10-07", competencia: "2026-10", total: 256000, criadoPorId: "admin", atualizadoPorId: "admin",
     rateios: { create: [{ ordem: 0, empreendimentoId: "e1", descricao: "Manutenção elétrica", valor: 256000 }] },
   } });
 });
@@ -116,13 +117,21 @@ describe("arquivos privados de despesas", () => {
     expect(await db.despesaAnexo.count()).toBe(1);
   });
 
-  it.each([null, "WIDESYS:PAGAR:legado"])("nota excluída nega todos os anexos, inclusive overlay %s", async origemChave => {
-    await db.despesaDocumento.update({ where: { id: "nota" }, data: { origemChave } });
+  it("nota excluída nega todos os anexos", async () => {
     const anexo = await salvarAnexoDespesa(db, "nota", "admin", pdf());
-    await db.recursoGovernado.create({ data: { tipo: "TITULO", origemId: origemChave ?? "BRISA:PAGAR:nota", status: "EXCLUIDO", motivo: "Exclusão sintética", autorId: "admin" } });
+    await db.recursoGovernado.create({ data: { tipo: "TITULO", origemId: "WIDESYS:PAGAR:legado", status: "EXCLUIDO", motivo: "Exclusão sintética", autorId: "admin" } });
     await expect(listarAnexosDespesa(db, "nota", "admin")).rejects.toThrow("lixeira");
     await expect(lerAnexoDespesa(db, anexo.id, "admin")).rejects.toThrow("lixeira");
     await expect(salvarAnexoDespesa(db, "nota", "admin", pdf("novo"))).rejects.toThrow("lixeira");
+    expect(await db.despesaAnexo.count()).toBe(1);
+  });
+
+  it.each([null, "WIDESYS:PAGAR:ausente"])("anexo de despesa sem título Widesys ativo (%s) fica indisponível inclusive pelo ID", async origemChave => {
+    const anexo = await salvarAnexoDespesa(db, "nota", "admin", pdf());
+    await db.despesaDocumento.update({ where: { id: "nota" }, data: { origemChave } });
+    await expect(listarAnexosDespesa(db, "nota", "admin")).rejects.toThrow("Despesa não encontrada");
+    await expect(lerAnexoDespesa(db, anexo.id, "admin")).rejects.toThrow("Despesa não encontrada");
+    await expect(salvarAnexoDespesa(db, "nota", "admin", pdf("novo"))).rejects.toThrow("Despesa não encontrada");
     expect(await db.despesaAnexo.count()).toBe(1);
   });
 
@@ -132,6 +141,14 @@ describe("arquivos privados de despesas", () => {
     await expect(listarAnexosDespesa(db, "nota", "financeiro")).rejects.toThrow("restrit");
     await expect(lerAnexoDespesa(db, anexo.id, "financeiro")).rejects.toThrow("restrit");
     await expect(salvarAnexoDespesa(db, "nota", "financeiro", pdf("novo"))).rejects.toThrow("restrit");
+    await expect(lerAnexoDespesa(db, anexo.id, "admin")).resolves.toMatchObject({ id: anexo.id });
+  });
+
+  it("sigilo comprovado por vínculo antigo continua valendo no acesso direto", async () => {
+    const anexo = await salvarAnexoDespesa(db, "nota", "admin", pdf());
+    await db.despesaDocumento.create({ data: { id: "historica", fornecedorNome: "Fornecedor sintético", numero: "", emissao: "", competencia: "2026-10", total: 256000, criadoPorId: "admin", atualizadoPorId: "admin", restrita: true } });
+    await db.unificacaoRegistro.create({ data: { chave: "WIDESYS:PAGAR:legado", dominio: "PAGAR", origem: "WIDESYS", origemId: "legado", hashFonte: "antiga", status: "VINCULADO", destinoChave: "BRISA:PAGAR:historica" } });
+    await expect(lerAnexoDespesa(db, anexo.id, "financeiro")).rejects.toThrow("restrit");
     await expect(lerAnexoDespesa(db, anexo.id, "admin")).resolves.toMatchObject({ id: anexo.id });
   });
 });

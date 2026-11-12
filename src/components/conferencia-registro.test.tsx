@@ -56,50 +56,31 @@ describe("conferência dentro da lista financeira", () => {
     expect(JSON.stringify(campos)).not.toContain("SEGREDO");
   });
 
-  it("preserva filtros na busca, comparação, exclusão e retorno da decisão", async () => {
+  it("mantém os filtros na ação de exclusão e ignora a busca de comparações", async () => {
     const html = renderToStaticMarkup(await ConferenciaRegistro({ chave: "WIDESYS:PAGAR:t1", parametros: { buscarDestino: "fornecedor" }, contexto }));
-    expect(html).toContain('action="/financeiro/contas-a-pagar"');
-    expect(html).toContain('data-scroll="false"');
-    for (const [nome, valor] of Object.entries({ origem: "WIDESYS", mes: "2026-06", pagina: "3", q: "teste", estado: "PENDENTE", vencidos: "1", registro: "WIDESYS:PAGAR:t1" })) {
-      expect(html).toContain(`type="hidden" name="${nome}" value="${valor}"`);
-    }
-    expect(html).not.toContain('name="destino"');
-    expect(html).not.toContain('name="erro"');
-    const comparar = html.match(/<a\b[^>]*href="([^"]+)"[^>]*>Comparar lado a lado<\/a>/)?.[1].replaceAll("&amp;", "&");
-    const url = new URL(comparar!, "http://teste.local");
-    expect(url.pathname).toBe("/financeiro/contas-a-pagar");
-    expect(url.searchParams.get("pagina")).toBe("3");
-    expect(url.searchParams.get("registro")).toBe("WIDESYS:PAGAR:t1");
-    expect(url.searchParams.get("destino")).toBe("BRISA:PAGAR:t2");
-    expect(url.searchParams.get("buscarDestino")).toBe("fornecedor");
-    expect(url.searchParams.has("erro")).toBe(false);
-    expect(url.hash).toBe("#comparacao");
-    expect(html).toContain('name="retornoContexto"');
-    expect(html).toContain('data-inline-action="resolver"');
+    expect(mocks.detalhe).toHaveBeenCalledWith("WIDESYS:PAGAR:t1", "");
+    expect(html).toContain("mes=2026-06&amp;pagina=3");
     expect(html).toContain("acaoRegistro=excluir");
-    expect(html).not.toContain('href="/origem-separada"');
+    expect(html).not.toMatch(/Comparar lado a lado|buscarDestino|data-inline-action|retornoContexto|origem-separada/);
     expect(html).not.toContain('href="/unificacao');
     expect(mocks.resolver).not.toHaveBeenCalled();
     expect(mocks.resolverNaTela).not.toHaveBeenCalled();
   });
 
-  it("mostra comparação responsiva, evidência de planilha e baixas sem sair da janela nem revelar comissões", async () => {
+  it("mostra as baixas do Widesys e oculta valores e metadados de outras fontes", async () => {
     const reservado = { taxa: { rotulo: "Taxa", valor: "SEGREDO_TAXA" }, administracao: { rotulo: "Administração", valor: "SEGREDO_ADMIN" }, composicao: { rotulo: "Composição", valor: "SEGREDO_COMPOSICAO" } };
     const principal = registro({ campos: { ...registro().campos, ...reservado } });
     const candidato = registro({ chave: "BRISA:PAGAR:t2", titulo: "Principal de teste", estado: "ATIVO", campos: { ...registro().campos, ...reservado } });
-    const planilha = registro({ chave: "BRISA:PAGAR:planilha", proveniencia: { arquivo: "fixture.xlsx", aba: "Caixa distinto", linha: 12 }, campos: reservado });
+    const planilha = registro({ chave: "BRISA:PAGAR:planilha", origem: "BRISA", proveniencia: { arquivo: "fixture.xlsx", aba: "Caixa distinto", linha: 12 }, campos: reservado });
     const baixa = registro({ chave: "WIDESYS:BAIXA_PAGAR:b1", dominio: "BAIXA_PAGAR", data: "2026-06-10", valor: 10000, campos: { documento: { rotulo: "Documento", valor: "RECIBO-TESTE" }, ...reservado } });
-    mocks.detalhe.mockResolvedValue({ registro: principal, candidatos: [candidato], fontes: [principal, planilha], historico: [], baixas: [baixa] });
+    const baixaArquivada = registro({ chave: "BRISA:BAIXA_PAGAR:b2", origem: "BRISA", dominio: "BAIXA_PAGAR", descricao: "BAIXA-ARQUIVADA" });
+    mocks.detalhe.mockResolvedValue({ registro: principal, candidatos: [candidato], fontes: [principal, planilha], historico: [], baixas: [baixa, baixaArquivada] });
     const html = renderToStaticMarkup(await ConferenciaRegistro({ chave: principal.chave, parametros: { destino: candidato.chave }, contexto }));
-    expect(html).toContain('id="comparacao"');
-    expect(html).toContain('name="destinoChave" value="BRISA:PAGAR:t2"');
     expect(html).toContain("sm:grid-cols-2");
     expect(html).not.toContain("min-w-[230px]");
-    expect(html).toContain("fixture.xlsx");
-    expect(html).toContain("Caixa distinto");
-    expect(html).toContain("Linha: 12");
+    expect(html).toContain("Baixas registradas no Widesys");
     expect(html).toContain("RECIBO-TESTE");
-    expect(html).toContain("Somente consulta");
+    expect(html).not.toMatch(/comparacao|destinoChave|fixture\.xlsx|Caixa distinto|BAIXA-ARQUIVADA/);
     expect(html).not.toContain("WIDESYS%3ABAIXA_PAGAR%3Ab1");
     expect(html).not.toContain("SEGREDO_");
   });
@@ -108,7 +89,7 @@ describe("conferência dentro da lista financeira", () => {
     const principal = registro({ qualidade: "QUARENTENA", estado: "QUARENTENA" });
     mocks.detalhe.mockResolvedValue({ registro: principal, candidatos: [], fontes: [principal], historico: [], baixas: [] });
     const html = renderToStaticMarkup(await ConferenciaRegistro({ chave: principal.chave, contexto }));
-    expect(html).toContain("inconsistência ou ausência na origem");
+    expect(html).toContain("Confira este lançamento no Widesys");
     expect(html).not.toContain('name="justificativa"');
     expect(html).toContain("Excluir da plataforma");
   });
@@ -135,12 +116,27 @@ describe("conferência dentro da lista financeira", () => {
     await expect(ConferenciaRegistro({ chave: "WIDESYS:PARAMETRO:p1", contexto })).rejects.toThrow("NOT_FOUND");
   });
 
-  it("mantém a página avulsa e seus destinos tradicionais", async () => {
+  it("mantém o detalhe avulso vinculado à lista do próprio domínio", async () => {
     const html = renderToStaticMarkup(await ConferenciaRegistro({ chave: "WIDESYS:PAGAR:t1" }));
-    expect(html).toContain('href="/unificacao"');
-    expect(html).toContain('href="/origem-separada"');
-    expect(html).toContain('action="/unificacao/WIDESYS%3APAGAR%3At1"');
-    expect(html).not.toContain('name="retornoContexto"');
-    expect(html).not.toContain('data-inline-action="resolver"');
+    expect(html).toContain('href="/financeiro/contas-a-pagar"');
+    expect(html).toContain("Voltar à lista");
+    expect(html).not.toMatch(/origem-separada|retornoContexto|data-inline-action/);
+  });
+
+  it("bloqueia detalhes financeiros arquivados que não vieram do Widesys", async () => {
+    const arquivado = registro({ chave: "BRISA:PAGAR:t1", origem: "BRISA" });
+    mocks.detalhe.mockResolvedValue({ registro: arquivado, candidatos: [], fontes: [], historico: [], baixas: [] });
+    await expect(ConferenciaRegistro({ chave: arquivado.chave })).rejects.toThrow("NOT_FOUND");
+  });
+
+  it("preserva os dados cadastrais no detalhe e esconde valores de contratos antigos", async () => {
+    const contrato = registro({ chave: "BRISA:CONTRATO:t1", origem: "BRISA", dominio: "CONTRATO", campos: {
+      pessoa: { rotulo: "Pessoa", valor: "Pessoa permitida" },
+      aluguel: { rotulo: "Aluguel antigo", valor: 11223344, tipo: "dinheiro" },
+    } });
+    mocks.detalhe.mockResolvedValue({ registro: contrato, candidatos: [], fontes: [contrato], historico: [], baixas: [] });
+    const html = renderToStaticMarkup(await ConferenciaRegistro({ chave: contrato.chave }));
+    expect(html).toContain("Pessoa permitida");
+    expect(html).not.toContain("Aluguel antigo");
   });
 });

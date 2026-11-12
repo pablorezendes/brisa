@@ -14,12 +14,7 @@ import {
   btnSecundario,
   inputBase,
 } from "@/components/ui";
-import {
-  camposPagadorPendentes,
-  statusVisualBoleto,
-  totalDevido,
-  vencimentoDoRecebimento,
-} from "@/lib/dominio/boletos";
+import { statusVisualBoleto } from "@/lib/dominio/boletos";
 import { formatarCompetencia } from "@/lib/dominio/normalizacao";
 import {
   dadosPaginaBoletos,
@@ -27,12 +22,10 @@ import {
 } from "@/lib/consultas/boletos";
 import {
   formatarDataBR,
-  mesPadraoRecebimentos,
   RE_MES,
 } from "@/lib/consultas/locacao";
 import { obterEstadoConfiguracaoSicoob } from "@/lib/integracoes/sicoob";
 import {
-  emitirBoleto,
   liberarEmissaoInconclusiva,
   sincronizarBoleto,
   sincronizarTodosBoletos,
@@ -58,21 +51,6 @@ function hojeNoBrasil(): string {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
-}
-
-function adicionarDias(data: string, dias: number): string {
-  const [ano, mes, dia] = data.split("-").map(Number);
-  const valor = new Date(Date.UTC(ano, mes - 1, dia + dias));
-  return valor.toISOString().slice(0, 10);
-}
-
-function vencimentoInicial(
-  competencia: string,
-  diaVencimento: number | null,
-): string {
-  const calculado = vencimentoDoRecebimento(competencia, diaVencimento);
-  const hoje = hojeNoBrasil();
-  return calculado && calculado >= hoje ? calculado : adicionarDias(hoje, 5);
 }
 
 function dataHora(data: Date | null): string {
@@ -103,39 +81,22 @@ export default async function PaginaBoletos({
   await exigirPaginaAcesso("/financeiro/boletos");
   const acesso = await acessoAtual();
   const perfisBanco = ["ADMINISTRADOR", "FINANCEIRO", "OPERADOR"];
-  const permiteEmitir = podeExibirAcao(acesso, { permissao: "boletos.emitir", perfis: perfisBanco });
   const permiteSincronizar = podeExibirAcao(acesso, { permissao: "boletos.sincronizar", perfis: perfisBanco });
   const permiteConciliar = podeExibirAcao(acesso, { permissao: "pagamentos.conciliar", perfis: ["ADMINISTRADOR", "FINANCEIRO"] });
-  const permiteEditarCadastro = podeExibirAcao(acesso, { permissao: ["cadastros.editar", "cadastros.sensiveis"] });
   const permiteConfigurar = podeExibirAcao(acesso, { permissao: ["integracoes.gerenciar", "boletos.configurar", "contas.editar"], perfis: ["ADMINISTRADOR"] });
   const sp = await searchParams;
   const mes = sp.mes && RE_MES.test(sp.mes)
     ? sp.mes
-    : ((await mesPadraoRecebimentos()) ?? hojeNoBrasil().slice(0, 7));
+    : hojeNoBrasil().slice(0, 7);
   const filtro = FILTROS.some((item) => item.valor === sp.filtro)
     ? (sp.filtro as Filtro)
     : "todos";
   const dados = await dadosPaginaBoletos(mes, filtro);
   const configuracao = obterEstadoConfiguracaoSicoob();
-  const ambienteServidor = configuracao.ambiente === "producao" ? "PRODUCAO" : "SANDBOX";
-  const contasDisponiveis = dados.contas.filter(
-    (conta) =>
-      conta.integracaoHabilitada &&
-      conta.boletosHabilitados &&
-      conta.ambiente === ambienteServidor &&
-      Boolean(
-        conta.numeroCliente &&
-          conta.numeroContaCorrenteApi &&
-          conta.codigoModalidade &&
-          conta.codigoEspecieDocumento,
-      ),
-  );
-  const contaPadrao = contasDisponiveis.find((conta) => conta.padrao) ?? contasDisponiveis[0];
   const boletos = dados.boletos;
   const selecionado = sp.boleto
     ? dados.boletos.find((boleto) => boleto.id === sp.boleto)
     : undefined;
-  const emissaoPronta = configuracao.configurado && contasDisponiveis.length > 0;
   const selecionadoLiberavel = Boolean(
     selecionado &&
       !selecionado.nossoNumero &&
@@ -146,7 +107,7 @@ export default async function PaginaBoletos({
     <div>
       <PageHeader
         titulo="Boletos Sicoob"
-        descricao={`Emissão, retorno bancário e conciliação dos aluguéis de ${formatarCompetencia(mes)} sem misturar aviso de pagamento com liquidação.`}
+        descricao={`Acompanhamento dos boletos bancários de ${formatarCompetencia(mes)}.`}
         acoes={
           <>
             <Link href="/financeiro/contas-bancarias" className={btnSecundario}>
@@ -200,124 +161,24 @@ export default async function PaginaBoletos({
         </div>
       </Card>
 
-      {!emissaoPronta ? (
-        <Card className="mb-5 p-4" nivel="atencao">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-[13px] font-bold text-tinta">Emissão protegida até concluir a configuração</h2>
-              <p className="mt-1 text-[11px] leading-relaxed text-tinta-suave">
-                {configuracao.pendencias.length
-                  ? `Servidor: ${configuracao.pendencias.join(", ")}. `
-                  : "O servidor está preparado. "}
-                Falta habilitar ao menos uma conta com cliente Sisbr, conta do convênio, modalidade e espécie documental confirmados.
-              </p>
-            </div>
-            {permiteConfigurar && <Link href="/integracoes/sicoob" className={btnPrimario}>Concluir configuração</Link>}
+      <Card className="mb-5 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-sm font-bold text-tinta">Cobranças novas no Widesys</h2>
+            <p className="mt-1 text-xs leading-relaxed text-tinta-suave">
+              Emita novos boletos no Widesys. Use esta tela para acompanhar os boletos já registrados no Brisa.
+            </p>
           </div>
-        </Card>
-      ) : null}
+          {permiteConfigurar && <Link href="/integracoes/sicoob" className={btnSecundario}>Configuração bancária</Link>}
+        </div>
+      </Card>
 
-      <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
-        <Kpi rotulo="A emitir" valor={dados.kpis.aEmitir} nivel={dados.kpis.aEmitir ? "atencao" : "otimo"} selo={dados.kpis.aEmitir ? "fila" : "em dia"} ajuda="Lançamentos pendentes que ainda não possuem boleto ativo." />
+      <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi rotulo="Em aberto" valor={dados.kpis.emAberto} nivel="info" ajuda="Boletos registrados e ainda não liquidados." />
         <Kpi rotulo="Pagamento informado" valor={dados.kpis.pagamentosReportados} nivel={dados.kpis.pagamentosReportados ? "atencao" : "neutro"} ajuda="Avisos operacionais recebidos pelo webhook; ainda não são baixa definitiva." />
         <Kpi rotulo="Liquidados" valor={dados.kpis.liquidados} nivel={dados.kpis.liquidados ? "otimo" : "neutro"} ajuda="Pagamentos confirmados pelo arquivo de movimentações tipo 5 (LIQUI) do Sicoob." />
         <Kpi rotulo="Com problema" valor={dados.kpis.falhas} nivel={dados.kpis.falhas ? "critico" : "otimo"} selo={dados.kpis.falhas ? "agir" : "sem falhas"} ajuda="Emissões com erro ou resultado desconhecido que não podem ser repetidas às cegas." />
       </div>
-
-      {(filtro === "todos" || filtro === "atencao") ? (
-        <Card className="mb-5">
-          <div className="flex flex-col gap-2 border-b border-contorno px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-[15px] font-bold text-tinta">Fila para emissão</h2>
-              <p className="mt-0.5 text-[10px] text-tinta-suave">Cada linha é validada antes de qualquer chamada externa.</p>
-            </div>
-            <Selo nivel={dados.fechado ? "critico" : dados.aEmitir.length ? "atencao" : "otimo"}>
-              {dados.fechado ? "mês fechado" : `${dados.aEmitir.length} aguardando`}
-            </Selo>
-          </div>
-          {dados.aEmitir.length === 0 ? (
-            <div className="px-5 py-9 text-center text-[12px] text-tinta-suave">Nenhum lançamento elegível aguardando boleto neste mês.</div>
-          ) : (
-            <div className="tabela-scroll overflow-x-auto" role="region" aria-label="Tabela com rolagem horizontal" tabIndex={0}>
-              <table className="tabela tabela--acoes">
-                <thead>
-                  <tr>
-                    <th>Pagador e imóvel</th>
-                    <th>Dados do pagador</th>
-                    <th className="text-right">Valor</th>
-                    <th>Vencimento</th>
-                    <th>Conta emissora</th>
-                    <th className="text-right">Ação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dados.aEmitir.map((recebimento) => {
-                    const locatario = recebimento.contrato.locatario;
-                    const faltantes = locatario ? camposPagadorPendentes(locatario) : [];
-                    const podeEmitir = Boolean(
-                      permiteEmitir && locatario && faltantes.length === 0 && emissaoPronta && !dados.fechado,
-                    );
-                    return (
-                      <tr key={recebimento.id}>
-                        <td>
-                          <div className="font-semibold text-tinta">{locatario?.nome ?? "Sem pagador"}</div>
-                          <div className="mt-0.5 text-[10px] text-tinta-suave">{recebimento.empreendimento.nome} · {recebimento.contrato.unidade.identificacao}</div>
-                        </td>
-                        <td>
-                          {!locatario ? (
-                            <Selo nivel="critico">sem vínculo</Selo>
-                          ) : faltantes.length ? (
-                            <div>
-                              <Selo nivel="atencao">{faltantes.length} pendência(s)</Selo>
-                              <div className="mt-1 text-[9px] text-tinta-suave">{faltantes.map((item) => item.rotulo).join(", ")}</div>
-                              {permiteEditarCadastro && <Link href={`/cadastros/locatarios?editar=${locatario.id}`} className="mt-1 inline-block text-[10px] font-semibold text-oliva-escura hover:underline">Completar cadastro</Link>}
-                            </div>
-                          ) : (
-                            <Selo nivel="otimo">validado</Selo>
-                          )}
-                        </td>
-                        <td className="text-right"><Sigilo><Dinheiro centavos={totalDevido(recebimento)} destaque /></Sigilo></td>
-                        <td>
-                          {podeEmitir ? (
-                              <label className="block min-w-36 text-[9px] font-bold uppercase tracking-[0.08em] text-tinta-suave">
-                                Vencimento
-                                <input form={`emitir-${recebimento.id}`} type="date" name="dataVencimento" min={hojeNoBrasil()} required defaultValue={vencimentoInicial(recebimento.competencia, recebimento.contrato.diaVencimento)} className={`${inputBase} mt-1 block w-full py-1.5`} />
-                              </label>
-                          ) : (
-                            <span className="text-[10px] text-tinta-suave">{permiteEmitir ? "Corrija as pendências para liberar a emissão." : "Somente consulta"}</span>
-                          )}
-                        </td>
-                        <td>
-                          {podeEmitir ? (
-                              <label className="block min-w-48 text-[9px] font-bold uppercase tracking-[0.08em] text-tinta-suave">
-                                Conta
-                                <select form={`emitir-${recebimento.id}`} name="contaBancariaId" required defaultValue={contaPadrao?.id} className={`${inputBase} mt-1 block w-full py-1.5`}>
-                                  {contasDisponiveis.map((conta) => <option key={conta.id} value={conta.id}>{conta.apelido} · {conta.numero}{conta.padrao ? " (padrão)" : ""}</option>)}
-                                </select>
-                              </label>
-                          ) : "—"}
-                        </td>
-                        <td className="text-right">
-                          <div className="flex flex-col items-end gap-2">{podeEmitir ? (
-                            <form id={`emitir-${recebimento.id}`} action={emitirBoleto}>
-                              <input type="hidden" name="recebimentoId" value={recebimento.id} />
-                              <input type="hidden" name="mes" value={mes} />
-                              <button type="submit" className={btnPrimario}>Emitir boleto</button>
-                            </form>
-                          ) : null}
-                          <ExcluirRegistroLink tipo="TITULO" origemId={`BRISA:RECEBER:${recebimento.id}`} />
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-      ) : null}
 
       <Card>
         <div className="flex flex-col gap-3 border-b border-contorno px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -406,7 +267,7 @@ export default async function PaginaBoletos({
         )}
       </Card>
 
-      <p className="mt-3 text-xs leading-relaxed text-tinta-suave">Excluir da plataforma preserva o histórico e não cancela a cobrança no banco. Na fila de emissão, a exclusão é do lançamento financeiro; nos títulos bancários, é do boleto local.</p>
+      <p className="mt-3 text-xs leading-relaxed text-tinta-suave">O cancelamento de um boleto deve ser feito no banco. A exclusão nesta tela arquiva o registro no Brisa.</p>
 
       {selecionado ? (
         <Card className="mt-5 p-5">
@@ -442,7 +303,7 @@ export default async function PaginaBoletos({
                   Informe o nosso número. O Brisa consulta a API e só vincula se conta, modalidade, seu número e valor forem coerentes.
                 </p>
                 <div className="mt-3 flex gap-2">
-                  <input name="nossoNumero" inputMode="numeric" pattern="[0-9]{1,30}" maxLength={30} required placeholder="Nosso número" className={`${inputBase} min-w-0 flex-1`} />
+                  <input name="nossoNumero" aria-label="Nosso número" inputMode="numeric" pattern="[0-9]{1,30}" maxLength={30} required placeholder="Nosso número" className={`${inputBase} min-w-0 flex-1`} />
                   <button type="submit" className={btnPrimario}>Conferir e vincular</button>
                 </div>
               </form>
@@ -451,7 +312,7 @@ export default async function PaginaBoletos({
                 <input type="hidden" name="mes" value={mes} />
               <div className="text-[12px] font-bold text-tinta">Recuperar emissão inconclusiva</div>
               <p className="mt-1 max-w-3xl text-[10px] leading-relaxed text-tinta-suave">
-                Use somente depois de procurar este título diretamente no Sicoob. A liberação fica registrada na auditoria e permite uma nova emissão.
+                Use somente depois de procurar este título diretamente no Sicoob. A liberação encerra a tentativa anterior e fica registrada na auditoria.
               </p>
               <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <label className="flex items-start gap-2 text-[10px] font-semibold text-tinta">
@@ -459,7 +320,7 @@ export default async function PaginaBoletos({
                   Conferi no Sicoob e confirmo que este título não existe.
                 </label>
                 <button type="submit" className={`${btnSecundario} border-erro/40 text-erro hover:bg-erro/10`}>
-                  Liberar para nova emissão
+                  Encerrar tentativa
                 </button>
               </div>
               </form>

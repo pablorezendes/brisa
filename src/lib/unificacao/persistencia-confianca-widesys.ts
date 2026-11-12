@@ -5,12 +5,14 @@ import { criarIndiceCandidatos } from "./candidatos-indice";
 import { hashFonteCorresponde } from "./hashes";
 import { candidatosPara } from "./reconciliacao";
 import { planejarConfiancaWidesys } from "./confianca-widesys";
+import { dominioFinanceiroUnificacao } from "./projecao-widesys";
 
 /** Conferência da origem autorizada pelo administrador; nunca altera fontes,
  * pagamentos, planilhas, exclusões ou vínculos previamente decididos. */
-export async function conferirOrigemWidesys(db: PrismaClient, aplicar = false) {
+export async function conferirOrigemWidesys(db: PrismaClient, aplicar = false, somenteCadastros = false) {
   return db.$transaction(async tx => {
-    const fontes = filtrarFontesGovernadas(await carregarFontesUnificacao(tx), await tx.recursoGovernado.findMany({ select: { tipo: true, origemId: true, status: true } }));
+    const governadas = filtrarFontesGovernadas(await carregarFontesUnificacao(tx), await tx.recursoGovernado.findMany({ select: { tipo: true, origemId: true, status: true } }));
+    const fontes = somenteCadastros ? governadas.filter(f => !dominioFinanceiroUnificacao(f.dominio)) : governadas;
     const existentes = await tx.unificacaoRegistro.findMany();
     const anteriores = new Map(existentes.map(d => [d.chave, d]));
     const porChave = new Map(fontes.map(f => [f.chave, f]));
@@ -32,7 +34,7 @@ export async function conferirOrigemWidesys(db: PrismaClient, aplicar = false) {
         update: { ...dados, versao: { increment: 1 } } });
       await tx.unificacaoDecisao.create({ data: { registroChave: f.chave, acao: "CONFERIR_ORIGEM_WIDESYS",
         estadoAnterior: anterior?.status ?? "NAO_ANALISADO", estadoNovo: dados.status, hashFonte: f.hash,
-        usuarioId: "SISTEMA:WIDESYS_CONFERIDO", justificativa: "Origem Widesys confirmada pelo administrador. Identificadores distintos são registros distintos. Cruzamentos com Brisa e planilhas permanecem sem soma adicional até conciliação." } });
+        usuarioId: "SISTEMA:WIDESYS_CONFERIDO", justificativa: somenteCadastros ? "Origem cadastral Widesys confirmada pelo administrador." : "Origem Widesys confirmada pelo administrador. Identificadores distintos são registros distintos. Cruzamentos com Brisa e planilhas permanecem sem soma adicional até conciliação." } });
     }
     return resumo;
   }, { timeout: 120000, maxWait: 15000 });

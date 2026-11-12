@@ -7,7 +7,6 @@ import {
   Ajuda,
   PageHeader,
   Card,
-  Dinheiro,
   Badge,
   Kpi,
   btnPrimario,
@@ -33,7 +32,7 @@ export default async function PaginaContratos({
   const podeCriar = pode(acesso, "contratos.editar") && pode(acesso, "cadastros.sensiveis");
   const sp = await searchParams;
   if (sp.visao !== "locacao" && !sp.todos && !sp.erro && await podeAcessarUnificacao()) {
-    return <OperacaoUnificada dominio="CONTRATO" titulo="Contratos" base="/contratos" parametros={sp} nativo={{ href: "/contratos?visao=locacao", rotulo: "Administrar locações" }} />;
+    return <OperacaoUnificada dominio="CONTRATO" titulo="Contratos" base="/contratos" parametros={sp} nativo={{ href: "/contratos?visao=locacao", rotulo: "Administrar cadastros do Brisa" }} />;
   }
   const incluirEncerrados = sp.todos === "1";
   const contratos = await contratosParaLista(incluirEncerrados);
@@ -46,10 +45,6 @@ export default async function PaginaContratos({
 
   const ativos = contratos.filter((c) => c.status === "ativo");
   const desocupados = ativos.filter((c) => c.locatarioId === null);
-  const totalContratado = ativos.reduce(
-    (s, c) => s + c.valorBase + c.iptu + c.condominio,
-    0
-  );
 
   // Agrupa por empreendimento (consulta já vem ordenada por nome)
   const grupos = new Map<string, ContratoComRelacoes[]>();
@@ -64,7 +59,7 @@ export default async function PaginaContratos({
     <div>
       <PageHeader
         titulo="Contratos"
-        descricao="Rent roll por empreendimento — valores contratados em vigor"
+        descricao="Cadastro de locações do Brisa por empreendimento."
         acoes={
           <>
             <Link href="/contratos" className={btnSecundario}>Visão unificada</Link>
@@ -110,11 +105,11 @@ export default async function PaginaContratos({
         </Card>
       ) : null}
 
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Kpi
           rotulo="Contratos ativos"
           valor={ativos.length}
-          ajuda="Contratos com status ativo — geram cobrança todo mês pelo botão Gerar devidos, em Recebimentos. Contratos em acordo ou encerrados ficam de fora desta conta."
+          ajuda="Contratos cadastrados no Brisa com status ativo."
         />
         <Kpi
           rotulo="Unidades desocupadas"
@@ -129,24 +124,9 @@ export default async function PaginaContratos({
           }
           ajuda="Unidades com contrato ativo mas sem locatário — não estão rendendo. Quando alugar, edite o contrato e vincule o novo locatário."
         />
-        <Kpi
-          rotulo="Total contratado / mês"
-          valor={<Dinheiro centavos={totalContratado} destaque />}
-          detalhe="valor + IPTU + condomínio dos ativos"
-          ajuda="Quanto entraria por mês se todos os ativos pagassem em dia: aluguel + IPTU + condomínio. É o teto teórico — o realizado aparece em Recebimentos."
-        />
       </div>
 
       {Array.from(grupos.entries()).map(([nomeEmpreendimento, lista]) => {
-        const subtotais = lista.reduce(
-          (t, c) => {
-            t.valor += c.valorBase;
-            t.iptu += c.iptu;
-            t.cond += c.condominio;
-            return t;
-          },
-          { valor: 0, iptu: 0, cond: 0 }
-        );
         return (
           <Card key={nomeEmpreendimento} className="mb-4">
             <div className="flex items-baseline justify-between px-4 pb-1 pt-3">
@@ -164,22 +144,6 @@ export default async function PaginaContratos({
                     <th>Localização</th>
                     <th>Locatário</th>
                     <th style={{ textAlign: "right" }}>
-                      Valor{" "}
-                      <Ajuda dica="Aluguel-base combinado no contrato, sem IPTU nem condomínio." />
-                    </th>
-                    <th style={{ textAlign: "right" }}>
-                      IPTU{" "}
-                      <Ajuda dica="Parcela mensal de IPTU cobrada junto com o aluguel e incluída no total contratado." />
-                    </th>
-                    <th style={{ textAlign: "right" }}>
-                      Cond.{" "}
-                      <Ajuda dica="Condomínio cobrado junto com o aluguel e incluído no total contratado." />
-                    </th>
-                    <th style={{ textAlign: "right" }}>
-                      Total contratado{" "}
-                      <Ajuda dica="Valor + IPTU + condomínio: o boleto cheio do locatário. É este total que vira o devido do mês em Recebimentos." />
-                    </th>
-                    <th style={{ textAlign: "right" }}>
                       Dia venc.{" "}
                       <Ajuda dica="Dia do mês em que o aluguel vence. Depois dessa data, a cobrança pendente conta dias de atraso nos painéis." />
                     </th>
@@ -189,7 +153,7 @@ export default async function PaginaContratos({
                     </th>
                     <th>
                       Status{" "}
-                      <Ajuda dica="Ativo = gera cobrança todo mês; Acordo = renegociação em curso (lançamentos manuais); Encerrado = não gera mais nada." />
+                      <Ajuda dica="Situação do cadastro da locação no Brisa." />
                     </th>
                     <th>Ações</th>
                   </tr>
@@ -204,15 +168,6 @@ export default async function PaginaContratos({
                         ) : (
                           <Badge cor="slate">Desocupado</Badge>
                         )}
-                      </td>
-                      <td className="text-right"><Dinheiro centavos={c.valorBase} /></td>
-                      <td className="text-right"><Dinheiro centavos={c.iptu} /></td>
-                      <td className="text-right"><Dinheiro centavos={c.condominio} /></td>
-                      <td className="text-right">
-                        <Dinheiro
-                          centavos={c.valorBase + c.iptu + c.condominio}
-                          destaque
-                        />
                       </td>
                       <td className="text-right">{c.diaVencimento ?? "—"}</td>
                       <td>
@@ -234,21 +189,6 @@ export default async function PaginaContratos({
                     </tr>
                   ))}
                 </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan={2}>Subtotal</td>
-                    <td className="text-right"><Dinheiro centavos={subtotais.valor} /></td>
-                    <td className="text-right"><Dinheiro centavos={subtotais.iptu} /></td>
-                    <td className="text-right"><Dinheiro centavos={subtotais.cond} /></td>
-                    <td className="text-right">
-                      <Dinheiro
-                        centavos={subtotais.valor + subtotais.iptu + subtotais.cond}
-                        destaque
-                      />
-                    </td>
-                    <td colSpan={4}></td>
-                  </tr>
-                </tfoot>
               </table>
             </div>
           </Card>

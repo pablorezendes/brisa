@@ -16,7 +16,7 @@ type ItemMenu = {
   perfis?: readonly string[];
   aliases?: readonly string[];
   exceto?: readonly string[];
-  grupo?: "banco" | "importacoes";
+  grupo?: "banco";
 };
 
 type ModuloMenu = {
@@ -66,7 +66,6 @@ const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
         icone: "financeiro",
         itens: [
           { tipo: "link", href: "/financeiro", rotulo: "Resumo financeiro", correspondencia: "exata" },
-          { tipo: "link", href: "/financeiro/dados", rotulo: "Conferir dados", icone: "conciliacao", perfis: ["ADMINISTRADOR", "FINANCEIRO"] },
           { tipo: "link", href: "/recebimentos", rotulo: "Contas a receber", icone: "recebimentos", aliases: ["/financeiro/contas-a-receber"] },
           { tipo: "link", href: "/financeiro/contas-a-pagar", rotulo: "Contas a pagar", icone: "financeiro", perfis: ["ADMINISTRADOR", "FINANCEIRO"] },
           { tipo: "link", href: "/caixa", rotulo: "Entradas e saídas", icone: "caixa", aliases: ["/financeiro/movimentacoes"] },
@@ -76,8 +75,6 @@ const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
           { tipo: "link", href: "/financeiro/conciliacao", rotulo: "Conferir pagamentos", icone: "conciliacao", grupo: "banco" },
           { tipo: "link", href: "/financeiro/contas-bancarias", rotulo: "Contas bancárias", icone: "contas-bancarias", grupo: "banco" },
           { tipo: "link", href: "/financeiro/notas-fiscais", rotulo: "Notas de serviço", icone: "notas-fiscais", perfis: ["ADMINISTRADOR"], grupo: "banco", exceto: ["/financeiro/notas-fiscais/configuracao"] },
-          { tipo: "link", href: "/financeiro/importacoes", rotulo: "Planilhas importadas", icone: "historico", perfis: ["ADMINISTRADOR"], grupo: "importacoes" },
-          { tipo: "link", href: "/unificacao", rotulo: "Todos os registros", icone: "integracao", perfis: ["ADMINISTRADOR", "FINANCEIRO"], grupo: "importacoes" },
         ],
       },
       {
@@ -88,7 +85,7 @@ const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
         itens: [
           { tipo: "link", href: "/integracoes", rotulo: "Central de integrações", correspondencia: "exata", perfis: ["ADMINISTRADOR"] },
           { tipo: "link", href: "/integracoes/sicoob", rotulo: "Sicoob", icone: "contas-bancarias", perfis: ["ADMINISTRADOR"] },
-          { tipo: "link", href: "/financeiro/migracao-widesys", rotulo: "Capturas do Widesys", icone: "historico", perfis: ["ADMINISTRADOR", "FINANCEIRO"] },
+          { tipo: "link", href: "/financeiro/migracao-widesys", rotulo: "Capturas do Widesys", icone: "historico", perfis: ["ADMINISTRADOR", "FINANCEIRO"], aliases: ["/financeiro/dados"] },
           { tipo: "link", href: "/financeiro/automacoes", rotulo: "E-mail e WhatsApp", icone: "mensagens", perfis: ["ADMINISTRADOR"] },
           { tipo: "link", href: "/financeiro/notas-fiscais/configuracao", rotulo: "Configuração NFS-e", icone: "notas-fiscais", perfis: ["ADMINISTRADOR"] },
         ],
@@ -100,7 +97,6 @@ const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
         icone: "temporada",
         itens: [
           { tipo: "link", href: "/temporada", rotulo: "Operação mensal", icone: "calendario", correspondencia: "exata" },
-          { tipo: "link", href: "/temporada/historico", rotulo: "Histórico", icone: "historico" },
         ],
       },
       {
@@ -111,10 +107,6 @@ const MENU: { titulo: string; itens: EntradaMenu[] }[] = [
         itens: [
           { tipo: "link", href: "/relatorios", rotulo: "Central de relatórios", icone: "relatorios", correspondencia: "exata" },
           { tipo: "link", href: "/relatorios/inadimplencia", rotulo: "Inadimplência", icone: "cobranca" },
-          { tipo: "link", href: "/relatorios/resultado", rotulo: "Resultado por unidade", icone: "performance" },
-          { tipo: "link", href: "/paineis/empreendimentos", rotulo: "Performance por imóvel", icone: "empreendimentos" },
-          { tipo: "link", href: "/paineis/caixa", rotulo: "Análise de caixa", icone: "analitico" },
-          { tipo: "link", href: "/paineis/temporada", rotulo: "Temporada anual", icone: "calendario" },
         ],
       },
     ],
@@ -227,7 +219,6 @@ function ModuloNav({
   const submenuVisivel = expandido && !compacto;
   const grupos = [
     { id: "banco", rotulo: "Banco e serviços" },
-    { id: "importacoes", rotulo: "Importações e histórico" },
   ].map((grupo) => ({ ...grupo, itens: modulo.itens.filter((item) => item.grupo === grupo.id) }))
     .filter((grupo) => grupo.itens.length > 0);
 

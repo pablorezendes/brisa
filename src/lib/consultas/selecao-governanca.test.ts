@@ -12,10 +12,10 @@ vi.mock("../db", () => ({ prisma: { $transaction: mocks.transaction } }));
 import { buscarFinanceirosGovernanca, financeiroSelecionadoGovernanca, filtrosSelecaoGovernanca } from "./selecao-governanca";
 
 function fonte(id: string, patch: Partial<FonteUnificacao> = {}): FonteUnificacao {
-  const origem = patch.origem ?? "BRISA";
-  const dominio = patch.dominio ?? "MOVIMENTO";
+  const origem = patch.origem ?? "WIDESYS";
+  const dominio = patch.dominio ?? "RECEBER";
   return { chave: `${origem}:${dominio}:${id}`, origemId: id, origem, dominio, titulo: `Lançamento ${id}`, descricao: "Conta de energia",
-    href: `/caixa/${id}/editar`, hash: `hash-${id}`, qualidade: "OK", motivos: [], campos: {}, nomeNorm: `LANCAMENTO ${id}`, data: "2026-01-10", competencia: "2026-01", natureza: "SAIDA", valor: 1000, ...patch };
+    href: null, hash: `hash-${id}`, qualidade: "OK", motivos: [], campos: {}, nomeNorm: `LANCAMENTO ${id}`, data: "2026-01-10", competencia: "2026-01", natureza: "SAIDA", valor: 1000, ...patch };
 }
 
 beforeEach(() => {
@@ -33,28 +33,29 @@ beforeEach(() => {
   });
 });
 
-describe("seleção simples e autorizada na governança", () => {
-  it("não deixa nota ou saída reservada aparecer na seleção nem abrir prévia por ID direto", async () => {
+describe("seleção de títulos Widesys na governança", () => {
+  it("restringe registros sigilosos também no acesso por ID", async () => {
     mocks.autorizar.mockResolvedValue({ perfil: "FINANCEIRO", usuarioId: "fin" });
     mocks.fontes.mockResolvedValue([fonte("privado", { titulo: "Fornecedor genérico", restrito: true }), fonte("publico")]);
-    expect((await buscarFinanceirosGovernanca("CAIXA")).itens.map(i => i.id)).toEqual(["publico"]);
-    await expect(financeiroSelecionadoGovernanca("CAIXA", "privado")).rejects.toThrow("NOT_FOUND");
+    expect((await buscarFinanceirosGovernanca()).itens.map(i => i.id)).toEqual(["WIDESYS:RECEBER:publico"]);
+    await expect(financeiroSelecionadoGovernanca("WIDESYS:RECEBER:privado")).rejects.toThrow("NOT_FOUND");
     mocks.autorizar.mockResolvedValue({ perfil: "ADMINISTRADOR", usuarioId: "admin" });
-    expect((await financeiroSelecionadoGovernanca("CAIXA", "privado")).id).toBe("privado");
+    expect((await financeiroSelecionadoGovernanca("WIDESYS:RECEBER:privado")).id).toBe("WIDESYS:RECEBER:privado");
   });
-  it("libera a transação antes de derivar hashes e proveniência das planilhas", async () => {
-    mocks.dados.mockImplementation(async () => {
+  it("libera a transação antes de projetar e dispensa proveniência de planilhas", async () => {
+    mocks.dados.mockImplementation(async (_tx, _dominio, incluirProveniencia) => {
       expect(mocks.emTransacao).toBe(true);
+      expect(incluirProveniencia).toBe(false);
       return { fotografia: "capturada na transação" };
     });
-    mocks.fontes.mockImplementation(async dados => {
+    mocks.fontes.mockImplementation(async (dados, incluirProveniencia) => {
       expect(mocks.emTransacao).toBe(false);
       expect(dados).toEqual({ fotografia: "capturada na transação" });
-      return [fonte("local")];
+      expect(incluirProveniencia).toBe(false);
+      return [fonte("titulo")];
     });
-    expect((await buscarFinanceirosGovernanca("CAIXA")).total).toBe(1);
+    expect((await buscarFinanceirosGovernanca()).total).toBe(1);
     expect(mocks.transaction).toHaveBeenCalledTimes(1);
-    expect(mocks.fontes).toHaveBeenCalledTimes(1);
   });
 
   it("limita texto e aceita somente competência válida", () => {
@@ -62,71 +63,48 @@ describe("seleção simples e autorizada na governança", () => {
     expect(filtrosSelecaoGovernanca("x".repeat(200), "2026-12")).toEqual({ q: "x".repeat(120), mes: "2026-12" });
   });
 
-  it.each(["governanca.editar", "financeiro.ver", "cadastros.sensiveis", "caixa.ver"])("recusa falta de %s antes da leitura", async permissao => {
+  it.each(["governanca.editar", "financeiro.ver", "cadastros.sensiveis"])("recusa falta de %s antes da leitura", async permissao => {
     mocks.autorizar.mockImplementation(async codigo => { if (codigo === permissao) throw new Error("NEGADO"); });
-    await expect(buscarFinanceirosGovernanca("CAIXA")).rejects.toThrow("NEGADO");
-    await expect(financeiroSelecionadoGovernanca("CAIXA", "id")).rejects.toThrow("NEGADO");
+    await expect(buscarFinanceirosGovernanca()).rejects.toThrow("NEGADO");
+    await expect(financeiroSelecionadoGovernanca("WIDESYS:RECEBER:id")).rejects.toThrow("NEGADO");
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
   it("filtra antes de limitar, pesquisa sem acento e mantém DTO mínimo", async () => {
     mocks.fontes.mockResolvedValue([
       ...Array.from({ length: 150 }, (_, n) => fonte(`outro-${n}`)),
-      fonte("alvo", { titulo: "Condomínio reconhecido", data: "2026-09-12", competencia: "2026-09", proveniencia: { arquivo: "Contas.xlsx", aba: "SET", snapshot: "segredo" }, campos: { documento: { rotulo: "CPF", valor: "documento-reservado" } } }),
+      fonte("alvo", { titulo: "Condomínio reconhecido", data: "2026-09-12", competencia: "2026-09", campos: { documento: { rotulo: "CPF", valor: "documento-reservado" } } }),
     ]);
-    const resultado = await buscarFinanceirosGovernanca("CAIXA", { q: "condominio", mes: "2026-09" });
+    expect((await buscarFinanceirosGovernanca()).itens).toHaveLength(30);
+    const resultado = await buscarFinanceirosGovernanca({ q: "condominio", mes: "2026-09" });
     expect(resultado.total).toBe(1);
-    expect(resultado.itens[0]).toEqual({ id: "alvo", nome: "Condomínio reconhecido", data: "2026-09-12", competencia: "2026-09", origem: "Excel · Contas.xlsx · SET", situacao: "ATIVO", href: "/caixa/alvo/editar" });
-    expect(JSON.stringify(resultado)).not.toContain("segredo");
+    expect(resultado.itens[0]).toEqual({ id: "WIDESYS:RECEBER:alvo", nome: "Condomínio reconhecido", data: "2026-09-12", competencia: "2026-09", origem: "Widesys", situacao: "ATIVO", href: null });
     expect(JSON.stringify(resultado)).not.toContain("documento-reservado");
   });
 
-  it("não inclui movimentos Widesys no seletor de caixa nativo nem presume entrada manual", async () => {
-    mocks.fontes.mockResolvedValue([fonte("local"), fonte("externo", { origem: "WIDESYS" })]);
-    const resultado = await buscarFinanceirosGovernanca("CAIXA");
-    expect(resultado.itens).toHaveLength(1);
-    expect(resultado.itens[0].origem).toBe("Brisa · origem a confirmar");
+  it("exclui movimentos e títulos de planilha mesmo quando eles existem na fotografia", async () => {
+    mocks.fontes.mockResolvedValue([fonte("local", { origem: "BRISA" }), fonte("caixa", { dominio: "MOVIMENTO" }), fonte("externo")]);
+    expect((await buscarFinanceirosGovernanca()).itens.map(i => i.id)).toEqual(["WIDESYS:RECEBER:externo"]);
+    await expect(financeiroSelecionadoGovernanca("BRISA:RECEBER:local")).rejects.toThrow("NOT_FOUND");
   });
 
-  it("limita a 30 escolhas e permite encontrar qualquer título mantido pelo filtro", async () => {
-    const fontes = Array.from({ length: 160 }, (_, n) => fonte(`titulo-${n}`, { dominio: "RECEBER", titulo: `Locação referência ${n}`, competencia: "2026-01" }));
-    mocks.fontes.mockResolvedValue(fontes);
-    expect((await buscarFinanceirosGovernanca("TITULO")).itens).toHaveLength(30);
-    const resultado = await buscarFinanceirosGovernanca("TITULO", { mantido: true, q: "referencia 159", excluirId: fontes[0].chave, dominio: "RECEBER" });
-    expect(resultado.itens.map(r => r.id)).toEqual([fontes[159].chave]);
-    expect(resultado.total).toBe(1);
+  it("preserva o acesso ao excluído por link para restaurar", async () => {
+    const excluido = fonte("excluido");
+    mocks.fontes.mockResolvedValue([excluido]);
+    mocks.governados.mockResolvedValue([{ tipo: "TITULO", origemId: excluido.chave, status: "EXCLUIDO" }]);
+    expect((await buscarFinanceirosGovernanca()).total).toBe(0);
+    expect((await buscarFinanceirosGovernanca({ excluidos: true })).itens[0].situacao).toBe("EXCLUIDO");
+    expect((await financeiroSelecionadoGovernanca(excluido.chave)).situacao).toBe("EXCLUIDO");
   });
 
-  it("restringe o mantido ao domínio e exclui a própria origem e quarentena", async () => {
-    mocks.fontes.mockResolvedValue([
-      fonte("origem", { dominio: "RECEBER" }), fonte("destino", { dominio: "RECEBER" }),
-      fonte("pagar", { dominio: "PAGAR" }), fonte("inconsistente", { dominio: "RECEBER", qualidade: "QUARENTENA" }),
-    ]);
-    const resultado = await buscarFinanceirosGovernanca("TITULO", { mantido: true, excluirId: "BRISA:RECEBER:origem", dominio: "RECEBER" });
-    expect(resultado.itens.map(r => r.id)).toEqual(["BRISA:RECEBER:destino"]);
-  });
-
-  it("preserva a seleção por link para restaurar, sem apresentar excluído como destino", async () => {
-    mocks.fontes.mockResolvedValue([fonte("excluido")]);
-    mocks.governados.mockResolvedValue([{ tipo: "CAIXA", origemId: "excluido", status: "EXCLUIDO" }]);
-    expect((await buscarFinanceirosGovernanca("CAIXA")).total).toBe(0);
-    expect((await buscarFinanceirosGovernanca("CAIXA", { excluidos: true })).itens[0].situacao).toBe("EXCLUIDO");
-    expect((await financeiroSelecionadoGovernanca("CAIXA", "excluido")).situacao).toBe("EXCLUIDO");
-  });
-
-  it("comissões não entram em lista, contagem nem acesso direto de qualquer perfil", async () => {
+  it("preserva o sigilo de comissões sem esconder honorários contábeis", async () => {
     mocks.fontes.mockResolvedValue([
       fonte("comissao", { titulo: "Comissão de administração" }),
       fonte("honorario", { campos: { plano: { rotulo: "Plano", valor: "Honorários de administração" } } }),
-      fonte("normal"),
+      fonte("contabilidade", { campos: { plano: { rotulo: "Plano", valor: "Honorários contábeis" } } }),
     ]);
-    expect((await buscarFinanceirosGovernanca("CAIXA")).itens.map(r => r.id)).toEqual(["normal"]);
-    await expect(financeiroSelecionadoGovernanca("CAIXA", "comissao")).rejects.toThrow("NOT_FOUND");
-    await expect(financeiroSelecionadoGovernanca("CAIXA", "honorario")).rejects.toThrow("NOT_FOUND");
-  });
-  it("honorários contábeis podem ser conferidos sem presumir comissão", async () => {
-    mocks.fontes.mockResolvedValue([fonte("contabilidade", { campos: { plano: { rotulo: "Plano", valor: "Honorários contábeis" } } })]);
-    expect((await buscarFinanceirosGovernanca("CAIXA")).itens.map(r => r.id)).toEqual(["contabilidade"]);
-    expect((await financeiroSelecionadoGovernanca("CAIXA", "contabilidade")).id).toBe("contabilidade");
+    expect((await buscarFinanceirosGovernanca()).itens.map(r => r.id)).toEqual(["WIDESYS:RECEBER:contabilidade"]);
+    await expect(financeiroSelecionadoGovernanca("WIDESYS:RECEBER:comissao")).rejects.toThrow("NOT_FOUND");
+    await expect(financeiroSelecionadoGovernanca("WIDESYS:RECEBER:honorario")).rejects.toThrow("NOT_FOUND");
   });
 });

@@ -3,6 +3,7 @@ import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { BuscaCard, Dinheiro, Kpi, PageHeader, SeletorMes } from "./ui";
+import { CamposRegistroConferencia } from "./campos-conferencia";
 
 const ler = (arquivo: string) => readFileSync(path.join(process.cwd(), arquivo), "utf8");
 
@@ -32,10 +33,10 @@ describe("layout compartilhado", () => {
   });
 
   it("a navegação existente aceita outubro e preserva os demais filtros", () => {
-    const html = renderToStaticMarkup(<SeletorMes base="/caixa" mes="2026-10" extras={{ visao: "livro" }} />);
+    const html = renderToStaticMarkup(<SeletorMes base="/financeiro/boletos" mes="2026-10" extras={{ filtro: "abertos" }} />);
     expect(html).toContain("mes=2026-09");
     expect(html).toContain("mes=2026-11");
-    expect(html).toContain("visao=livro");
+    expect(html).toContain("filtro=abertos");
     expect(html).toContain("OUT");
   });
 });
@@ -46,17 +47,13 @@ describe("tabelas sem recorte de ações", () => {
     "src/app/(app)/financeiro/contas-bancarias/page.tsx",
     "src/app/(app)/financeiro/boletos/page.tsx",
     "src/app/(app)/financeiro/conciliacao/page.tsx",
-    "src/app/(app)/financeiro/importacoes/page.tsx",
     "src/app/(app)/financeiro/notas-fiscais/page.tsx",
     "src/app/(app)/cadastros/locatarios/page.tsx",
     "src/app/(app)/cadastros/unidades/page.tsx",
     "src/app/(app)/cadastros/pessoas/page.tsx",
     "src/app/(app)/cadastros/imoveis-legado/page.tsx",
-    "src/app/(app)/caixa/page.tsx",
-    "src/app/(app)/recebimentos/page.tsx",
     "src/app/(app)/contratos/page.tsx",
     "src/app/(app)/temporada/page.tsx",
-    "src/components/conferencia-registro.tsx",
   ];
 
   it.each(telas)("%s mantém ações fixas e scroll acessível por teclado", (arquivo) => {
@@ -82,10 +79,27 @@ describe("tabelas sem recorte de ações", () => {
     expect(codigo).not.toContain("itens={dados.itens}");
   });
 
-  it("a Visão geral contém o scroll na própria tabela, sem fixar a coluna de valor", () => {
-    const codigo = ler("src/app/(app)/page.tsx");
-    expect(codigo.match(/tabela-scroll overflow-x-auto/g)).toHaveLength(2);
+  it.each(["caixa", "recebimentos"])("a rota %s usa a tabela financeira compartilhada", (rota) => {
+    const codigo = ler(`src/app/(app)/${rota}/page.tsx`);
+    expect(codigo).toContain("<OperacaoUnificada");
+    expect(codigo).not.toContain("<table");
+  });
+
+  it("o Executivo contém o scroll na própria tabela, sem fixar a coluna de valor", () => {
+    const codigo = ler("src/app/(app)/executivo/page.tsx");
+    expect(codigo).toContain("tabela-scroll overflow-x-auto");
     expect(codigo).not.toContain("tabela--acoes");
+  });
+
+  it("os detalhes de lançamento refluem em uma coluna e preservam os rótulos", () => {
+    const html = renderToStaticMarkup(<CamposRegistroConferencia campos={[{
+      chave: "imovel", campo: { rotulo: "Imóvel", valor: "Unidade de referência" },
+    }]} />);
+    expect(html).toContain("<dl");
+    expect(html).toContain("sm:grid-cols-2");
+    expect(html).toMatch(/<dt[^>]*>Imóvel<\/dt>/);
+    expect(html).toMatch(/<dd[^>]*>.*Unidade de referência.*<\/dd>/);
+    expect(html).toContain("break-words");
   });
 
   it("regras sticky não atingem totais ou mensagens com colspan", () => {
@@ -103,10 +117,10 @@ describe("tabelas sem recorte de ações", () => {
     expect(ler("src/app/globals.css")).toContain(".tabela-configuracao-conta[open]");
   });
 
-  it("emissão mantém os campos no mesmo formulário lógico e uma célula própria de ação", () => {
+  it("boletos mantém a consulta bancária e o campo de vínculo acessível, sem fila local", () => {
     const codigo = ler("src/app/(app)/financeiro/boletos/page.tsx");
-    expect(codigo).not.toContain("colSpan={podeEmitir ? 3 : 1}");
-    expect(codigo.match(/form=\{`emitir-\$\{recebimento.id\}`\}/g)).toHaveLength(2);
-    expect(codigo).toContain("id={`emitir-${recebimento.id}`} action={emitirBoleto}");
+    expect(codigo).toContain("<form action={sincronizarBoleto}>");
+    expect(codigo).toMatch(/<form action=\{vincularEmissaoInconclusiva\}[\s\S]*?<input name="nossoNumero" aria-label="Nosso número"/);
+    expect(codigo).not.toContain("action={emitirBoleto}");
   });
 });

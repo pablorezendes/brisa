@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { Card, btnPrimario, btnSecundario, inputBase } from "@/components/ui";
-import { formatarBRL } from "@/lib/dominio/dinheiro";
 import { NOME_MES_COMPLETO } from "@/lib/dominio/normalizacao";
 import {
   STATUS_CONTRATO,
@@ -165,35 +164,8 @@ export function FormularioContrato({
       </Card>
 
       <Card className="p-4">
-        <h2 className="mb-3 text-sm font-bold">Valores e condições</h2>
+        <h2 className="mb-3 text-sm font-bold">Prazo e reajuste do cadastro</h2>
         <div className="flex flex-wrap items-end gap-3">
-          <label className={rotulo}>
-            Valor (aluguel)
-            <input
-              name="valorBase"
-              defaultValue={contrato ? formatarBRL(contrato.valorBase) : ""}
-              placeholder="1.234,56"
-              className={`${inputBase} mt-1 block w-32`}
-            />
-          </label>
-          <label className={rotulo}>
-            IPTU (repasse)
-            <input
-              name="iptu"
-              defaultValue={contrato ? formatarBRL(contrato.iptu) : ""}
-              placeholder="0,00"
-              className={`${inputBase} mt-1 block w-28`}
-            />
-          </label>
-          <label className={rotulo}>
-            Condomínio (repasse)
-            <input
-              name="condominio"
-              defaultValue={contrato ? formatarBRL(contrato.condominio) : ""}
-              placeholder="0,00"
-              className={`${inputBase} mt-1 block w-28`}
-            />
-          </label>
           <label className={rotulo}>
             Dia venc.
             <input

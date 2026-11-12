@@ -23,9 +23,7 @@ const CORES = {
   recebido: "var(--g-s1)",
   devido: "var(--g-s2)",
   comissao: "var(--g-s3)",
-  saidaAL: "var(--g-saida)",
-  saidaCH: "var(--g-saida-2)",
-  saidaOutros: "var(--g-saida-3, #b66c49)",
+  saida: "var(--g-saida)",
   grade: "var(--g-grade)",
   texto: "var(--g-rotulo)",
 };
@@ -299,24 +297,19 @@ export function SinaisVitais({
 type LinhaCaixa = {
   rotulo: string;
   receita: number;
-  despesaAL: number;
-  despesaCH: number;
-  despesaOutros?: number;
+  saida: number;
   saldo: number;
 };
 
 export function FluxoCaixaInterativo({ dados }: { dados: LinhaCaixa[] }) {
   const uid = useId().replaceAll(":", "");
   const gradienteEntrada = `${uid}-entrada`;
-  const temOutros = dados.some(linha => (linha.despesaOutros ?? 0) !== 0);
   return (
     <div>
       <div className="mb-2 flex flex-wrap gap-x-4 gap-y-2 text-[10px] font-bold uppercase tracking-[0.08em] text-[#65767a]">
         {[
           [CORES.recebido, "Entradas"],
-          [CORES.saidaAL, "Saídas A/L"],
-          [CORES.saidaCH, "Saídas Chácara"],
-          ...(temOutros ? [[CORES.saidaOutros, "Saídas Brisa / outros"]] : []),
+          [CORES.saida, "Saídas"],
           [CORES.comissao, "Saldo"],
         ].map(([cor, nome]) => (
           <span key={nome} className="inline-flex items-center gap-2">
@@ -365,25 +358,13 @@ export function FluxoCaixaInterativo({ dados }: { dados: LinhaCaixa[] }) {
               isAnimationActive={false}
             />
             <Bar
-              dataKey="despesaAL"
-              name="Saídas A/L"
-              stackId="saidas"
-              fill={CORES.saidaAL}
+              dataKey="saida"
+              name="Saídas"
+              fill={CORES.saida}
               barSize={16}
               radius={[3, 3, 0, 0]}
               isAnimationActive={false}
             />
-            <Bar
-              dataKey="despesaCH"
-              name="Saídas Chácara"
-              stackId="saidas"
-              fill={CORES.saidaCH}
-              barSize={16}
-              radius={[3, 3, 0, 0]}
-              isAnimationActive={false}
-            />
-            {temOutros ? <Bar dataKey="despesaOutros" name="Saídas Brisa / outros" stackId="saidas"
-              fill={CORES.saidaOutros} barSize={16} radius={[3, 3, 0, 0]} isAnimationActive={false} /> : null}
             <Line
               type="monotone"
               dataKey="saldo"

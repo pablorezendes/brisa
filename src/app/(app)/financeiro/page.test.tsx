@@ -3,10 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { montarPolitica, type DadosPolitica } from "@/lib/acesso/politica";
 import type { ListaUnificada } from "@/lib/unificacao/tipos";
 
-const mocks = vi.hoisted(() => ({ acesso: vi.fn(), pagina: vi.fn(), listar: vi.fn(), mes: vi.fn() }));
+const mocks = vi.hoisted(() => ({ acesso: vi.fn(), pagina: vi.fn(), listar: vi.fn(), mes: vi.fn(), operacao: vi.fn() }));
 vi.mock("@/lib/acesso/servidor", () => ({ acessoAtual: mocks.acesso, exigirPaginaAcesso: mocks.pagina }));
 vi.mock("@/lib/consultas/unificacao", () => ({ listarUnificados: mocks.listar }));
-vi.mock("@/lib/consultas/executivo", () => ({ mesPadrao: mocks.mes }));
+vi.mock("@/lib/consultas/operacao-na-requisicao", () => ({ operacaoNaRequisicao: mocks.operacao }));
+vi.mock("@/lib/unificacao/executivo-consolidado", () => ({ mesPadraoConsolidado: mocks.mes }));
 
 import PaginaFinanceiro from "./page";
 
@@ -25,7 +26,8 @@ const resumo: ListaUnificada["resumo"] = {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.acesso.mockResolvedValue(politica({ perfil: "ADMINISTRADOR" }));
-  mocks.mes.mockResolvedValue("2026-09");
+  mocks.mes.mockReturnValue("2026-09");
+  mocks.operacao.mockResolvedValue({ linhas: [], fontes: [], decisoes: [] });
   mocks.listar.mockImplementation(async ({ dominio }: { dominio: string }) => ({
     resumo: { ...resumo, aberto: dominio === "PAGAR" ? 22000 : resumo.aberto },
   }));
@@ -46,19 +48,18 @@ describe("resumo financeiro", () => {
     expect(html).toContain("700,00");
     expect(html).not.toContain("9.999,99");
     expect(html).toContain("valor-sigilo-real");
-    expect(html).toContain("Pendências ficam fora dos totais");
-    expect(html).toContain("inclusão não significa conferência concluída");
+    expect(html).toContain("registrados no Widesys");
     expect(html).toContain('href="/financeiro/dados"');
-    expect(html).toContain("Conferir dados");
-    expect(html).toContain("Abra o registro");
-    expect(html).toContain("Confirme a decisão");
+    expect(html).toContain("Dados do Widesys");
+    expect(html).not.toContain("Planilhas importadas");
+    expect(html).not.toContain("Confirme a decisão");
     expect(html).toContain('href="/recebimentos?mes=2026-10"');
     expect(html).toContain('href="/financeiro/contas-a-pagar?mes=2026-10"');
     expect(html).toContain('href="/caixa?mes=2026-10"');
     expect(html).toContain('href="/paineis/cobranca?mes=2026-10"');
     expect(html).toContain('href="/financeiro?mes=2026-09"');
     expect(html).toContain('href="/financeiro?mes=2026-11"');
-    expect(html).toContain("base própria");
+    expect(html).not.toContain("Livro-caixa original");
     expect(html).not.toContain("Taxa de recebimento");
     expect(html).not.toContain("Comissões");
     expect(html).toMatch(/<details class="[^"]+">/);
@@ -80,7 +81,7 @@ describe("resumo financeiro", () => {
     mocks.acesso.mockResolvedValue(politica({ permissoesExtras: '["cadastros.sensiveis","unificacao.ver","importacoes.ver","fiscal.ver","comunicacoes.ver"]' }));
     const html = renderToStaticMarkup(await PaginaFinanceiro({ searchParams: Promise.resolve({ mes: "2026-10" }) }));
     expect(html).toContain('href="/financeiro/dados"');
-    expect(html).toContain('href="/financeiro/migracao-widesys"');
+    expect(html).not.toContain('href="/financeiro/migracao-widesys"');
     expect(html).not.toContain('href="/financeiro/importacoes"');
     expect(html).not.toContain('href="/financeiro/notas-fiscais"');
     expect(html).not.toContain('href="/financeiro/automacoes"');

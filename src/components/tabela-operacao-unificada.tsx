@@ -52,6 +52,7 @@ type PropriedadesTabela = {
   exibirDominio: boolean;
   exibirValor: boolean;
   contextual: boolean;
+  fonteFinanceiraUnica?: boolean;
   exclusaoLote?: { dominio: DominioExclusaoTitulos; contexto: string };
   conferenciaLote?: { dominio: DominioConferenciaLote; contexto: string };
 };
@@ -113,7 +114,7 @@ function TabelaComSelecao(props: PropriedadesTabela) {
 
 type ControleSelecao = { selecionados: string[]; permitidas: string[]; excluiveis: string[]; todos: boolean; ocupado: boolean; alternar: (chave: string) => void; alternarTodos: () => void; excluir: (chave: string) => void };
 
-function conteudoTabela({ itens, financeiro, exibirDominio, exibirValor, contextual }: PropriedadesTabela, selecao?: ControleSelecao) {
+function conteudoTabela({ itens, financeiro, exibirDominio, exibirValor, contextual, fonteFinanceiraUnica }: PropriedadesTabela, selecao?: ControleSelecao) {
   // O GET da própria lista reabre a janela com todos os filtros preservados.
   // Evita depender da transição RSC para abrir detalhes em listas extensas.
   const LinkRegistro = contextual ? "a" : Link;
@@ -157,12 +158,12 @@ function conteudoTabela({ itens, financeiro, exibirDominio, exibirValor, context
         <td className="text-right!"><div className="flex flex-col items-end gap-2">
           {item.rateio && item.dominio === "PAGAR" ? <RateioDespesaBotao {...item.rateio} compacto /> : null}
           {item.revisaoRecebimento && item.dominio === "RECEBER" ? <RevisaoRecebimentoBotao chave={item.chave} conferido={registroConferido(item)} /> : null}
-          <LinkRegistro {...propsLinkRegistro} href={item.hrefDetalhe} className="text-xs font-semibold text-oliva-escura hover:underline">{!item.revisaoRecebimento && ["PENDENTE", "REVISAR", "QUARENTENA"].includes(item.estado) ? "Revisar e resolver" : "Ver detalhes"}</LinkRegistro>
+          <LinkRegistro {...propsLinkRegistro} href={item.hrefDetalhe} className="text-xs font-semibold text-oliva-escura hover:underline">{!fonteFinanceiraUnica && !item.revisaoRecebimento && ["PENDENTE", "REVISAR", "QUARENTENA"].includes(item.estado) ? "Revisar e resolver" : "Ver detalhes"}</LinkRegistro>
           {item.exclusao ? selecao?.excluiveis.includes(item.chave) ? <button type="button" disabled={selecao.ocupado} onClick={() => selecao.excluir(item.chave)} className="inline-flex min-h-8 items-center rounded-md px-2 py-1 text-xs font-semibold text-erro underline-offset-4 hover:bg-erro/5 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2" title="Conferir e excluir nesta tela">{item.exclusao.rotulo}</button> : <LinkRegistro {...propsLinkRegistro} href={item.exclusao.href} className="inline-flex min-h-8 items-center rounded-md px-2 py-1 text-xs font-semibold text-erro underline-offset-4 hover:bg-erro/5 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2" title="Revisar o impacto e confirmar a exclusão com histórico">{item.exclusao.rotulo}</LinkRegistro> : null}
           {item.hrefCadastro ? <Link prefetch={false} href={item.hrefCadastro} className="text-[11px] text-tinta-suave hover:underline">Abrir cadastro / lançamento</Link> : null}
         </div></td>
       </tr>)}
-      {!itens.length ? <tr><td colSpan={4 + Number(exibirDominio) + (financeiro ? 3 : Number(exibirValor))} className="py-12! text-center! text-tinta-suave">Nenhum registro nestes filtros. Isso não significa que toda a base já foi conferida.</td></tr> : null}
+      {!itens.length ? <tr><td colSpan={4 + Number(exibirDominio) + (financeiro ? 3 : Number(exibirValor))} className="py-12! text-center! text-tinta-suave">Nenhum registro nestes filtros.</td></tr> : null}
       </tbody>
     </table>
   </div>;

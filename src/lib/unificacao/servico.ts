@@ -10,16 +10,19 @@ import { carteiraIrrestrita, montarPolitica, pode } from "../acesso/politica";
 import { chavesRestritasUnificacao } from "./privacidade";
 import { auditoriaConferenciaPorValores, dadosConferenciaPorValores, planejarConferenciaPorValores } from "./persistencia-valores-diferentes";
 import { planejarConfiancaWidesys } from "./confianca-widesys";
+import { dominioFinanceiroUnificacao, projetarFinanceiroWidesys } from "./projecao-widesys";
 
 export class ErroUnificacao extends Error {
   constructor(public codigo: string, mensagem: string) { super(mensagem); this.name = "ErroUnificacao"; }
 }
 
 /** Idempotente e transacional; preserva decisões e todas as tabelas de origem. */
-export async function analisarUnificacao(db: PrismaClient, usuarioId: string, dryRun = false) {
+export async function analisarUnificacao(db: PrismaClient, usuarioId: string, dryRun = false, somenteCadastros = false) {
   return db.$transaction(async tx => {
-    const fontes = filtrarFontesGovernadas(await carregarFontesUnificacao(tx), await tx.recursoGovernado.findMany({ select: { tipo: true, origemId: true, status: true } }));
-    const existentes = await tx.unificacaoRegistro.findMany();
+    const governadas = filtrarFontesGovernadas(await carregarFontesUnificacao(tx), await tx.recursoGovernado.findMany({ select: { tipo: true, origemId: true, status: true } }));
+    const fontes = somenteCadastros ? governadas.filter(f => !dominioFinanceiroUnificacao(f.dominio)) : governadas;
+    const registros = await tx.unificacaoRegistro.findMany();
+    const existentes = somenteCadastros ? registros.filter(d => !dominioFinanceiroUnificacao(d.dominio)) : registros;
     const porChave = new Map(fontes.map(f => [f.chave,f]));
     const anteriores = new Map(existentes.map(d => [d.chave,d]));
     const destinos = new Map<string,string>();
@@ -142,13 +145,15 @@ export async function decidirUnificacao(db: PrismaClient, entrada: ResolverUnifi
   }, { maxWait: 15000, timeout: 60000 });
 }
 
-export async function lerOperacaoUnificada(db: PrismaClient) {
+export async function lerOperacaoUnificada(db: PrismaClient, opcoes?: { somenteWidesysFinanceiro?: boolean }) {
   // Somente a fotografia relacional precisa manter a conexão reservada.
   // Hashes, leitura da planilha e reconciliação acontecem depois do commit,
   // sem prolongar a transação de leitura nem misturar versões das tabelas.
+  const lerProveniencia = !opcoes?.somenteWidesysFinanceiro;
   const [dados, decisoes, governados] = await db.$transaction(tx => Promise.all([
-    carregarDadosFontesUnificacao(tx), tx.unificacaoRegistro.findMany(), tx.recursoGovernado.findMany({ select: { tipo: true, origemId: true, status: true } }),
+    carregarDadosFontesUnificacao(tx, undefined, lerProveniencia), tx.unificacaoRegistro.findMany(), tx.recursoGovernado.findMany({ select: { tipo: true, origemId: true, status: true } }),
   ]), { maxWait: 2000, timeout: 60000 });
-  const fontes = filtrarFontesGovernadas(await derivarFontesUnificacao(dados), governados);
+  const fontes = filtrarFontesGovernadas(await derivarFontesUnificacao(dados, lerProveniencia), governados);
+  if (opcoes?.somenteWidesysFinanceiro) return { decisoes, ...projetarFinanceiroWidesys(fontes, decisoes) };
   return { fontes, decisoes, linhas: projetarUnificados(fontes,decisoes as DecisaoUnificacao[]) };
 }

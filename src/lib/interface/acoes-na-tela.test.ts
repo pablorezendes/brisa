@@ -32,7 +32,7 @@ import type { ResultadoNaTela } from "./resultado-na-tela";
 function formulario(extras: Record<string, string> = {}) {
   const form = new FormData();
   for (const [nome, valor] of Object.entries({
-    chave: "WIDESYS:PAGAR:titulo-1", versao: "2", acao: "DISTINTO", hashFonte: "hash-original", justificativa: "Competência e contrato conferidos",
+    chave: "WIDESYS:PESSOA:pessoa-1", versao: "2", acao: "DISTINTO", hashFonte: "hash-original", justificativa: "Cadastro conferido",
     tipo: "TITULO", origemId: "WIDESYS:PAGAR:titulo-1", confirmar: "sim", cienciaExclusao: "sim", assinaturaPrevia: "a".repeat(64), motivo: "Duplicata confirmada pelo administrador", modo: "excluir",
     retornoContexto: "/financeiro/contas-a-pagar?pagina=2&registro=WIDESYS%3APAGAR%3Atitulo-1&painel=detalhe", ...extras,
   })) form.set(nome, valor);
@@ -96,14 +96,20 @@ describe("autorização antes de qualquer processamento inline", () => {
 describe("decisão e reanálise permanecem na tela", () => {
   it("resolução revalida lista e totais, retorna sucesso e ignora retorno/ator forjados", async () => {
     const resultado = await resolverUnificacaoNaTela({ erro: "aviso anterior" }, formulario({
-      destinoChave: "BRISA:PAGAR:principal", hashDestino: "hash-destino", retornoContexto: "https://externo.test", usuarioId: "outro", administrador: "true",
+      destinoChave: "BRISA:PESSOA:principal", hashDestino: "hash-destino", retornoContexto: "https://externo.test", usuarioId: "outro", administrador: "true",
     }));
     expect(mocks.decidir).toHaveBeenCalledExactlyOnceWith(prisma, {
-      chave: "WIDESYS:PAGAR:titulo-1", versao: 2, acao: "DISTINTO", hashFonte: "hash-original", justificativa: "Competência e contrato conferidos", destinoChave: "BRISA:PAGAR:principal", hashDestino: "hash-destino",
+      chave: "WIDESYS:PESSOA:pessoa-1", versao: 2, acao: "DISTINTO", hashFonte: "hash-original", justificativa: "Cadastro conferido", destinoChave: "BRISA:PESSOA:principal", hashDestino: "hash-destino",
     }, "usuario-financeiro-da-sessao");
     expect(resultado).toEqual({ ok: expect.stringContaining("lista e os totais") });
     expect(mocks.revalidar).toHaveBeenCalledExactlyOnceWith("/", "layout");
     expect(mocks.redirecionar).not.toHaveBeenCalled();
+  });
+
+  it("encerra o fluxo antigo de comparação de lançamentos financeiros", async () => {
+    expect(await resolverUnificacaoNaTela({}, formulario({ chave: "WIDESYS:PAGAR:titulo-1" })))
+      .toEqual({ erro: "Os lançamentos financeiros são atualizados pelo Widesys." });
+    expect(mocks.decidir).not.toHaveBeenCalled();
   });
 
   it("erro de concorrência é um estado do próprio formulário, sem redirecionamento", async () => {
@@ -115,7 +121,7 @@ describe("decisão e reanálise permanecem na tela", () => {
 
   it("reanálise usa o usuário autenticado e não muda de página", async () => {
     const resultado = await sincronizarUnificacaoNaTela({ erro: "antigo" }, formulario({ usuarioId: "forjado", retornoContexto: "//externo.test" }));
-    expect(mocks.analisar).toHaveBeenCalledExactlyOnceWith(prisma, "usuario-financeiro-da-sessao");
+    expect(mocks.analisar).toHaveBeenCalledExactlyOnceWith(prisma, "usuario-financeiro-da-sessao", false, true);
     expect(resultado).toEqual({ ok: expect.stringContaining("Nenhum dado novo foi buscado no Widesys") });
     expect(mocks.revalidar).toHaveBeenCalledExactlyOnceWith("/", "layout");
     expect(mocks.redirecionar).not.toHaveBeenCalled();

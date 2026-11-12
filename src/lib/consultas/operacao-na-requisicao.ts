@@ -10,4 +10,5 @@ import { lerListaFinanceira } from "../unificacao/leitura-financeira";
  * mantém sua checagem de perfil. Mutações e workers usam o serviço fresco.
  */
 export const operacaoNaRequisicao = cache((dominio?: "RECEBER" | "PAGAR") =>
-  dominio ? lerListaFinanceira(prisma, dominio) : lerOperacaoUnificada(prisma));
+  dominio ? lerListaFinanceira(prisma, dominio, { somenteWidesysFinanceiro: true })
+    : lerOperacaoUnificada(prisma, { somenteWidesysFinanceiro: true }));

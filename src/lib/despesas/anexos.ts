@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { carteiraIrrestrita, montarPolitica, perfilSomenteLeitura, pode, type PoliticaAcesso } from "../acesso/politica";
 import { contemComissaoRestrita } from "./sigilo";
+import { despesaRestritaPorVinculo } from "./sigilo-vinculos";
 
 export const LIMITE_ANEXO_DESPESA = 5 * 1024 * 1024;
 const MAX_ANEXOS = 10;
@@ -34,19 +35,19 @@ async function autorizar(db: Banco, usuarioId: string, escrita: boolean) {
 
 async function exigirDocumento(db: Banco, despesaId: string, politica: PoliticaAcesso) {
   if (!despesaId || despesaId.length > 100) throw new Error("Despesa não encontrada.");
-  const despesa = await db.despesaDocumento.findUnique({ where: { id: despesaId }, select: { id: true, origemChave: true, restrita: true,
+  const despesa = await db.despesaDocumento.findUnique({ where: { id: despesaId }, select: { origemChave: true, restrita: true,
     rateios: { select: { categoria: true, descricao: true } } } });
-  if (!despesa) throw new Error("Despesa não encontrada.");
-  const chave = despesa.origemChave ?? `BRISA:PAGAR:${despesa.id}`;
+  const chave = despesa?.origemChave;
+  const origemId = chave && /^WIDESYS:PAGAR:([^\s:]+)$/.exec(chave)?.[1];
+  if (!despesa || !chave || !origemId) throw new Error("Despesa não encontrada.");
   const excluido = await db.recursoGovernado.findFirst({ where: { tipo: "TITULO", origemId: chave, status: { not: "ATIVO" } }, select: { id: true } });
   if (excluido) throw new Error("Restaure a despesa na lixeira antes de acessar seus anexos.");
+  const fonte = await db.tituloFinanceiroLegado.findUnique({ where: { id: origemId, origem: "WIDESYS", natureza: "PAGAR" }, select: { statusImportacao: true, planoContaRotulo: true, tipoCobrancaRotulo: true } });
+  if (!fonte || ["QUARENTENA", "AUSENTE_NA_FONTE"].includes(fonte.statusImportacao)) throw new Error("Despesa não encontrada.");
   // Um PDF integral pode revelar todas as parcelas. Não basta esconder a
   // comissão no agregado da carteira e deixar o documento aberto por outro ID.
-  if (!pode(politica, "comissoes.ver")) {
-    const origemId = despesa.origemChave && /^WIDESYS:PAGAR:([^:]+)$/.exec(despesa.origemChave)?.[1];
-    const fonte = origemId ? await db.tituloFinanceiroLegado.findUnique({ where: { id: origemId }, select: { planoContaRotulo: true, tipoCobrancaRotulo: true } }) : null;
-    if (despesa.restrita || contemComissaoRestrita([...despesa.rateios.flatMap(r => [r.categoria, r.descricao]), fonte?.planoContaRotulo, fonte?.tipoCobrancaRotulo])) throw new Error("Este documento contém informação restrita ao administrador.");
-  }
+  if (!pode(politica, "comissoes.ver") && (despesa.restrita || contemComissaoRestrita([...despesa.rateios.flatMap(r => [r.categoria, r.descricao]), fonte.planoContaRotulo, fonte.tipoCobrancaRotulo])
+    || await despesaRestritaPorVinculo(db, chave))) throw new Error("Este documento contém informação restrita ao administrador.");
 }
 
 export async function listarAnexosDespesa(db: Banco, despesaId: string, usuarioId: string) {
