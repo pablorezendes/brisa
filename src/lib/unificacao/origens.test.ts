@@ -7,9 +7,9 @@ describe("origem apresentada ao usuário", () => {
     expect(origensDoRegistro({ origem: "BRISA" })).toEqual(["BRISA"]);
     expect(origensDoRegistro({ origem: "BRISA", proveniencia: {} })).toEqual(["BRISA"]);
   });
-  it("reconhece prova de arquivo e grupos com várias fontes", () => {
-    expect(origensDoRegistro({ origem: "BRISA", proveniencia: { arquivo: "caixa.xlsx" } })).toEqual(["PLANILHA"]);
-    expect(origensDoRegistro({ origem: "BRISA", origens: ["PLANILHA", "WIDESYS", "PLANILHA"] })).toEqual(["PLANILHA", "WIDESYS"]);
+  it("apresenta as cargas arquivadas como Brisa, inclusive em registros vinculados", () => {
+    expect(origensDoRegistro({ origem: "BRISA", proveniencia: { arquivo: "caixa.xlsx" } })).toEqual(["BRISA"]);
+    expect(origensDoRegistro({ origem: "BRISA", origens: ["PLANILHA", "WIDESYS", "BRISA"] })).toEqual(["BRISA", "WIDESYS"]);
   });
   it("reconhece cadastro manual somente com evidência explícita, sem reclassificar carga antiga", () => {
     const manual = { origem: "BRISA" as const, proveniencia: { tipo: "CADASTRO_MANUAL" } };
@@ -19,10 +19,11 @@ describe("origem apresentada ao usuário", () => {
     expect(origensDoRegistro({ origem: "BRISA", proveniencia: { desconhecida: true } })).toEqual(["BRISA"]);
     expect(origensDoRegistro({ origem: "WIDESYS", proveniencia: { tipo: "CADASTRO_MANUAL" } })).toEqual(["WIDESYS"]);
   });
-  it("filtra por origem, inclusive nos grupos vinculados, sem ampliar por rótulo inventado", () => {
+  it("filtra pelas origens visíveis e ignora o filtro antigo de planilha", () => {
     const registro = { origem: "BRISA" as const, origens: ["PLANILHA", "WIDESYS"] };
-    expect(correspondeOrigem(registro, "PLANILHA")).toBe(true);
-    expect(correspondeOrigem(registro, "BRISA")).toBe(false);
+    expect(correspondeOrigem({ origem: "WIDESYS" }, "PLANILHA")).toBe(true);
+    expect(correspondeOrigem(registro, "BRISA")).toBe(true);
+    expect(correspondeOrigem(registro, "MANUAL")).toBe(false);
     expect(correspondeOrigem(registro, "invalido")).toBe(true);
   });
   it("não trata ativo informativo como contabilizado nem soma títulos e baixas", () => {

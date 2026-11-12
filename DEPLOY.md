@@ -1177,35 +1177,33 @@ conferidos pela origem. Cancelamentos, exclusões administrativas, quarentenas
 e transferências internas continuam fora dos totais aplicáveis. O histórico
 das cargas de planilhas fica preservado no SQLite.
 
-A atualização da aplicação usa o banco atual e dispensa uma migração de dados
-ou uma rotina de comparação. O Executivo mostra a data da última captura.
+O Executivo mostra a data da última captura. O bloco abaixo atualiza a aplicação
+e captura contratos, títulos, baixas e movimentos com a conta Widesys vigente.
+A prévia roda com a aplicação em execução. Após a conferência da prévia, o bloco
+pausa o serviço, salva um backup consistente do SQLite e aplica a captura.
 
 ```bash
 (
-  set -e
+  set -euo pipefail
   cd /srv/stack/acamargo
   git pull --ff-only origin main
   docker compose up -d --build --no-deps brisa
-  curl --retry 12 --retry-delay 5 --retry-all-errors -fsSI https://brisa.tescod.com/login
-)
-```
+  curl --retry 12 --retry-delay 5 --retry-all-errors -fsS -o /dev/null https://brisa.tescod.com/login
 
-Para obter o financeiro atual, capture novamente com a conta Widesys vigente.
-A captura e a prévia ocorrem com a aplicação em execução. O comando de aplicação
-faz um backup consistente do SQLite antes de importar.
-
-```bash
-(
-  set -e
-  cd /srv/stack/acamargo
-  read -r -p 'Usuário Widesys: ' WIDESYS_USUARIO
-  read -r -s -p 'Senha Widesys: ' WIDESYS_SENHA
+  read -r -p 'Usuário Widesys: ' WIDESYS_USUARIO </dev/tty
+  read -r -s -p 'Senha Widesys: ' WIDESYS_SENHA </dev/tty
   printf '\n'
   export WIDESYS_USUARIO WIDESYS_SENHA
   docker compose exec -T -e WIDESYS_USUARIO -e WIDESYS_SENHA brisa \
     npm run legacy:capture-operation -- --refresh --from=2025-01 --titles-to=2100-12-31
   unset WIDESYS_USUARIO WIDESYS_SENHA
   docker compose exec -T brisa npm run importar:operacao-widesys:dry-run
+  read -r -p 'Confira a prévia e digite APLICAR para importar: ' brisa_confirmacao </dev/tty
+  if [ "$brisa_confirmacao" != APLICAR ]; then
+    printf '%s\n' 'Importação cancelada.'
+    exit 0
+  fi
+
   docker compose stop brisa
   trap 'docker compose start brisa' EXIT
   docker compose run --rm --no-deps brisa node -e '
@@ -1213,17 +1211,22 @@ faz um backup consistente do SQLite antes de importar.
     const { DatabaseSync } = require("node:sqlite");
     const { randomUUID } = require("node:crypto");
     const dir = "/data/backups-unificacao";
+    process.umask(0o077);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const db = new DatabaseSync("/data/brisa.db");
+    const db = new DatabaseSync("/data/brisa.db", { readOnly: true });
     const destino = dir + "/antes-atualizacao-widesys-" + randomUUID() + ".db";
     db.prepare("VACUUM INTO ?").run(destino);
     db.close();
+    const copia = new DatabaseSync(destino, { readOnly: true });
+    const { quick_check } = copia.prepare("PRAGMA quick_check").get();
+    copia.close();
+    if (quick_check !== "ok") throw new Error("Falha na verificação do backup");
     console.log("Backup: " + destino);
   '
   trap - EXIT
   docker compose run --rm --no-deps brisa npm run importar:operacao-widesys
   docker compose start brisa
-  curl --retry 12 --retry-delay 5 --retry-all-errors -fsSI https://brisa.tescod.com/login
+  curl --retry 12 --retry-delay 5 --retry-all-errors -fsS -o /dev/null -w 'Login HTTP %{http_code}\n' https://brisa.tescod.com/login
 )
 ```
 

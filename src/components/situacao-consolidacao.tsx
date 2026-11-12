@@ -4,7 +4,7 @@ type Situacao = Pick<LinhaUnificada, "estado" | "contabiliza" | "dominio" | "can
 
 /** Origem responde de onde veio; esta mensagem responde o efeito da decisão. */
 export function explicarConsolidacao(item: Situacao): string {
-  if (item.conferidoNaOrigem && ["PENDENTE", "REVISAR"].includes(item.estado)) return "O registro do Widesys foi conferido na origem. Falta conciliar com a base Brisa/planilhas para contar a mesma operação uma única vez. Ainda fora dos totais.";
+  if (item.conferidoNaOrigem && ["PENDENTE", "REVISAR"].includes(item.estado)) return "O registro foi conferido no Widesys e aguarda revisão do vínculo no Brisa. Ainda fora dos totais.";
   if (item.estado === "VINCULADO") return item.conferidoManualmente ? "Conferido e vinculado ao registro principal. Não soma novamente." : "Representado pelo registro principal. Não soma novamente.";
   if (item.estado === "QUARENTENA") return "Dados inconsistentes: confira a origem. Fora dos totais.";
   if (item.estado === "REVISAR") return "A decisão precisa de nova conferência. Fora dos totais.";

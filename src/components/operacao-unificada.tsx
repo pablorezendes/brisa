@@ -3,7 +3,7 @@ import { AcaoAutorizada } from "@/components/acao-autorizada";
 import { BotaoUnificacao } from "@/components/botao-unificacao";
 import { listarTitulosFinanceiros, listarUnificados } from "@/lib/consultas/unificacao";
 import { DOMINIOS_UNIFICACAO, type DominioUnificacao } from "@/lib/unificacao/tipos";
-import { origensDoRegistro } from "@/lib/unificacao/origens";
+import { filtroOrigemVisivel, origensDoRegistro } from "@/lib/unificacao/origens";
 import { explicarConsolidacao } from "@/components/situacao-consolidacao";
 import { sincronizarUnificacao } from "@/app/(app)/unificacao/actions";
 import { Card, PageHeader, btnSecundario } from "@/components/ui";
@@ -56,7 +56,7 @@ export async function OperacaoUnificada({ dominio: dominioFixo, titulo, base, pa
   const fonteFinanceiraUnica = financeiro || movimento || baixa;
   const estadoSolicitado = primeiroParametro(parametros.estado) ?? "";
   const estado = fonteFinanceiraUnica && !["ATIVO", "QUARENTENA", "AUSENTE"].includes(estadoSolicitado) ? "" : estadoSolicitado;
-  const origem = fonteFinanceiraUnica ? "" : primeiroParametro(parametros.origem) ?? "";
+  const origem = fonteFinanceiraUnica ? "" : filtroOrigemVisivel(primeiroParametro(parametros.origem));
   const parametrosContextuais = fonteFinanceiraUnica ? { ...parametros, origem: undefined, estado, destino: undefined, buscarDestino: undefined } : parametros;
   const q = (primeiroParametro(parametros.q) ?? "").slice(0, 120);
   const mes = primeiroParametro(parametros.mes) ?? "";

@@ -1,23 +1,27 @@
 import type { FonteUnificacao, LinhaUnificada } from "./tipos";
 
 export const ROTULOS_ORIGEM_DADOS = {
-  PLANILHA: "Planilhas Excel",
   WIDESYS: "Widesys",
   MANUAL: "Cadastro manual Brisa",
-  BRISA: "Brisa · origem a confirmar",
+  BRISA: "Brisa",
 } as const;
 export type OrigemDados = keyof typeof ROTULOS_ORIGEM_DADOS;
 type RegistroOrigem = Pick<FonteUnificacao, "origem" | "proveniencia"> & { origens?: string[] };
 
-/** Origem de armazenamento não comprova inclusão manual. Um grupo pode ter várias fontes. */
+/** A origem visível agrupa as cargas arquivadas com os demais registros do Brisa. */
 export function origensDoRegistro(registro: RegistroOrigem): OrigemDados[] {
   const manualComprovado = registro.origem === "BRISA" && registro.proveniencia?.tipo === "CADASTRO_MANUAL";
-  const origens = registro.origens?.length ? registro.origens : [manualComprovado ? "MANUAL" : registro.proveniencia?.arquivo ? "PLANILHA" : registro.origem];
-  return [...new Set(origens.map((origem): OrigemDados => origem === "PLANILHA" ? "PLANILHA" : origem === "WIDESYS" ? "WIDESYS" : origem === "MANUAL" ? "MANUAL" : "BRISA"))];
+  const origens = registro.origens?.length ? registro.origens : [manualComprovado ? "MANUAL" : registro.origem];
+  return [...new Set(origens.map((origem): OrigemDados => origem === "WIDESYS" || origem === "MANUAL" ? origem : "BRISA"))];
+}
+
+export function filtroOrigemVisivel(valor?: string): OrigemDados | "" {
+  return valor && Object.hasOwn(ROTULOS_ORIGEM_DADOS, valor) ? valor as OrigemDados : "";
 }
 
 export function correspondeOrigem(registro: RegistroOrigem, filtro?: string): boolean {
-  return !filtro || !Object.hasOwn(ROTULOS_ORIGEM_DADOS, filtro) || origensDoRegistro(registro).includes(filtro as OrigemDados);
+  const origem = filtroOrigemVisivel(filtro);
+  return !origem || origensDoRegistro(registro).includes(origem);
 }
 
 export function resumirOrganizacaoFinanceira(linhas: LinhaUnificada[]) {

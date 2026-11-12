@@ -43,13 +43,14 @@ describe("origem e situação são informações diferentes", () => {
   });
   it("não chama um registro Brisa de manual nem de planilha sem evidência", () => {
     const html = renderToStaticMarkup(<OrigensUnificadas origens={["BRISA"]} />);
-    expect(html).toContain("Brisa · origem a confirmar");
+    expect(html).toContain(">Brisa<");
     expect(html).not.toContain("Manual");
     expect(html).not.toContain("Excel");
   });
-  it("mantém as duas origens de um grupo sem duplicar os selos", () => {
-    const html = renderToStaticMarkup(<OrigensUnificadas origens={["PLANILHA", "WIDESYS", "PLANILHA"]} />);
-    expect(html.match(/Planilhas Excel/g)).toHaveLength(1);
+  it("exibe apenas Brisa e Widesys para um grupo com origem de carga antiga", () => {
+    const html = renderToStaticMarkup(<OrigensUnificadas origens={["PLANILHA", "WIDESYS", "BRISA"]} />);
+    expect(html.match(/>Brisa</g)).toHaveLength(1);
+    expect(html).not.toMatch(/planilha|excel/i);
     expect(html).toContain("Widesys");
   });
   it("identifica nota cadastrada manualmente sem chamá-la de planilha ou origem desconhecida", () => {
@@ -82,6 +83,16 @@ describe("origem e situação são informações diferentes", () => {
     mocks.perfil.mockResolvedValue("CONTABILIDADE");
     await expect(OperacaoUnificada({ titulo: "Teste", base: "/unificacao" })).rejects.toThrow("ACESSO_NEGADO");
     expect(mocks.listar).not.toHaveBeenCalled();
+  });
+  it("Pessoas e empresas ignora links de origem arquivada e omite a opção no seletor", async () => {
+    const dados = lista();
+    dados.itens = [registro({ dominio: "PESSOA", chave: "BRISA:PESSOA:r1", origens: ["PLANILHA"] })];
+    mocks.listar.mockResolvedValue(dados);
+    const html = renderToStaticMarkup(await OperacaoUnificada({ titulo: "Pessoas e empresas", base: "/cadastros/pessoas", dominio: "PESSOA", parametros: { origem: "PLANILHA" } }));
+    expect(mocks.listar).toHaveBeenCalledWith(expect.objectContaining({ origem: undefined, dominio: "PESSOA" }));
+    expect(html).toContain('name="origem"');
+    expect(html).toContain(">Brisa<");
+    expect(html).not.toMatch(/planilha|excel/i);
   });
   it("exibe a confirmação do Widesys sem oferecer nova decisão no recebimento", async () => {
     mocks.acesso.mockResolvedValue({ usuarioId: "teste", perfil: "FINANCEIRO", ativo: true, global: true, regras: [], permissoes: ["financeiro.ver", "unificacao.ver", "cadastros.sensiveis"] });

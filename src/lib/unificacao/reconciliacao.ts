@@ -189,9 +189,9 @@ export const MOTIVOS_UNIFICACAO: Record<string,string> = {
   CORRESPONDENCIA_APOS_REGRA_VALOR_DIFERENTE: "Surgiu outro título com valor igual ou não comprovado. Confira novamente antes de incluir este lançamento nos totais.",
   VALORES_DIFERENTES_CONFIRMADOS: "Conferido pela regra de valores diferentes: os títulos permanecem separados e cada valor entra uma única vez nos totais.",
   WIDESYS_CONFERIDO_NA_ORIGEM: "Dados conferidos pela origem Widesys, conforme orientação do administrador.",
-  CONCILIAR_COM_BASE_BRISA: "Conferir o cruzamento com Brisa/planilhas antes de somar a mesma operação novamente.",
+  CONCILIAR_COM_BASE_BRISA: "Confira a correspondência com o registro no Brisa.",
   PAGAMENTO_DESPESA_CONFERIR: "A saída vinculada à nota foi alterada ou excluída. Confira o vínculo; o sistema não cria outro pagamento nem uma nova cobrança.",
   POSSIVEL_DUPLICIDADE: "Existe um registro semelhante. Compare antes de incorporar.", POSSIVEL_DUPLICIDADE_INTERNA: "O próprio sistema contém uma possível repetição.", POSSIVEIS_CORRESPONDENCIAS: "Há registros que podem complementar esta informação.",
-  CONFERIR_IMOVEL_E_INQUILINO: "Confirme o imóvel e o inquilino para identificar o contrato existente.", PERIODO_JA_EXISTE_NA_PLANILHA: "Já existem cobranças neste período nas planilhas. Identifique o contrato antes de somar.",
+  CONFERIR_IMOVEL_E_INQUILINO: "Confirme o imóvel e o inquilino para identificar o contrato existente.", PERIODO_JA_EXISTE_NA_PLANILHA: "Já existem cobranças neste período. Identifique o contrato correspondente.",
   SEM_CORRESPONDENCIA_ENCONTRADA: "Nenhum vínculo confirmado; conserva sua identidade de origem.", FONTE_ALTERADA_APOS_DECISAO: "Dados alterados desde a decisão. Compare novamente.", VINCULO_JA_COMPROVADO: "Vínculo cadastral já registrado no sistema.", ANALISE_NECESSARIA: "Atualize a análise para classificar o registro.",
 };
