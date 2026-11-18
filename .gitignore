@@ -55,6 +55,8 @@ prisma/dev.db
 /data/legacy-widesys/
 /data/legacy-widesys*/
 /data/.legacy-widesys-*/
+/data/.sync-widesys-*/
+/data/.cadastros-widesys-*/
 /dados/
 /auth/
 /importação/
