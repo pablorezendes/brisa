@@ -1161,7 +1161,7 @@ function validarRegistroUi(valor: unknown): RegistroUi | null {
   };
 }
 
-type ResultadoCargaUi = { registros: RegistroUi[]; ausente: boolean };
+type ResultadoCargaUi = { registros: RegistroUi[]; ausente: boolean; empreendimentosIndisponiveis: boolean };
 
 function erroManifestoUi(codigo: string): never {
   throw new ErroImportacaoCadastrosWidesys(
@@ -1184,9 +1184,23 @@ function caminhoUiSeguro(diretorio: string, caminhoRelativo: string): string {
   return caminho;
 }
 
+function empreendimentosUiIndisponiveis(manifesto: Registro, modulos: Registro): boolean {
+  const estado = objeto(modulos.empreendimentos);
+  if (!instanteIsoValido(manifesto.completedAt) || !estado || estado.completed !== false
+    || estado.pagesFetched !== 0 || estado.recordsDiscovered !== 0 || estado.recordsSaved !== 0
+    || estado.recordsSkipped !== 0 || estado.detailErrors !== 0 || estado.reportedTotal !== null) return false;
+  if (!Array.isArray(manifesto.artifacts)
+    || manifesto.artifacts.some(artefato => !objeto(artefato) || objeto(artefato)?.module === "empreendimentos")) return false;
+  return Array.isArray(manifesto.errors) && manifesto.errors.length > 0 && manifesto.errors.every(valor => {
+    const erro = objeto(valor);
+    return erro?.module === "empreendimentos" && erro.code === "MODULE_FAILED"
+      && erro.message === "O legado respondeu HTTP 500.";
+  });
+}
+
 function carregarRegistrosUi(diretorio: string): ResultadoCargaUi {
   const caminhoManifesto = join(diretorio, "manifest.json");
-  if (!existsSync(caminhoManifesto)) return { registros: [], ausente: true };
+  if (!existsSync(caminhoManifesto)) return { registros: [], ausente: true, empreendimentosIndisponiveis: false };
 
   const manifesto = objeto(lerJsonSeguro(caminhoManifesto));
   if (!manifesto || manifesto.version !== 1) {
@@ -1201,14 +1215,15 @@ function carregarRegistrosUi(diretorio: string): ResultadoCargaUi {
     if (erro instanceof ErroImportacaoCadastrosWidesys) throw erro;
     erroManifestoUi("WIDESYS_UI_ORIGEM_INVALIDA");
   }
-  if (!Array.isArray(manifesto.errors) || manifesto.errors.length !== 0) {
-    erroManifestoUi("WIDESYS_UI_CAPTURA_COM_ERROS");
-  }
-
   const modulos = objeto(manifesto.modules);
   if (!modulos) erroManifestoUi("WIDESYS_UI_MODULOS_INVALIDOS");
+  const empreendimentosIndisponiveis = empreendimentosUiIndisponiveis(manifesto, modulos);
+  if (!Array.isArray(manifesto.errors) || manifesto.errors.length !== 0 && !empreendimentosIndisponiveis) {
+    erroManifestoUi("WIDESYS_UI_CAPTURA_COM_ERROS");
+  }
   const esperadosPorModulo = new Map<string, number>();
   for (const modulo of MODULOS_UI) {
+    if (modulo === "empreendimentos" && empreendimentosIndisponiveis) continue;
     const estado = objeto(modulos[modulo]);
     const descobertos = inteiroNaoNegativo(estado?.recordsDiscovered);
     const salvos = inteiroNaoNegativo(estado?.recordsSaved);
@@ -1298,11 +1313,12 @@ function carregarRegistrosUi(diretorio: string): ResultadoCargaUi {
   }
 
   for (const modulo of MODULOS_UI) {
+    if (modulo === "empreendimentos" && empreendimentosIndisponiveis) continue;
     if ((contagemPorModulo.get(modulo) ?? 0) !== esperadosPorModulo.get(modulo)) {
       erroManifestoUi("WIDESYS_UI_CONTAGEM_DIVERGENTE");
     }
   }
-  return { registros, ausente: false };
+  return { registros, ausente: false, empreendimentosIndisponiveis };
 }
 
 export function carregarPlanoCadastrosWidesys(
@@ -1397,8 +1413,9 @@ export function carregarPlanoCadastrosWidesys(
   });
   if (ui.ausente) {
     plano.avisos.push({ codigo: "ui_nao_capturada", quantidade: 1 });
-    plano.avisos.sort((a, b) => a.codigo.localeCompare(b.codigo));
   }
+  if (ui.empreendimentosIndisponiveis) plano.avisos.push({ codigo: "ui_empreendimentos_indisponivel", quantidade: 1 });
+  plano.avisos.sort((a, b) => a.codigo.localeCompare(b.codigo));
   return plano;
 }
 

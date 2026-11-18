@@ -261,6 +261,24 @@ function atualizarHashNoManifesto(diretorio: string, arquivo: string, conteudo: 
   escreverJson(caminho, manifesto);
 }
 
+function manifestoUiComEmpreendimentosIndisponiveis(diretorio: string) {
+  const caminho = join(diretorio, "manifest.json");
+  const manifesto = JSON.parse(readFileSync(caminho, "utf8")) as {
+    completedAt: string | null;
+    errors: Array<{ code: string; module: string; message: string }>;
+    modules: Record<string, Record<string, unknown>>;
+    artifacts: Array<Record<string, unknown>>;
+  };
+  manifesto.completedAt = "2026-09-15T12:05:00.000Z";
+  manifesto.errors = [{ code: "MODULE_FAILED", module: "empreendimentos", message: "O legado respondeu HTTP 500." }];
+  manifesto.modules.empreendimentos = {
+    completed: false, pagesFetched: 0, recordsDiscovered: 0, recordsSaved: 0,
+    recordsSkipped: 0, detailErrors: 0, reportedTotal: null,
+  };
+  escreverJson(caminho, manifesto);
+  return manifesto;
+}
+
 describe("planejamento de cadastros Widesys", () => {
   it("preserva identidades legadas, classifica papéis e converte valores sem float", () => {
     const primeiro = construirPlanoCadastrosWidesys(artefatosSinteticos());
@@ -333,6 +351,72 @@ describe("planejamento de cadastros Widesys", () => {
     unlinkSync(join(diretorio, "manifest.json"));
     const somenteApi = carregarPlanoCadastrosWidesys(diretorio);
     expect(somenteApi.avisos).toContainEqual({ codigo: "ui_nao_capturada", quantidade: 1 });
+  });
+
+  it("preserva a UI válida e avisa quando a primeira listagem auxiliar de empreendimentos responde HTTP 500", () => {
+    const { diretorio } = criarFixtureComManifestos();
+    manifestoUiComEmpreendimentosIndisponiveis(diretorio);
+    const caminho = join(diretorio, "manifest.json");
+    const antes = readFileSync(caminho, "utf8");
+    const plano = carregarPlanoCadastrosWidesys(diretorio);
+
+    expect(plano.pessoas).toHaveLength(1);
+    expect(plano.pessoas[0]).toMatchObject({ nomeFantasia: "Fantasia" });
+    expect(plano.avisos).toContainEqual({ codigo: "ui_empreendimentos_indisponivel", quantidade: 1 });
+    expect(plano.avisos).not.toContainEqual({ codigo: "ui_nao_capturada", quantidade: 1 });
+    expect(readFileSync(caminho, "utf8")).toBe(antes);
+  });
+
+  it.each([
+    ["completed", true], ["pagesFetched", 1], ["recordsDiscovered", 1],
+    ["recordsSaved", 1], ["recordsSkipped", 1], ["detailErrors", 1], ["reportedTotal", 0],
+  ])("mantém o bloqueio da captura auxiliar quando há evidência parcial em %s", (campo, valor) => {
+    const { diretorio } = criarFixtureComManifestos();
+    const manifesto = manifestoUiComEmpreendimentosIndisponiveis(diretorio);
+    manifesto.modules.empreendimentos[campo] = valor;
+    escreverJson(join(diretorio, "manifest.json"), manifesto);
+    expect(() => carregarPlanoCadastrosWidesys(diretorio)).toThrowError(ErroImportacaoCadastrosWidesys);
+  });
+
+  it.each([
+    ["produtos", "MODULE_FAILED", "O legado respondeu HTTP 500."],
+    ["empreendimentos", "DETAIL_FETCH_FAILED", "O legado respondeu HTTP 500."],
+    ["empreendimentos", "MODULE_FAILED", "O legado respondeu HTTP 403."],
+  ])("recusa erros fora da exceção auxiliar em %s / %s", (module, code, message) => {
+    const { diretorio } = criarFixtureComManifestos();
+    const manifesto = manifestoUiComEmpreendimentosIndisponiveis(diretorio);
+    manifesto.errors.push({ module, code, message });
+    escreverJson(join(diretorio, "manifest.json"), manifesto);
+    expect(() => carregarPlanoCadastrosWidesys(diretorio)).toThrowError(ErroImportacaoCadastrosWidesys);
+  });
+
+  it("exige captura encerrada, sem artefatos auxiliares, com os oito outros módulos completos", () => {
+    const { diretorio } = criarFixtureComManifestos();
+    const caminho = join(diretorio, "manifest.json");
+    const manifesto = manifestoUiComEmpreendimentosIndisponiveis(diretorio);
+    manifesto.completedAt = null;
+    escreverJson(caminho, manifesto);
+    expect(() => carregarPlanoCadastrosWidesys(diretorio)).toThrowError(ErroImportacaoCadastrosWidesys);
+    manifesto.completedAt = "2026-09-15T12:05:00.000Z";
+    manifesto.artifacts.push({ module: "empreendimentos", kind: "list-json" });
+    escreverJson(caminho, manifesto);
+    expect(() => carregarPlanoCadastrosWidesys(diretorio)).toThrowError(ErroImportacaoCadastrosWidesys);
+    manifesto.artifacts.pop();
+    delete manifesto.modules.produtos;
+    escreverJson(caminho, manifesto);
+    expect(() => carregarPlanoCadastrosWidesys(diretorio)).toThrowError(ErroImportacaoCadastrosWidesys);
+  });
+
+  it("mantém as validações de hash da API e dos oito módulos de UI quando empreendimentos está indisponível", () => {
+    const { diretorio, detalheUi } = criarFixtureComManifestos();
+    manifestoUiComEmpreendimentosIndisponiveis(diretorio);
+    const detalheAntes = readFileSync(detalheUi, "utf8");
+    writeFileSync(detalheUi, detalheAntes.replace("Fantasia", "Alterada"), "utf8");
+    expect(() => carregarPlanoCadastrosWidesys(diretorio)).toThrowError(ErroImportacaoCadastrosWidesys);
+    writeFileSync(detalheUi, detalheAntes, "utf8");
+    const cliente = join(diretorio, "clientes-lista.json");
+    writeFileSync(cliente, readFileSync(cliente, "utf8").replace("Pessoa fixture", "Pessoa alterada"), "utf8");
+    expect(() => carregarPlanoCadastrosWidesys(diretorio)).toThrowError(ErroImportacaoCadastrosWidesys);
   });
 
   it.each([
