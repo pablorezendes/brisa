@@ -126,3 +126,83 @@ describe("baixa no Brisa de título do Widesys", () => {
     }
   });
 });
+
+async function contratoWidesys() {
+  const legadoId = randomUUID();
+  const capturadoEm = new Date("2026-11-10T12:00:00Z");
+  const lote = await banco.importacaoLegadoLote.create({ data: {
+    origem: "WIDESYS", capturaId: legadoId, manifestoHash: legadoId, capturadoEm, status: "CONCLUIDO",
+  } });
+  const item = await banco.importacaoLegadoItem.create({ data: {
+    loteId: lote.id, origem: "WIDESYS", escopo: "CONTRATO", legadoId, snapshotHash: legadoId, acao: "CRIAR",
+  } });
+  return banco.contratoLegado.create({ data: {
+    legadoId, ultimoItemId: item.id, capturadoEm, situacaoOrigem: "- Vigente", numeroContrato: legadoId,
+    snapshot: "{}", snapshotHash: legadoId,
+  } });
+}
+
+describe("nova cobrança vinculada ao contrato importado", () => {
+  it("cria só a conta no Brisa e recusa reenvio ou mesma cobrança com outro ID", async () => {
+    const contrato = await contratoWidesys();
+    const id = randomUUID();
+    const contratosAntes = await banco.contrato.count();
+    const contratosImportadosAntes = await banco.contratoLegado.count();
+    const contasNativasAntes = await banco.recebimento.count();
+    const caixaAntes = await banco.lancamentoCaixa.count();
+    const dados = { contratoId: `WIDESYS:${contrato.id}`, descricao: "Cobrança avulsa", vencimento: "2026-12-10", valor: "150,00" };
+    await expect(salvarRecebimentoManual(id, {}, formulario(dados))).rejects.toThrow("REDIRECT");
+    await expect(salvarRecebimentoManual(id, {}, formulario(dados))).resolves.toHaveProperty("erro");
+    await expect(salvarRecebimentoManual(randomUUID(), {}, formulario({ ...dados, descricao: "  COBRANÇA   AVULSA  " }))).resolves.toHaveProperty("erro");
+    expect(await banco.contaReceberContratoLegado.findUnique({ where: { id } })).toMatchObject({
+      contratoLegadoId: contrato.id, valor: 15000, recebido: 0, competencia: "2026-12", vencimento: "2026-12-10",
+    });
+    expect(await banco.contrato.count()).toBe(contratosAntes);
+    expect(await banco.contratoLegado.count()).toBe(contratosImportadosAntes);
+    expect(await banco.recebimento.count()).toBe(contasNativasAntes);
+    expect(await banco.lancamentoCaixa.count()).toBe(caixaAntes);
+    expect(await banco.contaReceberContratoLegado.count({ where: { contratoLegadoId: contrato.id } })).toBe(1);
+    await expect(salvarRecebimentoManual(randomUUID(), {}, formulario({ ...dados, valor: "200,00" }))).rejects.toThrow("REDIRECT");
+    expect(await banco.contaReceberContratoLegado.count({ where: { contratoLegadoId: contrato.id } })).toBe(2);
+  });
+
+  it("registra recebimento na criação, parcial e quitação com uma entrada por baixa", async () => {
+    const contrato = await contratoWidesys();
+    const id = randomUUID();
+    const dados = formulario({ contratoId: `WIDESYS:${contrato.id}`, descricao: "Cobrança de manutenção", vencimento: "2026-12-10", valor: "100,00", recebido: "20,00", dataPagamento: "2026-11-18", via: "PIX" });
+    await expect(salvarRecebimentoManual(id, {}, dados)).rejects.toThrow("REDIRECT");
+    const parcialId = randomUUID();
+    const parcial = formulario({ valor: "30,00", dataPagamento: "2026-11-19", via: "TRANSFERENCIA" });
+    await expect(registrarBaixaRecebimentoManual(id, parcialId, "/recebimentos", {}, parcial)).rejects.toThrow("REDIRECT");
+    await expect(registrarBaixaRecebimentoManual(id, parcialId, "/recebimentos", {}, parcial)).resolves.toHaveProperty("erro");
+    await expect(registrarBaixaRecebimentoManual(id, randomUUID(), "/recebimentos", {}, formulario({ valor: "50,01", dataPagamento: "2026-11-19", via: "PIX" }))).resolves.toHaveProperty("erro");
+    await expect(registrarBaixaRecebimentoManual(id, randomUUID(), "/recebimentos", {}, formulario({ valor: "50,00", dataPagamento: "2026-11-19", via: "PIX" }))).rejects.toThrow("REDIRECT");
+    const conta = await banco.contaReceberContratoLegado.findUniqueOrThrow({ where: { id }, include: { baixas: { include: { lancamentoCaixa: true } } } });
+    expect(conta.recebido).toBe(10000);
+    expect(conta.baixas).toHaveLength(3);
+    expect(conta.baixas.reduce((total, baixa) => total + baixa.lancamentoCaixa.valor, 0)).toBe(10000);
+    expect(conta.baixas.every(baixa => baixa.contaId === id && baixa.lancamentoCaixa.tipo === "ENTRADA")).toBe(true);
+  });
+
+  it("avisa sobre título já importado com o mesmo contrato, vencimento e valor", async () => {
+    const contrato = await contratoWidesys();
+    const titulo = await tituloWidesys();
+    await banco.tituloFinanceiroLegado.update({ where: { id: titulo.id }, data: { contratoLegadoId: contrato.legadoId } });
+    const id = randomUUID();
+    const resultado = await salvarRecebimentoManual(id, {}, formulario({ contratoId: `WIDESYS:${contrato.id}`, descricao: "Cobrança", vencimento: titulo.vencimento!, valor: "150,00" }));
+    expect(resultado.erro).toContain("título importado");
+    expect(await banco.contaReceberContratoLegado.findUnique({ where: { id } })).toBeNull();
+    expect(await banco.lancamentoCaixa.findUnique({ where: { id } })).toBeNull();
+  });
+
+  it("recusa contrato encerrado e contrato excluído antes de criar a cobrança", async () => {
+    const contrato = await contratoWidesys();
+    const dados = formulario({ contratoId: `WIDESYS:${contrato.id}`, descricao: "Cobrança", vencimento: "2026-12-10", valor: "100,00" });
+    await banco.contratoLegado.update({ where: { id: contrato.id }, data: { situacaoOrigem: "- Encerrado" } });
+    await expect(salvarRecebimentoManual(randomUUID(), {}, dados)).resolves.toHaveProperty("erro");
+    await banco.contratoLegado.update({ where: { id: contrato.id }, data: { situacaoOrigem: "- Vigente" } });
+    await banco.recursoGovernado.create({ data: { tipo: "CONTRATO_LEGADO", origemId: contrato.id, status: "EXCLUIDO", motivo: "Teste", autorId: "teste" } });
+    await expect(salvarRecebimentoManual(randomUUID(), {}, dados)).resolves.toHaveProperty("erro");
+    expect(await banco.contaReceberContratoLegado.count({ where: { contratoLegadoId: contrato.id } })).toBe(0);
+  });
+});

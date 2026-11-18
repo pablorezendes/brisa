@@ -5,6 +5,7 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { excluirTitulosLote, previaExclusaoTitulosLote } from "./exclusao-titulos-lote";
 import { descartarTitulo, excluirAdministrativamente, excluirRecurso, previaGovernanca, restaurarRecurso } from "./servico";
+import { filtroCaixaDespesasRestritas } from "../despesas/sigilo-caixa";
 
 let diretorio: string;
 let contador = 0;
@@ -58,6 +59,36 @@ async function confirmar(ids = ["r1", "r2"]) {
   const previa = await previaExclusaoTitulosLote(db, "RECEBER", ids.map(chave), ator);
   return previa.itens.map(({ chave, assinatura }) => ({ chave, assinatura }));
 }
+
+it("exclui e restaura contas do contrato importado preservando a baixa e protegendo sua entrada", async () => {
+  const captura = { origem: "WIDESYS", capturadoEm: new Date("2026-11-10T12:00:00Z"), snapshot: "{}", snapshotHash: "teste" };
+  await db.contratoLegado.create({ data: { id: "contrato-importado", legadoId: "42", ultimoItemId: "item-contrato", numeroContrato: "42", ...captura } });
+  await db.contaReceberContratoLegado.createMany({ data: ["paga", "aberta"].map(id => ({
+    id, contratoLegadoId: "contrato-importado", descricao: `Conta ${id}`, valor: 10000, recebido: id === "paga" ? 4000 : 0,
+    competencia: "2026-11", vencimento: "2026-11-20", chaveDuplicidade: id, usuarioId: ator.id, restrito: id === "paga",
+  })) });
+  await db.lancamentoCaixa.create({ data: { id: "entrada-nova", tipo: "ENTRADA", valor: 4000, mesReferencia: "2026-11", centroCusto: "GERAL", criadoManualBrisa: true } });
+  await db.baixaContaReceberContratoLegado.create({ data: {
+    id: "baixa-nova", contaId: "paga", lancamentoCaixaId: "entrada-nova", valor: 4000, dataPagamento: "2026-11-18", via: "PIX", usuarioId: ator.id,
+  } });
+
+  const paga = chave("paga");
+  const previa = await previaGovernanca(db, "TITULO", paga);
+  expect(previa).toMatchObject({ nome: "Conta paga", valor: 10000, vinculos: { pagamentos: 1, boletos: 0 }, bloqueioExclusao: null });
+  const selecao = await previaExclusaoTitulosLote(db, "RECEBER", [paga, chave("aberta")], ator);
+  expect(selecao.itens[0]).toMatchObject({ nome: "Conta paga", vinculos: { pagamentos: 1, boletos: 0, baixas: 0 } });
+  await excluirTitulosLote(db, "RECEBER", selecao.itens.map(({ chave, assinatura }) => ({ chave, assinatura })), "Revisão da conta duplicada", ator);
+  expect(await db.recursoGovernado.count({ where: { tipo: "TITULO", status: "EXCLUIDO" } })).toBe(2);
+  expect(await db.contaReceberContratoLegado.count()).toBe(2);
+  expect(await db.baixaContaReceberContratoLegado.count()).toBe(1);
+  await restaurarRecurso(db, "TITULO", paga, "Restaurar cobrança válida", { ...ator, administrador: true, assinaturaPrevia: (await previaGovernanca(db, "TITULO", paga)).assinatura });
+  expect(await previaGovernanca(db, "TITULO", paga)).toMatchObject({ status: "ATIVO" });
+
+  const caixa = await previaGovernanca(db, "CAIXA", "entrada-nova");
+  await expect(excluirAdministrativamente(db, "CAIXA", "entrada-nova", "Não excluir individualmente", { ...ator, administrador: true, assinaturaPrevia: caixa.assinatura })).rejects.toMatchObject({ codigo: "CONTA_VINCULADA" });
+  expect(await db.lancamentoCaixa.count({ where: { AND: [{ id: "entrada-nova" }, filtroCaixaDespesasRestritas("FINANCEIRO")] } })).toBe(0);
+  expect(await db.lancamentoCaixa.count({ where: { AND: [{ id: "entrada-nova" }, filtroCaixaDespesasRestritas("ADMINISTRADOR")] } })).toBe(1);
+});
 async function fatos() {
   return {
     contratos: await db.contrato.findMany(), recebimentos: await db.recebimento.findMany(),

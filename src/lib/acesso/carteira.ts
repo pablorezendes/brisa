@@ -73,7 +73,7 @@ export async function consultarCarteira(db: PrismaClient, p: PoliticaAcesso, mes
   const titulos: TituloCarteira[] = [];
   const contratosWidesys = contratosLegados.filter(c => c.origem === "WIDESYS");
   if (pode(p, "financeiro.ver") && (contratos.length || contratosWidesys.length)) {
-    const [legados, manuais] = await Promise.all([
+    const [legados, manuais, manuaisContratosLegados] = await Promise.all([
       contratosWidesys.length ? db.tituloFinanceiroLegado.findMany({ where: { origem: "WIDESYS", contratoLegadoId: { in: contratosWidesys.map(c => c.legadoId) }, OR: [{ competencia: { startsWith: mes } }, { competencia: null, vencimento: { startsWith: mes } }] }, select: {
         id: true, origem: true, contratoLegadoId: true, pessoaLegadoId: true, natureza: true, planoContaRotulo: true, tipoCobrancaRotulo: true,
       } }) : [],
@@ -81,8 +81,13 @@ export async function consultarCarteira(db: PrismaClient, p: PoliticaAcesso, mes
         where: { criadoManualBrisa: true, contratoId: { in: contratos.map(c => c.id) }, competencia: mes, origemAgregada: false },
         select: { id: true, contratoId: true },
       }) : [],
+      contratosWidesys.length ? db.contaReceberContratoLegado.findMany({
+        where: { contratoLegadoId: { in: contratosWidesys.map(contrato => contrato.id) }, competencia: mes, restrito: false },
+        select: { id: true, contratoLegadoId: true },
+      }) : [],
     ]);
     const permitidos = new Map<string, string>(manuais.map(t => [`BRISA:RECEBER:${t.id}`, `BRISA:${t.contratoId}`]));
+    for (const titulo of manuaisContratosLegados) permitidos.set(`BRISA:RECEBER:${titulo.id}`, `WIDESYS:${titulo.contratoLegadoId}`);
     const contratoPorIdLegado = new Map(contratosWidesys.map(c => [c.legadoId, c]));
     for (const t of legados) {
       if (t.pessoaLegadoId && bloqueioPessoaExterna.has(referencia(t.origem, t.pessoaLegadoId))) continue;

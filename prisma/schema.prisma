@@ -614,6 +614,7 @@ model ContratoLegado {
   atualizadoEm       DateTime              @updatedAt
   ultimoItem         ImportacaoLegadoItem  @relation("ContratoLegadoUltimoItem", fields: [ultimoItemId], references: [id], onDelete: Restrict)
   partes             ContratoParteLegado[]
+  contasReceberBrisa  ContaReceberContratoLegado[]
 
   @@unique([origem, legadoId])
   @@index([numeroContrato])
@@ -834,6 +835,42 @@ model ParametroComissao {
   id       String @id @default(uuid())
   vigencia String @unique // "YYYY-MM" (início da vigência)
   taxaBps  Int    @default(1000) // 1000 = 10%
+}
+
+model ContaReceberContratoLegado {
+  id                String                  @id
+  contratoLegadoId   String
+  descricao         String
+  valor             Int
+  recebido          Int                     @default(0)
+  competencia       String
+  vencimento        String
+  dataPagamento     String?
+  via               String?
+  restrito          Boolean                 @default(false)
+  chaveDuplicidade  String                  @unique
+  usuarioId         String
+  criadoEm          DateTime                @default(now())
+  contrato          ContratoLegado          @relation(fields: [contratoLegadoId], references: [id], onDelete: Restrict)
+  baixas            BaixaContaReceberContratoLegado[]
+
+  @@index([contratoLegadoId, vencimento])
+  @@index([competencia])
+}
+
+model BaixaContaReceberContratoLegado {
+  id                String                       @id
+  contaId           String
+  lancamentoCaixaId String                       @unique
+  valor             Int
+  dataPagamento     String
+  via               String
+  usuarioId         String
+  criadoEm          DateTime                     @default(now())
+  conta             ContaReceberContratoLegado   @relation(fields: [contaId], references: [id], onDelete: Restrict)
+  lancamentoCaixa   LancamentoCaixa              @relation(fields: [lancamentoCaixaId], references: [id], onDelete: Restrict)
+
+  @@index([contaId, criadoEm])
 }
 
 model Recebimento {
@@ -1207,6 +1244,7 @@ model LancamentoCaixa {
   despesaDocumento DespesaDocumento?
   recebimentoManual Recebimento? @relation(fields: [recebimentoManualId], references: [id], onDelete: Restrict)
   recebimentoWidesysLocal RecebimentoWidesysLocal?
+  baixaContaReceberContratoLegado BaixaContaReceberContratoLegado?
 
   @@index([mesReferencia, centroCusto])
   @@index([recebimentoManualId])

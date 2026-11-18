@@ -114,15 +114,15 @@ async function salvarLancamentoInterno(formData: FormData, acesso: Awaited<Retur
     const identidade = manual ? { id, criadoManualBrisa: true, despesaDocumento: { is: null }, recebimentoManualId: null } : { id };
     const where = { AND: [identidade, sigilo] };
     const existente = await prisma.lancamentoCaixa.findFirst({
-      where, select: { id: true, descricao: true, categoria: true, criadoManualBrisa: true, recebimentoManualId: true, despesaDocumento: { select: { criadoManualBrisa: true } }, recebimentoWidesysLocal: { select: { id: true } } },
+      where, select: { id: true, descricao: true, categoria: true, criadoManualBrisa: true, recebimentoManualId: true, despesaDocumento: { select: { criadoManualBrisa: true } }, recebimentoWidesysLocal: { select: { id: true } }, baixaContaReceberContratoLegado: { select: { id: true } } },
     });
     if (!existente) return { erro: "Lançamento não encontrado — pode ter sido excluído." };
-    if (existente.recebimentoManualId || existente.despesaDocumento?.criadoManualBrisa || existente.recebimentoWidesysLocal) return { erro: "Consulte a conta vinculada para tratar este movimento." };
+    if (existente.recebimentoManualId || existente.despesaDocumento?.criadoManualBrisa || existente.recebimentoWidesysLocal || existente.baixaContaReceberContratoLegado) return { erro: "Consulte a conta vinculada para tratar este movimento." };
     if (!manual && existente.criadoManualBrisa) return { erro: "Abra o movimento na lista para fazer a alteração." };
     if (manual && acesso.perfil !== "ADMINISTRADOR" && contemComissaoRestrita([existente.descricao, existente.categoria])) return { erro: "Este lançamento está restrito ao administrador." };
     // A mesma condição no UPDATE impede corrida com uma nota que acaba de
     // tornar seu pagamento reservado, sem carregar seus dados para o cliente.
-    const resultado = await prisma.lancamentoCaixa.updateMany({ where: { ...where, recebimentoWidesysLocal: { is: null } }, data: dados });
+    const resultado = await prisma.lancamentoCaixa.updateMany({ where: { ...where, recebimentoWidesysLocal: { is: null }, baixaContaReceberContratoLegado: { is: null } }, data: dados });
     if (resultado.count !== 1) return { erro: "Lançamento indisponível para alteração. Reabra a página." };
   } else {
     try {

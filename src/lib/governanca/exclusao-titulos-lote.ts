@@ -60,7 +60,7 @@ async function carregarPrevia(tx: Tx, selecao: Identidade[]) {
   const brisaIds = selecao.filter(i => i.origem === "BRISA" && i.dominio === "RECEBER").map(i => i.id);
   const despesasIds = selecao.filter(i => i.origem === "BRISA" && i.dominio === "PAGAR").map(i => i.id);
   const legadoIds = selecao.filter(i => i.origem === "WIDESYS").map(i => i.id);
-  const [estados, recebimentos, titulos, pagamentos, boletos, despesas] = await Promise.all([
+  const [estados, recebimentos, titulos, pagamentos, boletos, despesas, contasContratoLegado] = await Promise.all([
     tx.recursoGovernado.findMany({ where: { tipo: "TITULO", origemId: { in: selecao.map(i => i.chave) } } }),
     brisaIds.length ? tx.recebimento.findMany({ where: { id: { in: brisaIds } }, include: { contrato: { include: { locatario: true, unidade: true } } } }) : [],
     legadoIds.length ? tx.tituloFinanceiroLegado.findMany({ where: { id: { in: legadoIds } }, select: {
@@ -76,6 +76,10 @@ async function carregarPrevia(tx: Tx, selecao: Identidade[]) {
       select: { id: true, recebimentoId: true, status: true, conciliacaoStatus: true, atualizadoEm: true }, orderBy: { id: "asc" } }) : [],
     despesasIds.length ? tx.despesaDocumento.findMany({ where: { id: { in: despesasIds }, origemChave: null },
       include: { lancamentoCaixa: true } }) : [],
+    brisaIds.length ? tx.contaReceberContratoLegado.findMany({ where: { id: { in: brisaIds } }, include: {
+      contrato: true,
+      baixas: { select: { id: true, lancamentoCaixaId: true, valor: true, dataPagamento: true, via: true }, orderBy: { id: "asc" } },
+    } }) : [],
   ]);
   const contratosWhere = titulos.filter(t => t.contratoLegadoId).map(t => ({ origem: t.origem, legadoId: t.contratoLegadoId! }));
   const contratos = contratosWhere.length ? await tx.contratoLegado.findMany({ where: { OR: contratosWhere }, select: {
@@ -101,6 +105,7 @@ async function carregarPrevia(tx: Tx, selecao: Identidade[]) {
   ]);
   const estadosPorId = new Map(estados.map(e => [e.origemId, e]));
   const recebimentosPorId = new Map(recebimentos.map(r => [r.id, r]));
+  const contasContratoPorId = new Map(contasContratoLegado.map(conta => [conta.id, conta]));
   const despesasPorId = new Map(despesas.map(d => [d.id, d]));
   const titulosPorId = new Map(titulos.map(t => [t.id, t]));
   const pessoasPorId = new Map(pessoas.map(p => [JSON.stringify([p.origem, p.legadoId]), p.nome]));
@@ -122,12 +127,21 @@ async function carregarPrevia(tx: Tx, selecao: Identidade[]) {
       links = { pagamentos: d.lancamentoCaixa ? [d.lancamentoCaixa] : [], boletos: [], baixas: [] };
     } else if (item.origem === "BRISA") {
       const t = recebimentosPorId.get(item.id);
-      if (!t) throw new ErroGovernanca("NAO_ENCONTRADO", "Um dos registros selecionados não existe mais. Atualize a lista antes de continuar.");
-      nome = `${t.contrato.locatario?.nome ?? "Recebimento"} · ${t.contrato.unidade.identificacao} · ${t.competencia}`;
-      referencia = `Brisa · competência ${t.competencia} · lançamento ${t.mesLancamento}`;
-      valor = t.valor + t.iptu + t.cond;
-      dados = t;
-      links = { pagamentos: pagamentosPorId.get(t.id) ?? [], boletos: boletosPorId.get(t.id) ?? [], baixas: [] };
+      if (t) {
+        nome = `${t.contrato.locatario?.nome ?? "Recebimento"} · ${t.contrato.unidade.identificacao} · ${t.competencia}`;
+        referencia = `Brisa · competência ${t.competencia} · lançamento ${t.mesLancamento}`;
+        valor = t.valor + t.iptu + t.cond;
+        dados = t;
+        links = { pagamentos: pagamentosPorId.get(t.id) ?? [], boletos: boletosPorId.get(t.id) ?? [], baixas: [] };
+      } else {
+        const conta = contasContratoPorId.get(item.id);
+        if (!conta) throw new ErroGovernanca("NAO_ENCONTRADO", "Um dos registros selecionados não existe mais. Atualize a lista antes de continuar.");
+        nome = conta.descricao;
+        referencia = `Brisa · contrato Widesys ${conta.contrato.numeroContrato ?? conta.contrato.legadoId} · competência ${conta.competencia}`;
+        valor = conta.valor;
+        dados = conta;
+        links = { pagamentos: conta.baixas, boletos: [], baixas: [] };
+      }
     } else {
       const t = titulosPorId.get(item.id);
       // A lista conserva naturezas inconsistentes em RECEBER para conferência.

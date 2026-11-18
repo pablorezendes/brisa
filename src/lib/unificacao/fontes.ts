@@ -61,7 +61,7 @@ export async function carregarDadosFontesUnificacao(db: BancoUnificacao, dominio
     valor: true, dataPagamento: true, estornada: true, contaBancariaRotulo: true,
     movimentoLegadoId: true, importadoEm: true,
   } as const;
-  const [locatarios, pessoas, unidades, imoveis, contratos, contratosLegados, recebimentos, titulos, pagamentos, todasBaixas, caixa, movimentos, parametros, importacoesPlanilha, despesas, recebimentosWidesysLocais] = await Promise.all([
+  const [locatarios, pessoas, unidades, imoveis, contratos, contratosLegados, recebimentos, titulos, pagamentos, todasBaixas, caixa, movimentos, parametros, importacoesPlanilha, despesas, recebimentosWidesysLocais, contasContratosLegados] = await Promise.all([
     completa ? db.locatario.findMany({ select: {
       id: true, nome: true, cpfCnpj: true, pessoaId: true, email: true,
       telefone: true, contato: true, endereco: true, numeroEndereco: true,
@@ -162,6 +162,11 @@ export async function carregarDadosFontesUnificacao(db: BancoUnificacao, dominio
       id: true, tituloId: true, lancamentoCaixaId: true, valor: true, dataPagamento: true, via: true,
       criadoEm: true, valorDevidoOrigemNaBaixa: true, valorPagoOrigemNaBaixa: true, valorAbertoOrigemNaBaixa: true, restrito: true,
     } }) : [],
+    completa || dominioFinanceiro === "RECEBER" ? db.contaReceberContratoLegado.findMany({ select: {
+      id: true, contratoLegadoId: true, descricao: true, valor: true, recebido: true,
+      competencia: true, vencimento: true, dataPagamento: true, via: true, restrito: true,
+      baixas: { select: { id: true, lancamentoCaixaId: true, valor: true, dataPagamento: true, via: true } },
+    } }) : [],
   ]);
   const idsLocais = new Set(recebimentosWidesysLocais.map(baixa => baixa.tituloId));
   const idsLegadoLocais = dominioFinanceiro === "RECEBER" && idsLocais.size
@@ -187,17 +192,18 @@ export async function carregarDadosFontesUnificacao(db: BancoUnificacao, dominio
     const item = primeiraProveniencia.get(lancamento.id);
     return { ...lancamento, importacoesPlanilha: item ? [item] : [] };
   });
-  return { locatarios, pessoas, unidades, imoveis, contratos, contratosLegados, recebimentos, titulos, pagamentos, baixas, caixa: caixaComProveniencia, movimentos, parametros, despesas, caixasDespesasGovernados, caixasDespesasDecisoes, recebimentosWidesysLocais };
+  return { locatarios, pessoas, unidades, imoveis, contratos, contratosLegados, recebimentos, titulos, pagamentos, baixas, caixa: caixaComProveniencia, movimentos, parametros, despesas, caixasDespesasGovernados, caixasDespesasDecisoes, recebimentosWidesysLocais, contasContratosLegados };
 }
 
 export type DadosFontesUnificacao = Awaited<ReturnType<typeof carregarDadosFontesUnificacao>>;
 
 /** Deriva hashes e proveniência da fotografia, sem novas consultas ao banco. */
 export async function derivarFontesUnificacao(dados: DadosFontesUnificacao, incluirProvenienciaPlanilha = true): Promise<FonteUnificacao[]> {
-  const { locatarios, pessoas, unidades, imoveis, contratos, contratosLegados, recebimentos, titulos, pagamentos, baixas, caixa, movimentos, parametros, despesas, caixasDespesasGovernados, caixasDespesasDecisoes, recebimentosWidesysLocais } = dados;
+  const { locatarios, pessoas, unidades, imoveis, contratos, contratosLegados, recebimentos, titulos, pagamentos, baixas, caixa, movimentos, parametros, despesas, caixasDespesasGovernados, caixasDespesasDecisoes, recebimentosWidesysLocais, contasContratosLegados } = dados;
   const pLegado = new Map(pessoas.map(p => [p.legadoId, p]));
   const iLegado = new Map(imoveis.map(i => [i.legadoId, i]));
   const cLegado = new Map(contratosLegados.map(c => [c.legadoId, c]));
+  const contratoLegadoPorId = new Map(contratosLegados.map(c => [c.id, c]));
   const tLegado = new Map(titulos.map(t => [`${t.escopo}:${t.legadoId}`, t]));
   const { porTitulo, baixasOrigemRepetidas, baixasOrigemPosteriores, valorRetidoPorMovimento } = apurarRecebimentosWidesysLocais(titulos, recebimentosWidesysLocais, baixas, movimentos);
   const overlaysRestritos = new Set(despesas.filter(d => d.restrita && d.origemChave).map(d => d.origemChave!));
@@ -258,6 +264,34 @@ export async function derivarFontesUnificacao(dados: DadosFontesUnificacao, incl
       pessoaChave: r.contrato.locatarioId ? chaveFonte("BRISA", "PESSOA", r.contrato.locatarioId) : null, contratoChave: chaveFonte("BRISA", "CONTRATO", r.contratoId), imovelChave: chaveFonte("BRISA", "IMOVEL", r.contrato.unidadeId),
       competencia: r.competencia, data: r.dataPagamento, vencimento: venc, valor: devido, pago, aberto: Math.max(devido - pago, 0), informativo: devido === 0 && pago === 0,
       campos: { pessoa: campo("Pagador", r.contrato.locatario?.nome), imovel: campo("Imóvel", r.contrato.unidade.identificacao), competencia: campo("Competência", r.competencia), mesLancamento: campo("Mês operacional", r.mesLancamento), vencimento: campo("Vencimento pelo contrato", venc), valor: dinheiro("Devido", devido), pago: dinheiro("Pago", pago), aberto: dinheiro("Saldo", Math.max(devido-pago,0)), aluguel: dinheiro("Aluguel", r.valor), iptu: dinheiro("IPTU", r.iptu), cond: dinheiro("Condomínio", r.cond), taxa: campo("Comissão (bps)", r.taxaComissaoBps), observacao: campo("Observação", r.observacao), origemAgregada: campo("Temporada agregada", r.origemAgregada ? "Sim" : "Não") },
+    }));
+  }
+  for (const conta of contasContratosLegados) {
+    const contrato = contratoLegadoPorId.get(conta.contratoLegadoId);
+    const pessoa = contrato ? pessoaContrato(contrato.legadoId) : null;
+    const imovel = contrato?.imovelLegadoId ? iLegado.get(contrato.imovelLegadoId) : null;
+    const restrito = conta.restrito || contemComissaoRestrita(conta.descricao);
+    fontes.push(fonte("RECEBER", "BRISA", conta.id, {
+      lancamentoManual: true, contaContratoLegado: true, proveniencia: { tipo: "CADASTRO_MANUAL" }, restrito,
+      titulo: pessoa?.nome ?? imovel?.nome ?? "Conta a receber",
+      descricao: [imovel?.empreendimentoNome, imovel?.nome ?? imovel?.referencia, conta.descricao].filter(Boolean).join(" · "), href: null,
+      pessoaChave: pessoa ? chaveFonte("WIDESYS", "PESSOA", pessoa.id) : null,
+      contratoChave: chaveFonte("WIDESYS", "CONTRATO", conta.contratoLegadoId),
+      imovelChave: imovel ? chaveFonte("WIDESYS", "IMOVEL", imovel.id) : null,
+      competencia: conta.competencia, vencimento: conta.vencimento, data: conta.dataPagamento,
+      valor: conta.valor, pago: conta.recebido, aberto: Math.max(0, conta.valor - conta.recebido),
+      campos: {
+        pessoa: campo("Pagador", pessoa?.nome), contrato: campo("Contrato importado", contrato?.numeroContrato ?? contrato?.legadoId),
+        imovel: campo("Imóvel", imovel?.nome ?? imovel?.referencia), descricao: campo("Descrição", conta.descricao),
+        competencia: campo("Competência", conta.competencia), vencimento: campo("Vencimento", conta.vencimento),
+        valor: dinheiro("Devido", conta.valor), pago: dinheiro("Recebido", conta.recebido), aberto: dinheiro("Saldo", Math.max(0, conta.valor - conta.recebido)),
+      },
+    }));
+    for (const baixa of conta.baixas) fontes.push(fonte("BAIXA_RECEBER", "BRISA", baixa.id, {
+      lancamentoManual: true, contaContratoLegado: true, proveniencia: { tipo: "CADASTRO_MANUAL" }, restrito,
+      titulo: pessoa?.nome ?? "Recebimento", descricao: baixa.via, href: null,
+      tituloChave: chaveFonte("BRISA", "RECEBER", conta.id), data: baixa.dataPagamento, valor: baixa.valor, informativo: true,
+      campos: { data: campo("Data", baixa.dataPagamento), valor: dinheiro("Valor", baixa.valor), forma: campo("Forma", baixa.via) },
     }));
   }
   const caixasDespesaInativos = new Set(caixasDespesasGovernados.map(c => c.origemId));
@@ -344,6 +378,7 @@ export async function derivarFontesUnificacao(dados: DadosFontesUnificacao, incl
   const caixasComNotaRestrita = new Set(despesas.filter(d => d.restrita && d.lancamentoCaixaId).map(d => d.lancamentoCaixaId!));
   const despesasManuaisPorCaixa = new Map(despesas.filter(d => d.criadoManualBrisa && d.lancamentoCaixaId).map(d => [d.lancamentoCaixaId!, d.id]));
   const recebimentosManuaisRestritos = new Set(recebimentos.filter(r => r.criadoManualBrisa && contemComissaoRestrita(r.observacao)).map(r => r.id));
+  const contasLegadasPorCaixa = new Map(contasContratosLegados.flatMap(conta => conta.baixas.map(baixa => [baixa.lancamentoCaixaId, conta] as const)));
   const baixaWidesysLocalPorCaixa = new Map(recebimentosWidesysLocais.map(baixa => [baixa.lancamentoCaixaId, baixa]));
   for (const l of caixa) {
     const f = fonteLancamentoCaixa(l);
@@ -353,6 +388,12 @@ export async function derivarFontesUnificacao(dados: DadosFontesUnificacao, incl
       const despesa = despesasManuaisPorCaixa.get(l.id);
       if (despesa) f.tituloChave = chaveFonte("BRISA", "PAGAR", despesa);
       if (l.recebimentoManualId) f.tituloChave = chaveFonte("BRISA", "RECEBER", l.recebimentoManualId);
+      const contaLegada = contasLegadasPorCaixa.get(l.id);
+      if (contaLegada) {
+        f.tituloChave = chaveFonte("BRISA", "RECEBER", contaLegada.id);
+        f.contaContratoLegado = true;
+        if (contaLegada.restrito || contemComissaoRestrita(contaLegada.descricao)) f.restrito = true;
+      }
       const baixaWidesys = baixaWidesysLocalPorCaixa.get(l.id);
       if (baixaWidesys) {
         f.tituloChave = chaveFonte("WIDESYS", "RECEBER", baixaWidesys.tituloId);

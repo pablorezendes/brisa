@@ -39,6 +39,7 @@ beforeEach(async () => {
     `CREATE TABLE PessoaEmail (id TEXT PRIMARY KEY, pessoaId TEXT NOT NULL, email TEXT NOT NULL)`,
     `CREATE TABLE Contrato (id TEXT PRIMARY KEY, unidadeId TEXT NOT NULL, locatarioId TEXT, status TEXT NOT NULL, inicio TEXT, fim TEXT)`,
     `CREATE TABLE Recebimento (id TEXT PRIMARY KEY, contratoId TEXT NOT NULL, competencia TEXT NOT NULL, origemAgregada BOOLEAN NOT NULL DEFAULT 0, criadoManualBrisa BOOLEAN NOT NULL DEFAULT 0)`,
+    `CREATE TABLE ContaReceberContratoLegado (id TEXT PRIMARY KEY, contratoLegadoId TEXT NOT NULL, competencia TEXT NOT NULL, restrito BOOLEAN NOT NULL DEFAULT 0)`,
     `CREATE TABLE ImovelLegado (id TEXT PRIMARY KEY, origem TEXT NOT NULL, legadoId TEXT NOT NULL, nome TEXT, referencia TEXT)`,
     `CREATE TABLE ContratoLegado (id TEXT PRIMARY KEY, origem TEXT NOT NULL, legadoId TEXT NOT NULL, imovelLegadoId TEXT, situacaoOrigem TEXT, inicio TEXT, fim TEXT, statusImportacao TEXT NOT NULL DEFAULT 'STAGING')`,
     `CREATE TABLE ContratoParteLegado (id TEXT PRIMARY KEY, contratoId TEXT, origem TEXT NOT NULL, pessoaLegadoId TEXT, papel TEXT NOT NULL, statusImportacao TEXT NOT NULL DEFAULT 'STAGING')`,
@@ -69,6 +70,19 @@ afterEach(async () => {
 });
 
 describe("carteira: isolamento por vínculos comprovados", () => {
+  it("inclui conta criada no Brisa somente na carteira do contrato Widesys autorizado", async () => {
+    await db.$executeRaw`INSERT INTO ContaReceberContratoLegado (id,contratoLegadoId,competencia,restrito) VALUES ('LOCAL-A','CL1','2026-10',0),('LOCAL-B','CL2','2026-10',0),('LOCAL-RESTRITA','CL1','2026-10',1)`;
+    const local = titulo("LOCAL-A", "CL1", "IL1");
+    local.contratoChave = "WIDESYS:CONTRATO:CL1";
+    local.imovelChave = "WIDESYS:IMOVEL:IL1";
+    linhas.push(local, { ...local, chave: "BRISA:RECEBER:LOCAL-B", origemId: "LOCAL-B", contratoChave: "WIDESYS:CONTRATO:CL2", imovelChave: "WIDESYS:IMOVEL:IL2", fontes: ["BRISA:RECEBER:LOCAL-B"] });
+    const dados = await consultarCarteira(db, politica([liberar("IMOVEL_LEGADO", "IL1")]), "2026-10");
+    expect(dados.titulos.map(titulo => titulo.id)).toEqual(["WIDESYS:RECEBER:TL1", "BRISA:RECEBER:LOCAL-A"]);
+    expect(dados.titulos.find(titulo => titulo.id === "BRISA:RECEBER:LOCAL-A")).toMatchObject({ origem: "BRISA", imovel: "Imóvel legado A", cliente: "Cliente A" });
+    local.contratoChave = "WIDESYS:CONTRATO:CL2";
+    expect((await consultarCarteira(db, politica([liberar("IMOVEL_LEGADO", "IL1")]), "2026-10")).titulos.map(titulo => titulo.id)).toEqual(["WIDESYS:RECEBER:TL1"]);
+  });
+
   it("inclui somente contas manuais dos contratos autorizados", async () => {
     await db.$executeRaw`UPDATE Recebimento SET criadoManualBrisa = true WHERE id IN ('RA1', 'RB1')`;
     const dados = await consultarCarteira(db, politica(), "2026-10");

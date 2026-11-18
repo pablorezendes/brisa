@@ -16,6 +16,7 @@ export default async function PaginaEditarLancamento({ params }: { params: Promi
   if (!lancamento?.criadoManualBrisa || lancamento.recebimentoManualId || lancamento.caixaOrigem === "BRISA:DESPESA") notFound();
   if (acesso.perfil !== "ADMINISTRADOR" && contemComissaoRestrita([lancamento.descricao, lancamento.categoria])) notFound();
   if (await prisma.recebimentoWidesysLocal.findUnique({ where: { lancamentoCaixaId: id }, select: { id: true } })) notFound();
+  if (await prisma.baixaContaReceberContratoLegado.findUnique({ where: { lancamentoCaixaId: id }, select: { id: true } })) notFound();
   const categorias = await categoriasPorCentro();
   const permitida = (categoria: string) => acesso.perfil === "ADMINISTRADOR" || !contemComissaoRestrita(categoria);
   return (

@@ -99,6 +99,28 @@ async function despesaSintetica(paga = false) {
 }
 
 describe("leitura financeira restrita ao domínio — paridade real com SQLite", () => {
+  it("lê a conta criada no contrato Widesys sem recriar contrato nem duplicar pagamento nos totais", async () => {
+    await db.contaReceberContratoLegado.create({ data: {
+      id: "conta-local", contratoLegadoId: "contrato-legado", descricao: "Cobrança avulsa", valor: 12000,
+      recebido: 3000, competencia: "2026-10", vencimento: "2026-10-25", dataPagamento: "2026-10-26", via: "PIX",
+      usuarioId: "teste", chaveDuplicidade: "chave-sintetica",
+      baixas: { create: [{ id: "baixa-conta-local", valor: 3000, dataPagamento: "2026-10-26", via: "PIX", usuarioId: "teste",
+        lancamentoCaixa: { create: { id: "caixa-conta-local", tipo: "ENTRADA", centroCusto: "GERAL", mesReferencia: "2026-10", data: "2026-10-26", valor: 3000, criadoManualBrisa: true } },
+      }] },
+    } });
+    const opcoes = { somenteWidesysFinanceiro: true };
+    const completa = await lerOperacaoUnificada(db, opcoes);
+    const lista = await lerListaFinanceira(db, "RECEBER", opcoes);
+    const conta = lista.linhas.find(linha => linha.chave === "BRISA:RECEBER:conta-local");
+    expect(conta).toMatchObject({ valor: 12000, pago: 3000, aberto: 9000, contabiliza: true,
+      contratoChave: "WIDESYS:CONTRATO:contrato-legado", imovelChave: "WIDESYS:IMOVEL:imovel-legado" });
+    expect(completa.linhas.find(linha => linha.chave === conta?.chave)).toEqual(conta);
+    expect(completa.linhas.find(linha => linha.chave === "BRISA:BAIXA_RECEBER:baixa-conta-local")).toMatchObject({ valor: 3000, contabiliza: false, informativo: true });
+    expect(completa.linhas.filter(linha => linha.dominio === "MOVIMENTO" && linha.tituloChave === conta?.chave)).toMatchObject([{ valor: 3000, contabiliza: true }]);
+    expect(await db.contrato.count()).toBe(1);
+    expect(await db.contratoLegado.count()).toBe(1);
+  });
+
   it("mantém a baixa local em uma única entrada após atualizar a captura ou retirar seu detalhe", async () => {
     const dataPagamento = "2026-10-23";
     await db.lancamentoCaixa.create({ data: { id: "entrada-local", tipo: "ENTRADA", valor: 4500, data: dataPagamento,

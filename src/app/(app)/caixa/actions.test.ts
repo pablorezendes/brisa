@@ -27,7 +27,10 @@ describe("sigilo do pagamento de uma nota restrita no caixa", () => {
     expect((await salvarLancamento({ erro: null }, formulario())).erro).toContain("não encontrado");
     expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { AND: [{ id: "saida" }, {
       OR: [{ despesaDocumento: { is: null } }, { despesaDocumento: { is: { restrita: false } } }],
-      NOT: { recebimentoWidesysLocal: { is: { restrito: true } } },
+      NOT: [
+        { recebimentoWidesysLocal: { is: { restrito: true } } },
+        { baixaContaReceberContratoLegado: { is: { conta: { restrito: true } } } },
+      ],
     }] } }));
     expect(mocks.updateMany).not.toHaveBeenCalled();
     expect(mocks.revalidar).not.toHaveBeenCalled();
@@ -35,13 +38,13 @@ describe("sigilo do pagamento de uma nota restrita no caixa", () => {
   it("repete o filtro no UPDATE e não confirma sucesso quando a restrição mudou", async () => {
     mocks.updateMany.mockResolvedValue({ count: 0 });
     expect((await salvarLancamento({ erro: null }, formulario())).erro).toContain("indisponível");
-    expect(mocks.updateMany.mock.calls[0][0].where).toEqual({ ...mocks.findFirst.mock.calls[0][0].where, recebimentoWidesysLocal: { is: null } });
+    expect(mocks.updateMany.mock.calls[0][0].where).toEqual({ ...mocks.findFirst.mock.calls[0][0].where, recebimentoWidesysLocal: { is: null }, baixaContaReceberContratoLegado: { is: null } });
     expect(mocks.redirect).not.toHaveBeenCalled();
   });
   it("administrador continua autorizado a editar, sem filtro de nota reservada", async () => {
     mocks.acesso.mockResolvedValue({ perfil: "ADMINISTRADOR", usuarioId: "admin" });
     await expect(salvarLancamento({ erro: null }, formulario())).rejects.toThrow("REDIRECT:/caixa?mes=2026-10");
-    expect(mocks.updateMany.mock.calls[0][0].where).toEqual({ AND: [{ id: "saida" }, {}], recebimentoWidesysLocal: { is: null } });
+    expect(mocks.updateMany.mock.calls[0][0].where).toEqual({ AND: [{ id: "saida" }, {}], recebimentoWidesysLocal: { is: null }, baixaContaReceberContratoLegado: { is: null } });
   });
   it("não abre exclusão de uma saída oculta para outro perfil", async () => {
     mocks.findFirst.mockResolvedValue(null);
@@ -50,8 +53,8 @@ describe("sigilo do pagamento de uma nota restrita no caixa", () => {
   });
 });
 
-it("protege a entrada da baixa Widesys nas duas ações de edição do caixa", async () => {
-  mocks.findFirst.mockResolvedValue({ id: "entrada", criadoManualBrisa: true, recebimentoWidesysLocal: { id: "baixa" } });
+it.each(["recebimentoWidesysLocal", "baixaContaReceberContratoLegado"])("protege a entrada vinculada por %s nas duas ações de edição do caixa", async relacao => {
+  mocks.findFirst.mockResolvedValue({ id: "entrada", criadoManualBrisa: true, [relacao]: { id: "baixa" } });
   const form = formulario();
   form.set("id", "entrada");
   form.set("tipo", "ENTRADA");

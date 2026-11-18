@@ -4,7 +4,7 @@ import { acessoAtual, exigirPaginaAcesso, exigirPermissaoAcesso } from "@/lib/ac
 import { pode } from "@/lib/acesso/politica";
 import { exigirPermissaoFinanceira } from "@/lib/autorizacao";
 import { prisma } from "@/lib/db";
-import { idsGovernadosInativos } from "@/lib/governanca/filtros";
+import { listarContratosParaRecebimento } from "@/lib/consultas/contratos-para-recebimento";
 import { hojeISO } from "@/lib/dominio/periodo";
 import { FormularioLancamentoManual } from "@/components/formulario-lancamento-manual";
 import { btnSecundario, Card, inputBase, PageHeader } from "@/components/ui";
@@ -17,22 +17,12 @@ export default async function PaginaNovaContaReceber() {
   await exigirPermissaoAcesso("recebimentos.editar", { global: true });
   await exigirPermissaoFinanceira("CONCILIAR_PAGAMENTOS");
   const permiteReceber = pode(await acessoAtual(), "caixa.editar");
-  const [contratosInativos, unidadesInativas, empreendimentosInativos] = await Promise.all([
-    idsGovernadosInativos(prisma, "CONTRATO"), idsGovernadosInativos(prisma, "UNIDADE"), idsGovernadosInativos(prisma, "EMPREENDIMENTO"),
-  ]);
-  const contratos = await prisma.contrato.findMany({
-    where: {
-      id: { notIn: contratosInativos }, status: { in: ["ativo", "acordo"] },
-      unidade: { ativo: true, id: { notIn: unidadesInativas }, empreendimento: { ativo: true, id: { notIn: empreendimentosInativos } } },
-    },
-    select: { id: true, locatario: { select: { nome: true } }, unidade: { select: { identificacao: true, empreendimento: { select: { nome: true } } } } },
-    orderBy: [{ unidade: { empreendimento: { nome: "asc" } } }, { unidade: { identificacao: "asc" } }],
-  });
+  const contratos = await listarContratosParaRecebimento(prisma);
   const campo = `${inputBase} mt-1 w-full`;
 
   return (
     <>
-      <PageHeader titulo="Nova conta a receber" descricao="Registre uma cobrança avulsa para um contrato do Brisa." />
+      <PageHeader titulo="Nova conta a receber" descricao="Escolha o contrato e informe os dados da cobrança." />
       <Card className="max-w-3xl p-5">
         {contratos.length ? (
           <FormularioLancamentoManual acao={salvarRecebimentoManual.bind(null, randomUUID())} cancelar="/recebimentos">
@@ -41,8 +31,8 @@ export default async function PaginaNovaContaReceber() {
                 <select className={campo} name="contratoId" required defaultValue="">
                   <option value="" disabled>Selecione o contrato</option>
                   {contratos.map(contrato => (
-                    <option key={contrato.id} value={contrato.id}>
-                      {contrato.unidade.empreendimento.nome} · {contrato.unidade.identificacao} · {contrato.locatario?.nome ?? "Sem inquilino"}
+                    <option key={contrato.valor} value={contrato.valor}>
+                      {contrato.rotulo}
                     </option>
                   ))}
                 </select>
@@ -70,7 +60,7 @@ export default async function PaginaNovaContaReceber() {
           </FormularioLancamentoManual>
         ) : (
           <div className="space-y-3">
-            <p className="text-sm text-tinta-suave">Cadastre um contrato ativo no Brisa para criar uma conta a receber.</p>
+            <p className="text-sm text-tinta-suave">Não há contratos vigentes disponíveis para esta cobrança.</p>
             <Link href="/recebimentos" className={btnSecundario}>Voltar</Link>
           </div>
         )}

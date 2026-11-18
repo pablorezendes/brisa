@@ -42,6 +42,10 @@ async function entidade(tx: Tx, tipo: TipoGovernanca, id: string): Promise<{ id:
     if (origem === "BRISA" && dominio === "RECEBER") {
       const t = await tx.recebimento.findUnique({ where: { id: identificador }, include: { contrato: { include: { locatario: true, unidade: true } } } });
       if (t) r = { id, nome: `${t.contrato.locatario?.nome ?? "Recebimento"} · ${t.contrato.unidade.identificacao} · ${t.competencia}`, referencia: `Brisa · competência ${t.competencia} · lançamento ${t.mesLancamento}`, valor: t.valor + t.iptu + t.cond, dadosHash: hash(t) };
+      else {
+        const conta = await tx.contaReceberContratoLegado.findUnique({ where: { id: identificador }, include: { contrato: true } });
+        if (conta) r = { id, nome: conta.descricao, referencia: `Brisa · contrato Widesys ${conta.contrato.numeroContrato ?? conta.contrato.legadoId} · competência ${conta.competencia}`, valor: conta.valor, dadosHash: hash(conta) };
+      }
     } else if (origem === "BRISA" && dominio === "PAGAR") {
       const d = await tx.despesaDocumento.findUnique({ where: { id: identificador }, include: { lancamentoCaixa: true } });
       if (d && !d.origemChave) r = { id, nome: `${d.fornecedorNome} · ${referenciaDocumentoDespesa(d)}`, referencia: `Brisa · competência ${d.competencia} · despesa única${d.lancamentoCaixaId ? " · pagamento preservado no caixa" : ""}`, valor: d.total, dadosHash: hash(d) };
@@ -71,7 +75,12 @@ async function entidade(tx: Tx, tipo: TipoGovernanca, id: string): Promise<{ id:
 async function vinculos(tx: Tx, tipo: TipoGovernanca, id: string): Promise<Record<string, number>> {
   if (tipo === "TITULO" && id.startsWith("BRISA:RECEBER:")) {
     const recebimentoId = id.slice("BRISA:RECEBER:".length);
-    return { pagamentos: await tx.pagamentoRecebimento.count({ where: { recebimentoId } }), boletos: await tx.boleto.count({ where: { recebimentoId } }) };
+    const [pagamentos, boletos, baixasConta] = await Promise.all([
+      tx.pagamentoRecebimento.count({ where: { recebimentoId } }),
+      tx.boleto.count({ where: { recebimentoId } }),
+      tx.baixaContaReceberContratoLegado.count({ where: { contaId: recebimentoId } }),
+    ]);
+    return { pagamentos: pagamentos + baixasConta, boletos };
   }
   if (tipo === "TITULO" && id.startsWith("BRISA:PAGAR:")) {
     const documentoId = id.slice("BRISA:PAGAR:".length);
@@ -83,11 +92,12 @@ async function vinculos(tx: Tx, tipo: TipoGovernanca, id: string): Promise<Recor
     return baixasLocais ? { baixasLocais } : {};
   }
   if (tipo === "CAIXA") {
-    const [notasVinculadas, baixasLocais] = await Promise.all([
+    const [notasVinculadas, baixasLocais, baixasConta] = await Promise.all([
       tx.despesaDocumento.count({ where: { lancamentoCaixaId: id } }),
       tx.recebimentoWidesysLocal.count({ where: { lancamentoCaixaId: id } }),
+      tx.baixaContaReceberContratoLegado.count({ where: { lancamentoCaixaId: id } }),
     ]);
-    return { notasVinculadas, ...(baixasLocais ? { baixasLocais } : {}) };
+    return { notasVinculadas, ...(baixasLocais ? { baixasLocais } : {}), ...(baixasConta ? { pagamentosVinculados: baixasConta } : {}) };
   }
   if (tipo === "CONTRATO") return { recebimentos: await tx.recebimento.count({ where: { contratoId: id } }) };
   if (tipo === "BOLETO") return { pagamentos: await tx.pagamentoRecebimento.count({ where: { boletoId: id } }), eventosBancarios: await tx.eventoBoleto.count({ where: { boletoId: id } }) };
@@ -174,7 +184,7 @@ export async function excluirAdministrativamente(db: PrismaClient, tipo: string,
 }
 async function exigirMovimentoSemContaManual(tx: Tx, id: string) {
   const vinculado = await tx.lancamentoCaixa.findFirst({
-    where: { id, OR: [{ recebimentoManualId: { not: null } }, { despesaDocumento: { is: { criadoManualBrisa: true } } }, { recebimentoWidesysLocal: { isNot: null } }] },
+    where: { id, OR: [{ recebimentoManualId: { not: null } }, { despesaDocumento: { is: { criadoManualBrisa: true } } }, { recebimentoWidesysLocal: { isNot: null } }, { baixaContaReceberContratoLegado: { isNot: null } }] },
     select: { recebimentoWidesysLocal: { select: { id: true } } },
   });
   if (vinculado?.recebimentoWidesysLocal) throw new ErroGovernanca("CONTA_VINCULADA", MOVIMENTO_COM_BAIXA_LOCAL);
@@ -294,8 +304,10 @@ export async function restaurarRecurso(db: PrismaClient, tipo: string, id: strin
       if (await tx.fechamentoMensal.count({ where: { mesLancamento: caixa.mesReferencia } })) throw new ErroGovernanca("MES_FECHADO", "O mês deste lançamento foi fechado. Reabra-o antes de restaurar.");
     }
     if (tipo === "TITULO" && id.startsWith("BRISA:RECEBER:")) {
-      const titulo = await tx.recebimento.findUniqueOrThrow({ where: { id: id.slice("BRISA:RECEBER:".length) } });
-      if (await tx.fechamentoMensal.count({ where: { mesLancamento: titulo.mesLancamento } })) throw new ErroGovernanca("MES_FECHADO", "O mês deste título foi fechado. O descarte permanece no snapshot até a reabertura.");
+      const recebimentoId = id.slice("BRISA:RECEBER:".length);
+      const titulo = await tx.recebimento.findUnique({ where: { id: recebimentoId } });
+      const conta = titulo ? null : await tx.contaReceberContratoLegado.findUniqueOrThrow({ where: { id: recebimentoId } });
+      if (await tx.fechamentoMensal.count({ where: { mesLancamento: titulo?.mesLancamento ?? conta!.competencia } })) throw new ErroGovernanca("MES_FECHADO", "O mês deste título foi fechado. O descarte permanece no snapshot até a reabertura.");
     }
     if (atual.status === "MESCLADO") {
       if (await tx.regraAcesso.count()) throw new ErroGovernanca("CARTEIRAS_PROTEGIDAS", "Há carteiras com regras de acesso configuradas. Desfazer a mesclagem exige revisão explícita das abrangências, inclusive dos vínculos indiretos.");
@@ -337,10 +349,13 @@ export async function descartarTitulo(db: PrismaClient, origemId: string, destin
     if ((origem.pago ?? 0) > 0) throw new ErroGovernanca("TITULO_COM_BAIXA", "Este título já tem pagamento. Mantenha o título pago e revise a outra cópia.");
     if (await tx.recursoGovernado.count({ where: { tipo: "TITULO", destinoId: origemId, status: "DESCARTADO" } })) throw new ErroGovernanca("PRINCIPAL_COM_VINCULOS", "Este título é mantido por outro descarte. Desfaça o descarte anterior primeiro.");
     if (origem.origem === "BRISA" && origem.dominio === "RECEBER") {
-      const r = await tx.recebimento.findUniqueOrThrow({ where: { id: origem.origemId } });
-      if (r.recebido !== null || await tx.pagamentoRecebimento.count({ where: { recebimentoId: r.id } })) throw new ErroGovernanca("TITULO_COM_BAIXA", "O título já possui registro de pagamento. Mantenha-o e revise a outra cópia.");
-      if (r.reservaEmissaoToken || await tx.boleto.count({ where: { recebimentoId: r.id, status: { in: [...STATUS_BOLETO_ATIVOS] } } })) throw new ErroGovernanca("BOLETO_ATIVO", "O título possui emissão ou boleto ativo no banco. Não é seguro descartá-lo.");
-      if (await tx.fechamentoMensal.count({ where: { mesLancamento: r.mesLancamento } })) throw new ErroGovernanca("MES_FECHADO", "O título pertence a um mês fechado.");
+      const r = await tx.recebimento.findUnique({ where: { id: origem.origemId } });
+      const conta = r ? null : await tx.contaReceberContratoLegado.findUniqueOrThrow({ where: { id: origem.origemId }, include: { _count: { select: { baixas: true } } } });
+      if (r) {
+        if (r.recebido !== null || await tx.pagamentoRecebimento.count({ where: { recebimentoId: r.id } })) throw new ErroGovernanca("TITULO_COM_BAIXA", "O título já possui registro de pagamento. Mantenha-o e revise a outra cópia.");
+        if (r.reservaEmissaoToken || await tx.boleto.count({ where: { recebimentoId: r.id, status: { in: [...STATUS_BOLETO_ATIVOS] } } })) throw new ErroGovernanca("BOLETO_ATIVO", "O título possui emissão ou boleto ativo no banco. Não é seguro descartá-lo.");
+      } else if (conta!.recebido > 0 || conta!._count.baixas > 0) throw new ErroGovernanca("TITULO_COM_BAIXA", "O título já possui registro de pagamento. Mantenha-o e revise a outra cópia.");
+      if (await tx.fechamentoMensal.count({ where: { mesLancamento: r?.mesLancamento ?? conta!.competencia } })) throw new ErroGovernanca("MES_FECHADO", "O título pertence a um mês fechado.");
     } else if (origem.origem === "WIDESYS") {
       const t = await tx.tituloFinanceiroLegado.findUniqueOrThrow({ where: { id: origem.origemId } });
       if (t.pagamento || t.situacaoNormalizada === "PAGO" || t.pagamentoParcial || await tx.baixaFinanceiraLegado.count({ where: { origem: t.origem, tituloEscopo: t.escopo, tituloLegadoId: t.legadoId } })) throw new ErroGovernanca("TITULO_COM_BAIXA", "Há baixa ou pagamento na origem. Mantenha este título e revise a outra cópia.");

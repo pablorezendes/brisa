@@ -1,6 +1,7 @@
 "use server";
 
 import { Prisma } from "@prisma/client";
+import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { exigirPermissaoAcesso } from "@/lib/acesso/servidor";
@@ -11,6 +12,8 @@ import { recursoEstaAtivo } from "@/lib/governanca/filtros";
 import { campoLancamento, dataLancamentoValida, idLancamentoValido, valorLancamento } from "@/lib/dominio/lancamento-manual";
 import { validarRetornoFinanceiro } from "@/lib/interface/contexto-financeiro";
 import { contemComissaoRestrita } from "@/lib/despesas/sigilo";
+import { normalizar } from "@/lib/dominio/normalizacao";
+import { buscarContratoWidesysParaRecebimento } from "@/lib/consultas/contratos-para-recebimento";
 
 const VIAS = new Set(["PIX", "BOLETO", "DINHEIRO", "TRANSFERENCIA"]);
 
@@ -23,6 +26,19 @@ function registrarEntrada(tx: Prisma.TransactionClient, entrada: { id: string; r
     },
     select: { id: true },
   });
+}
+
+async function registrarEntradaContratoLegado(tx: Prisma.TransactionClient, entrada: {
+  id: string; contaId: string; dataPagamento: string; valor: number; descricao: string; via: string; usuarioId: string;
+}) {
+  await tx.lancamentoCaixa.create({ data: {
+    id: entrada.id, mesReferencia: entrada.dataPagamento.slice(0, 7), centroCusto: "GERAL", tipo: "ENTRADA",
+    data: entrada.dataPagamento, valor: entrada.valor, descricao: `Recebimento · ${entrada.descricao}`, criadoManualBrisa: true,
+  } });
+  await tx.baixaContaReceberContratoLegado.create({ data: {
+    id: entrada.id, contaId: entrada.contaId, lancamentoCaixaId: entrada.id, valor: entrada.valor,
+    dataPagamento: entrada.dataPagamento, via: entrada.via, usuarioId: entrada.usuarioId, criadoEm: new Date(),
+  } });
 }
 
 async function mesFechado(tx: Prisma.TransactionClient, mes: string, dataPagamento: string) {
@@ -63,11 +79,43 @@ export async function salvarRecebimentoManual(id: string, _estado: { erro?: stri
   if (dataPagamento) await exigirPermissaoAcesso("caixa.editar", { global: true });
 
   const mes = vencimento.slice(0, 7);
-  const taxaComissaoBps = await taxaComissaoParaMes(mes);
+  const contratoWidesysId = contratoId.startsWith("WIDESYS:") ? contratoId.slice("WIDESYS:".length) : null;
+  const taxaComissaoBps = contratoWidesysId ? null : await taxaComissaoParaMes(mes);
   try {
     const erro = await prisma.$transaction(async tx => {
       if (await mesFechado(tx, mes, dataPagamento)) {
         return "O mês da conta ou do recebimento está fechado.";
+      }
+      if (contratoWidesysId !== null) {
+        if (!idLancamentoValido(contratoWidesysId)) return "Selecione um contrato válido.";
+        const contrato = await buscarContratoWidesysParaRecebimento(tx, contratoWidesysId);
+        if (!contrato) return "Selecione um contrato vigente e disponível.";
+        if (await tx.recebimento.findUnique({ where: { id }, select: { id: true } })) return "Este formulário já foi utilizado. Abra uma nova conta pela lista.";
+
+        const titulosExistentes = await tx.tituloFinanceiroLegado.findMany({
+          where: {
+            origem: "WIDESYS", escopo: "TITULO_RECEBER", natureza: "RECEBER", contratoLegadoId: contrato.legadoId,
+            vencimento, valorDevido: valor, situacaoNormalizada: { not: "CANCELADO" },
+            statusImportacao: { notIn: ["QUARENTENA", "AUSENTE_NA_FONTE"] },
+          }, select: { id: true },
+        });
+        for (const titulo of titulosExistentes) {
+          if (await recursoEstaAtivo(tx, "TITULO", `WIDESYS:RECEBER:${titulo.id}`)) {
+            return "Há um título importado para este contrato com o mesmo vencimento e valor. Confira a conta existente antes de cadastrar outra.";
+          }
+        }
+        const chaveDuplicidade = createHash("sha256").update(JSON.stringify([
+          contrato.id, vencimento, valor, normalizar(descricao),
+        ])).digest("hex");
+        await tx.contaReceberContratoLegado.create({ data: {
+          id, contratoLegadoId: contrato.id, descricao, valor, recebido: recebido ?? 0, competencia: mes, vencimento,
+          dataPagamento: dataPagamento || null, via, chaveDuplicidade, usuarioId: acesso.usuarioId,
+          restrito: contemComissaoRestrita(descricao), criadoEm: new Date(),
+        } });
+        if (recebido !== null) await registrarEntradaContratoLegado(tx, {
+          id, contaId: id, dataPagamento, valor: recebido, descricao, via: via!, usuarioId: acesso.usuarioId,
+        });
+        return null;
       }
       const contrato = await tx.contrato.findFirst({
         where: { id: contratoId, status: { in: ["ativo", "acordo"] }, unidade: { ativo: true, empreendimento: { ativo: true } } },
@@ -80,7 +128,7 @@ export async function salvarRecebimentoManual(id: string, _estado: { erro?: stri
       }
       await tx.recebimento.create({
         data: {
-          id, contratoId: contrato.id, empreendimentoId, valor, recebido, via, taxaComissaoBps,
+          id, contratoId: contrato.id, empreendimentoId, valor, recebido, via, taxaComissaoBps: taxaComissaoBps!,
           criadoManualBrisa: true, vencimentoManual: vencimento, mesLancamento: mes, competencia: mes,
           dataPagamento: dataPagamento || null, observacao: descricao,
         },
@@ -90,7 +138,7 @@ export async function salvarRecebimentoManual(id: string, _estado: { erro?: stri
     });
     if (erro) return { erro };
   } catch (erro) {
-    if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2002") return { erro: "Este lançamento já foi enviado. Consulte a lista antes de tentar novamente." };
+    if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2002") return { erro: "Já existe uma cobrança com estes dados ou este formulário já foi enviado. Consulte a lista antes de tentar novamente." };
     throw erro;
   }
   revalidatePath("/", "layout");
@@ -115,7 +163,22 @@ export async function registrarBaixaRecebimentoManual(recebimentoId: string, id:
         where: { id: recebimentoId, criadoManualBrisa: true },
         select: { mesLancamento: true, valor: true, iptu: true, cond: true, recebido: true, observacao: true },
       });
-      if (!titulo || !await recursoEstaAtivo(tx, "TITULO", `BRISA:RECEBER:${recebimentoId}`)) return "Conta indisponível.";
+      if (!await recursoEstaAtivo(tx, "TITULO", `BRISA:RECEBER:${recebimentoId}`)) return "Conta indisponível.";
+      if (!titulo) {
+        const conta = await tx.contaReceberContratoLegado.findUnique({ where: { id: recebimentoId } });
+        if (!conta || conta.restrito && acesso.perfil !== "ADMINISTRADOR") return "Conta indisponível.";
+        if (await mesFechado(tx, conta.competencia, data)) return "O mês da conta ou do recebimento está fechado.";
+        const recebido = conta.recebido + valor;
+        if (recebido > conta.valor) return "O valor informado ultrapassa o saldo em aberto.";
+        const atualizado = await tx.contaReceberContratoLegado.updateMany({
+          where: { id: recebimentoId, recebido: conta.recebido }, data: { recebido, dataPagamento: data, via },
+        });
+        if (atualizado.count !== 1) return "A conta mudou. Atualize e confira o saldo.";
+        await registrarEntradaContratoLegado(tx, {
+          id, contaId: recebimentoId, dataPagamento: data, valor, descricao: conta.descricao, via, usuarioId: acesso.usuarioId,
+        });
+        return null;
+      }
       if (acesso.perfil !== "ADMINISTRADOR" && contemComissaoRestrita(titulo.observacao)) return "Conta indisponível.";
       if (await mesFechado(tx, titulo.mesLancamento, data)) return "O mês da conta ou do recebimento está fechado.";
       const recebido = (titulo.recebido ?? 0) + valor;

@@ -8,6 +8,9 @@ export function filtroCaixaDespesasRestritas(perfil: string): Prisma.LancamentoC
   if (perfil === "ADMINISTRADOR") return {};
   return {
     OR: [{ despesaDocumento: { is: null } }, { despesaDocumento: { is: { restrita: false } } }],
-    NOT: { recebimentoWidesysLocal: { is: { restrito: true } } },
+    NOT: [
+      { recebimentoWidesysLocal: { is: { restrito: true } } },
+      { baixaContaReceberContratoLegado: { is: { conta: { restrito: true } } } },
+    ],
   };
 }

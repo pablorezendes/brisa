@@ -12,7 +12,7 @@ vi.mock("node:fs", () => ({ existsSync: vi.fn(), readFileSync: vi.fn() }));
 // Dados inteiramente artificiais: cada campo usado pela projeção recebe valor
 // para uma omissão em select não passar despercebida como null/undefined.
 const dados: DadosFontesUnificacao = {
-  despesas: [], caixasDespesasGovernados: [], caixasDespesasDecisoes: [], recebimentosWidesysLocais: [],
+  despesas: [], caixasDespesasGovernados: [], caixasDespesasDecisoes: [], recebimentosWidesysLocais: [], contasContratosLegados: [],
   locatarios: [{ id: "loc", nome: "Inquilino sintético", cpfCnpj: "00000000000", pessoaId: "pessoa",
     email: "inquilino@example.test", telefone: "62900000000", contato: "Contato sintético",
     endereco: "Rua de teste", numeroEndereco: "10", bairro: "Bairro", cidade: "Goiânia", uf: "GO", cep: "74000000" }],
@@ -90,6 +90,7 @@ function bancoArtificial(importacoesPlanilha: DadosFontesUnificacao["caixa"][num
     despesaDocumento: dados.despesas,
     importacaoPlanilhaLinha: importacoesPlanilha,
     recebimentoWidesysLocal: dados.recebimentosWidesysLocais,
+    contaReceberContratoLegado: dados.contasContratosLegados,
   };
   const mocks = Object.fromEntries(Object.entries(tabelas).map(([nome, registros]) => [nome, {
     findMany: vi.fn(async (consulta: Consulta) => registros.map(registro => selecionar({ ...registro,
@@ -105,6 +106,33 @@ beforeEach(() => {
 });
 
 describe("fotografia compacta das fontes de unificação", () => {
+  it("projeta uma conta manual no contrato importado e contabiliza título, baixa e caixa uma vez", async () => {
+    const conta: DadosFontesUnificacao["contasContratosLegados"][number] = {
+      id: "conta-legada", contratoLegadoId: "contrato-legado", descricao: "Cobrança avulsa", valor: 10000, recebido: 3000,
+      competencia: "2026-06", vencimento: "2026-06-18", dataPagamento: "2026-06-20", via: "PIX", restrito: false,
+      baixas: [{ id: "baixa-conta-legada", lancamentoCaixaId: "entrada-conta-legada", valor: 3000, dataPagamento: "2026-06-20", via: "PIX" }],
+    };
+    const origem = { ...dados, contratos: [], recebimentos: [], contasContratosLegados: [conta],
+      caixa: [{ ...dados.caixa[0], id: "entrada-conta-legada", criadoManualBrisa: true, tipo: "ENTRADA", valor: 3000, data: "2026-06-20" }] };
+    const fontes = await derivarFontesUnificacao(origem, false);
+    const linhas = projetarFinanceiroWidesys(fontes, []).linhas;
+    expect(linhas.find(linha => linha.chave === "BRISA:RECEBER:conta-legada")).toMatchObject({
+      valor: 10000, pago: 3000, aberto: 7000, lancamentoManual: true, contaContratoLegado: true, contabiliza: true,
+      contratoChave: "WIDESYS:CONTRATO:contrato-legado", pessoaChave: "WIDESYS:PESSOA:pessoa", imovelChave: "WIDESYS:IMOVEL:imovel",
+    });
+    expect(linhas.find(linha => linha.chave === "BRISA:BAIXA_RECEBER:baixa-conta-legada")).toMatchObject({ valor: 3000, informativo: true, contabiliza: false, tituloChave: "BRISA:RECEBER:conta-legada" });
+    expect(linhas.find(linha => linha.chave === "BRISA:MOVIMENTO:entrada-conta-legada")).toMatchObject({ valor: 3000, contabiliza: true, tituloChave: "BRISA:RECEBER:conta-legada" });
+    expect(fontes.filter(fonte => fonte.dominio === "CONTRATO")).toHaveLength(1);
+    expect(fontes.find(fonte => fonte.dominio === "CONTRATO")?.origem).toBe("WIDESYS");
+
+    const atualizadas = await derivarFontesUnificacao({ ...origem,
+      contratosLegados: origem.contratosLegados.map(contrato => ({ ...contrato, statusImportacao: "AUSENTE_NA_FONTE" })),
+      contasContratosLegados: [{ ...conta, restrito: true }],
+    }, false);
+    expect(projetarFinanceiroWidesys(atualizadas, []).linhas.find(linha => linha.chave === "BRISA:RECEBER:conta-legada")).toMatchObject({ pago: 3000, aberto: 7000, contabiliza: true });
+    expect(atualizadas.filter(fonte => fonte.contaContratoLegado).every(fonte => fonte.restrito)).toBe(true);
+  });
+
   it("preserva baixas locais e caixa uma única vez quando a nova captura repete o recebimento", async () => {
     const primeira = {
       id: "local-1", tituloId: "titulo", lancamentoCaixaId: "caixa-local-1", valor: 25000, dataPagamento: "2026-06-18",
